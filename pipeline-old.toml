@@ -1,0 +1,49 @@
+# Pipeline definition for SPLIT_OLD
+# Data: data/{train,probe,fulltrain,qual}/
+# Outputs: preds/, features/
+
+[split]
+name         = "old"
+tr           = "train"
+pr           = "probe"
+fulltrain_tr = "fulltrain"
+fulltrain_pr = "qual"
+preds        = "preds"
+features     = "features"
+
+# --- Defaults per job type ---
+
+[defaults.model]
+inputs_from = ["ingest"]
+outputs = [
+    "{preds}/{name}.{pr}.npy",
+    "{preds}/{name}.{fulltrain_pr}.npy",
+    "{preds}/{name}.out",
+]
+cmd = "./target/release/runner --runner {runner} --name {name} --config {config} --target {target} --split {split.name}"
+
+[defaults.sim]
+inputs_from = ["ingest"]
+outputs = ["sim/{name}.{tr}.npy", "sim/{name}.{fulltrain_tr}.npy"]
+
+[defaults.blend]
+outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
+
+# --- Data preparation ---
+
+# Download the original Netflix Prize dataset from archive.org (no Kaggle
+# account needed). Skips the fetch if data/raw/nf_prize_dataset.tar.gz exists.
+[jobs.download]
+inputs  = ["src/bin/download.rs"]
+outputs = ["data/raw/nf_prize_dataset.tar.gz"]
+cmd = "./target/release/download"
+
+# Parse the downloaded archive straight into the four numpy datasets. Reads
+# nf_prize_dataset.tar.gz directly — no intermediate files on disk.
+[jobs.ingest]
+inputs_from = ["download"]
+inputs  = ["data/qual_ratings/qual_ratings.csv.gz", "src/bin/ingest.rs"]
+outputs = ["data/train/", "data/probe/", "data/fulltrain/", "data/qual/", "data/raw/README", "data/raw/movie_titles.csv", "data/raw/probe.txt", "data/raw/qualifying.txt"]
+cmd = "./target/release/ingest"
+
+# --- Base predictors ---

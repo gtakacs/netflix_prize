@@ -1,0 +1,949 @@
+# Pipeline definition for SPLIT_NEW
+# Data: data/{trainx,probex,fulltrain,qual}/
+# Outputs: preds_new/
+
+[split]
+name         = "new"
+tr           = "trainx"
+pr           = "probex"
+fulltrain_tr = "fulltrain"
+fulltrain_pr = "qual"
+preds        = "preds_new"
+sim          = "sim"
+
+# --- Defaults per job type ---
+
+[defaults.model]
+inputs_from = ["ingest", "newsplit"]
+inputs      = ["src/bin/{binary}-{split.name}.rs"]
+outputs = [
+    "{preds}/{name}.{pr}.npy",
+    "{preds}/{name}.{fulltrain_pr}.npy",
+    "{preds}/{name}.out",
+]
+cmd = "cargo build --release --bin {binary}-{split.name} && ./target/release/{binary}-{split.name} {name}"
+
+[defaults.blend]
+outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
+
+# LightGBM cross-fit blend of base predictors + voting features. A job sets
+# `seeds = [...]`; the gbm-<split> binary loads the feature matrix once and
+# writes one prediction per seed ({name}-s<seed>). The LightGBM params come from
+# blend_config(NAME) in the binary (per-blend dispatcher branch). Base predictors
+# come from the `groups` of {models} (default: all groups) + the voting (vf*)
+# glob. Built with the 'lgbm' feature (compiles LightGBM C++ on first build).
+[defaults.gbmblend]
+models      = "models-new.toml"
+inputs      = ["src/bin/gbm-{split.name}.rs"]
+inputs_from = ["vfeat1"]
+outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
+cmd = "cargo build --release --features lgbm --bin gbm-{split.name} && ./target/release/gbm-{split.name} {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds}"
+
+# MLP cross-fit blend of base predictors + voting features. Like gbmblend but
+# with the mlp-<split> binary; one prediction per seed ({name}-s<seed>). MLP
+# params come from blend_config(NAME). Built with the 'blas' feature so the dense
+# products go through OpenBLAS (dgemm).
+[defaults.mlpblend]
+models      = "models-new.toml"
+inputs      = ["src/bin/mlp-{split.name}.rs"]
+inputs_from = ["vfeat1"]
+outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
+cmd = "cargo build --release --features blas --bin mlp-{split.name} && ./target/release/mlp-{split.name} {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds}"
+
+# FWLS (feature-weighted linear stacking) cross-fit blend: ridge on the
+# interaction features (base prediction × voting feature) with a 2-fold split,
+# one prediction per seed. Lambda from blend_config(NAME). Model groups from
+# {models} via {groups}; context features are the vfeat1 vf* glob. The `fwls`
+# binary is split-agnostic (the split comes from -p). Built with 'blas'.
+[defaults.fwlsblend]
+models      = "models-new.toml"
+inputs      = ["src/bin/fwls.rs"]
+inputs_from = ["vfeat1"]
+outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
+cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds}"
+
+[defaults.paropt]
+inputs_from = ["ingest", "newsplit"]
+inputs      = ["src/bin/{binary}-{split.name}.rs"]
+outputs     = ["{preds}/{name}.out"]
+cmd = "cargo build --release --bin {binary}-{split.name} && ./target/release/{binary}-{split.name} {name}"
+
+[defaults.nbstats]
+inputs_from = ["ingest", "newsplit"]
+inputs = ["src/bin/nbstats-{split.name}.rs"]
+outputs = [
+    "{sim}/{name}.{tr}.npy",
+    "{sim}/{name}.{fulltrain_tr}.npy",
+]
+cmd = "cargo build --release --bin nbstats-{split.name} && ./target/release/nbstats-{split.name} {name}"
+
+[defaults.vfeat]
+inputs_from = ["ingest", "newsplit"]
+inputs = ["src/bin/{name}-{split.name}.rs"]
+# `{feature}` is expanded once per entry in the job's `features` list.
+outputs = [
+    "{preds}/{feature}.{pr}.npy",
+    "{preds}/{feature}.{fulltrain_pr}.npy",
+    "{preds}/{name}.out",
+]
+cmd = "cargo build --release --bin {name}-{split.name} && ./target/release/{name}-{split.name}"
+
+# --- Data preparation ---
+
+# Download the original Netflix Prize dataset from archive.org (no Kaggle
+# account needed). Skips the fetch if data/raw/nf_prize_dataset.tar.gz exists.
+[jobs.download]
+inputs  = ["src/bin/download.rs"]
+outputs = ["data/raw/nf_prize_dataset.tar.gz"]
+cmd = "./target/release/download"
+
+# Parse the downloaded archive straight into the four numpy datasets. Reads
+# nf_prize_dataset.tar.gz directly — no intermediate files on disk.
+[jobs.ingest]
+inputs_from = ["download"]
+inputs  = ["data/qual_ratings/qual_ratings.csv.gz", "src/bin/ingest.rs"]
+outputs = ["data/train/", "data/probe/", "data/fulltrain/", "data/qual/", "data/raw/README", "data/raw/movie_titles.csv", "data/raw/probe.txt", "data/raw/qualifying.txt"]
+cmd = "./target/release/ingest"
+
+[jobs.newsplit]
+inputs_from = ["ingest"]
+inputs  = ["src/bin/newsplit.rs"]
+outputs = ["data/{tr}/", "data/{pr}/"]
+cmd = "./target/release/newsplit"
+
+# --- Sim matrices (item-item co-occurrence / residual statistics) ---
+
+[jobs."bin_wsupp"] # verified
+jobtype = "nbstats"
+
+[jobs."rtg_supp"]
+jobtype = "nbstats"
+
+[jobs."tsvdx4-4800lm_diff1"]
+jobtype = "nbstats"
+inputs_from = ["ingest", "newsplit", "tsvdx4-4800lm"]
+inputs = [
+    "src/bin/nbstats-{split.name}.rs",
+    "{preds}/tsvdx4-4800lm.{tr}.npy",
+    "{preds}/tsvdx4-4800lm.{fulltrain_tr}.npy",
+]
+
+# --- Integrated base predictors ---
+
+[jobs."tsvdx4-60"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-60__knns"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds"]
+
+[jobs."tsvdx4-60__epochs"]
+jobtype = "legacy_eblend"
+binary = "tsvdx4"
+n_epochs = 20
+
+[jobs."tsvdx4-d0tb"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-d0tb__knn3"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds"]
+
+[jobs."tsvdx4-d0tb__epochs"]
+jobtype = "legacy_eblend"
+binary = "tsvdx4"
+n_epochs = 5
+
+[jobs."tsvdx4-f1"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-f1__epochs"]
+jobtype = "legacy_eblend"
+binary = "tsvdx4"
+n_epochs = 5
+
+[jobs."tsvdx4-h8nb"]
+jobtype = "model"
+binary = "tsvdx4"
+keep_epochs = [1]
+
+[jobs."tsvdx4-h8nb__knn3"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds"]
+
+[jobs."tsvdx4-l32nb"]
+jobtype = "model"
+binary = "tsvdx4"
+keep_epochs = [3]
+
+[jobs."tsvdx4-m1n"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-n8nbo"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-n8nbo__knn3"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds"]
+
+[jobs."tsvdx4-p0tbo"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-p0tbo__knn3"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds"]
+
+[jobs."tsvdx4-160o"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-80o"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-60o"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-60o__knns"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds"]
+
+[jobs."tsvdx4-60o__epochs"]
+jobtype = "legacy_eblend"
+binary = "tsvdx4"
+n_epochs = 28
+
+[jobs."tsvdx4-4800lm"]
+jobtype = "model"
+binary = "tsvdx4"
+keep_epochs = [3, 13, 21, 24]
+
+[jobs."tsvdx4-4800lm__knnf"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."tsvdx4-4800lm__knns"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds"]
+
+[jobs."tsvdx4-4800lm__knn-d"]
+jobtype = "model"
+binary = "tsvdx4"
+inputs_from = ["rtg_supp", "tsvdx4-4800lm_diff1"]
+extras = ["@train_preds"]
+
+[jobs."tsvdx4-2400lm"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-2400lm__knns"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds"]
+
+[jobs."tsvdx4-1600lm"]
+jobtype = "model"
+binary = "tsvdx4"
+keep_epochs = [2]
+
+[jobs."tsvdx4-400lm"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-400lm__knnf"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."tsvdx4-400lm__epochs"]
+jobtype = "legacy_eblend"
+binary = "tsvdx4"
+n_epochs = 20
+
+[jobs."tsvdx4p-1000lm"]
+jobtype = "model"
+binary = "tsvdx4p"
+
+[jobs."tsvdx4p-1000lm__knnf"]
+jobtype = "model"
+binary = "tsvdx4p"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."tsvdx4p-2000lm"]
+jobtype = "model"
+binary = "tsvdx4p"
+
+[jobs."tsvdx4p-2000lm__knnf"]
+jobtype = "model"
+binary = "tsvdx4p"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."tsvdx4p-4000lm"]
+jobtype = "model"
+binary = "tsvdx4p"
+
+[jobs."tsvdx4p-4000lm__epochs"]
+jobtype = "legacy_eblend"
+n_epochs = 20
+
+[jobs."tsvdx4p-6000lm"]
+jobtype = "model"
+binary = "tsvdx4p"
+
+[jobs."tsvdx4p-6000lm__knnf"]
+jobtype = "model"
+binary = "tsvdx4p"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."tsvdx4p-8000lm"]
+jobtype = "model"
+binary = "tsvdx4p"
+
+[jobs."tsvdx4p-8000lm__knnf"]
+jobtype = "model"
+binary = "tsvdx4p"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."tsvdx4p-16000lm"]
+jobtype = "model"
+binary = "tsvdx4p"
+keep_epochs = [9, 19]
+
+[jobs."tsvdx4-q16tb"]
+jobtype = "model"
+binary = "tsvdx4"
+
+[jobs."tsvdx4-q16tb__epochs"]
+jobtype = "legacy_eblend"
+binary = "tsvdx4"
+n_epochs = 8
+
+[jobs."tsvdx4-s20fo"]
+jobtype = "model"
+binary = "tsvdx4"
+keep_epochs = [8]
+
+[jobs."tsvdx4-t8cu"]
+jobtype = "model"
+binary = "tsvdx4"
+keep_epochs = [6]
+
+[jobs."tsvdx4-16-t"] # verified
+jobtype = "model"
+binary = "tsvdx4"
+keep_epochs = [1]
+
+[jobs."tsvdx4-16-t__knnf"]
+jobtype = "model"
+binary = "tsvdx4"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."tsvdx5-400"]
+jobtype = "model"
+binary = "tsvdx5"
+
+[jobs."tsvdx5-400__nlpp_paropt"]
+jobtype = "paropt"
+binary = "tsvdx5"
+extras = ["@train_preds"]
+outputs = [
+    "{preds}/{name}.out",
+    "{preds}/tsvdx5-400__nlpp_regs.npy",
+]
+
+[jobs."tsvdx5-400__nlpp"] # verified
+jobtype = "model"
+binary = "tsvdx5"
+inputs_from = ["tsvdx5-400__nlpp_paropt"]
+extras = ["@train_preds"]
+
+[jobs."tsvdx5-400__nlpp__knn3"] # verified
+jobtype = "model"
+binary = "tsvdx5"
+extras = ["@train_preds"]
+
+[jobs."tsvdx5-300"]
+jobtype = "model"
+binary = "tsvdx5"
+
+[jobs."tsvdx5-300__epochs"]
+jobtype = "legacy_eblend"
+binary = "tsvdx5"
+n_epochs = 23
+
+[jobs."tsvdx5-300__nlpp_paropt"]
+jobtype = "paropt"
+binary = "tsvdx5"
+extras = ["@train_preds"]
+outputs = [
+    "{preds}/{name}.out",
+    "{preds}/tsvdx5-300__nlpp_regs.npy",
+]
+
+[jobs."tsvdx5-300__nlpp"]
+jobtype = "model"
+binary = "tsvdx5"
+inputs_from = ["tsvdx5-300__nlpp_paropt"]
+extras = ["@train_preds"]
+
+[jobs."tsvdx5-300__nlpp__knn3"]
+jobtype = "model"
+binary = "tsvdx5"
+extras = ["@train_preds"]
+
+[jobs."tsvdx5-300__nlpp__knn-w"]
+jobtype = "model"
+binary = "tsvdx5"
+inputs_from = ["bin_wsupp"]
+extras = ["@train_preds"]
+
+[jobs."tsvdx5-120"]
+jobtype = "model"
+binary = "tsvdx5"
+outputs = [
+    "{preds}/{name}.{pr}.npy",
+    "{preds}/{name}.{fulltrain_pr}.npy",
+    "{preds}/{name}.out",
+    "{preds}/{name}.ifeat.{tr}.npy",
+    "{preds}/{name}.ifeat.{fulltrain_tr}.npy",
+]
+
+[jobs."tsvdx5-150"]
+jobtype = "model"
+binary = "tsvdx5"
+
+[jobs."tsvdx5-150__nlpp_paropt"]
+jobtype = "paropt"
+binary = "tsvdx5"
+extras = ["@train_preds"]
+outputs = [
+    "{preds}/{name}.out",
+    "{preds}/tsvdx5-150__nlpp_regs.npy",
+]
+
+[jobs."tsvdx5-150__nlpp"]
+jobtype = "model"
+binary = "tsvdx5"
+inputs_from = ["tsvdx5-150__nlpp_paropt"]
+extras = ["@train_preds"]
+
+[jobs."tsvdx5-150__nlpp__knnf"]
+jobtype = "model"
+binary = "tsvdx5"
+inputs_from = ["tsvdx5-120"]
+extras = ["@train_preds"]
+
+[jobs."tsvdx5-60"]
+jobtype = "model"
+binary = "tsvdx5"
+
+[jobs."tsvdx5-40"]
+jobtype = "model"
+binary = "tsvdx5"
+
+[jobs."tsvdx5-20"]
+jobtype = "model"
+binary = "tsvdx5"
+
+[jobs."tsvdx5-150o"]
+jobtype = "model"
+binary = "tsvdx5"
+keep_epochs = [6, 16, 24]
+
+[jobs."tsvdx5-120o"]
+jobtype = "model"
+binary = "tsvdx5"
+
+[jobs."tsvdx5-120o__knn3"]
+jobtype = "model"
+binary = "tsvdx5"
+extras = ["@train_preds"]
+
+[jobs."tsvdx5-120o__epochs"]
+jobtype = "legacy_eblend"
+binary = "tsvdx5"
+n_epochs = 28
+
+[jobs."tsvdx5-1200lm"]
+jobtype = "model"
+binary = "tsvdx5"
+
+[jobs."tsvdx6-300"]
+jobtype = "model"
+keep_epochs = [3, 12, 20]
+
+[jobs."tsvdx6-300-v2"]
+jobtype = "model"
+
+[jobs."bk1-10"] # verified
+jobtype = "model"
+binary = "bk"
+keep_epochs = [4]
+
+[jobs."bk3-20"] # verified
+jobtype = "model"
+binary = "bk"
+
+[jobs."bknbrx-50"]
+jobtype = "model"
+binary = "bknbrx"
+keep_epochs = [5, 9, 17, 21]
+
+[jobs."bknbrx-100"]
+jobtype = "model"
+binary = "bknbrx"
+keep_epochs = [1, 5]
+
+[jobs."bk3-20__knns"]
+jobtype = "model"
+binary = "bk"
+extras = ["@train_preds"]
+
+[jobs."bk3-30"]
+jobtype = "model"
+binary = "bk"
+
+# --- RBM base predictors ---
+
+[jobs."rbmx2-0"]
+jobtype = "model"
+binary = "rbmx2"
+
+[jobs."rbmx2-8e"]
+jobtype = "model"
+binary = "rbmx2"
+
+[jobs."rbmx2-8e__knnf"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."rbmx2-100e"]
+jobtype = "model"
+binary = "rbmx2"
+keep_epochs = [2, 7, 15]
+
+[jobs."rbmx2-300s"]
+jobtype = "model"
+binary = "rbmx2"
+keep_epochs = [24, 38, 46]
+
+[jobs."rbmx2-300s__knnf"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."rbmx2-300s__knn3"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds"]
+
+[jobs."rbmx2-500bp"]
+jobtype = "model"
+binary = "rbmx2"
+keep_epochs = [29]
+
+[jobs."rbmx2-500bp__knnf"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."rbmx2-16-t"] # updated
+jobtype = "model"
+binary = "rbmx2"
+
+[jobs."rbmx2-32-t"]
+jobtype = "model"
+binary = "rbmx2"
+
+[jobs."rbmx2-800bp"] # verified
+jobtype = "model"
+binary = "rbmx2"
+keep_epochs = [3, 24, 27]
+
+[jobs."rbmx2-600"]
+jobtype = "model"
+binary = "rbmx2"
+keep_epochs = [27]
+
+[jobs."rbmx2-500"]
+jobtype = "model"
+binary = "rbmx2"
+
+[jobs."rbmx2-400"]
+jobtype = "model"
+binary = "rbmx2"
+
+[jobs."rbmx2-400__knnf"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."rbmx2-500__knnf"] # verified
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."rbmx2-500__knn3"] # verified
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds"]
+
+[jobs."rbmx2-350e"]
+jobtype = "model"
+binary = "rbmx2"
+
+[jobs."rbmx2-350e__epochs"]
+jobtype = "legacy_eblend"
+binary = "rbmx2"
+n_epochs = 20
+
+[jobs."rbmx2-200"]
+jobtype = "legacy_model"
+binary = "rbmx2"
+
+[jobs."rbmx2-200__knn3"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds"]
+
+[jobs."rbmx2-160f"]
+jobtype = "model"
+binary = "rbmx2"
+
+[jobs."rbmx2-160f__epochs"]
+jobtype = "legacy_eblend"
+binary = "rbmx2"
+n_epochs = 20
+
+[jobs."rbmx2-150"]
+jobtype = "legacy_model"
+binary = "rbmx2"
+
+[jobs."rbmx2-150__knnf"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."rbmx2-150__knns"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds"]
+
+[jobs."rbmx2-60"]
+jobtype = "legacy_model"
+binary = "rbmx2"
+
+[jobs."rbmx2-60__knn3"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds"]
+
+[jobs."rbmx2-40"]
+jobtype = "legacy_model"
+binary = "rbmx2"
+
+[jobs."rbmx2-40__knn3"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds"]
+
+[jobs."rbmx2-14e"]
+jobtype = "model"
+binary = "rbmx2"
+
+[jobs."rbmx2-12"]
+jobtype = "model"
+binary = "rbmx2"
+
+[jobs."rbmx2-12__asym-16"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds"]
+
+[jobs."rbmx2-12__asym-16__knnf"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds", "@ifeat"]
+
+[jobs."rbmx2-12__asym-16__knn3"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds"]
+
+[jobs."rbmx2-10"]
+jobtype = "legacy_model"
+binary = "rbmx2"
+
+[jobs."rbmx2-10__knn3"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds"]
+
+[jobs."rbmx2-10__tsvdx4-10lm"]
+jobtype = "model"
+binary = "rbmx2"
+extras = ["@train_preds"]
+
+[jobs."rbmx2-10__tsvdx4-10lm__epochs"]
+jobtype = "legacy_eblend"
+binary = "rbmx2"
+n_epochs = 12
+
+# --- Other base predictors ---
+
+[jobs."mf-61"] # verified
+jobtype = "model"
+binary = "mf"
+
+[jobs."mf-61__knn3"]
+jobtype = "model"
+binary = "mf"
+extras = ["@train_preds"]
+
+[jobs."mf-61__asym-16"] # verified
+jobtype = "model"
+binary = "mf"
+extras = ["@train_preds"]
+keep_epochs = [2, 7]
+
+[jobs."mf-60"] # verified
+jobtype = "model"
+binary = "mf"
+
+[jobs."mf-60__knn3"]
+jobtype = "model"
+binary = "mf"
+extras = ["@train_preds"]
+
+[jobs."mfrbmx-50"] # verified
+jobtype = "model"
+
+[jobs."aex-16"] # verified
+jobtype = "model"
+binary = "aex"
+
+[jobs."aex-32"]
+jobtype = "model"
+binary = "aex"
+
+[jobs."aex-64"]
+jobtype = "model"
+binary = "aex"
+
+[jobs."aex-128"]
+jobtype = "model"
+binary = "aex"
+
+[jobs."cfnade-96"]
+jobtype = "model"
+binary = "cfnade"
+
+[jobs."cfnade-48"]
+jobtype = "model"
+binary = "cfnade"
+
+[jobs."cfnade-24"]
+jobtype = "model"
+binary = "cfnade"
+
+[jobs."cfnade-12"]
+jobtype = "model"
+binary = "cfnade"
+
+[jobs."als8-8"] # verified
+jobtype = "model"
+binary = "als8"
+
+[jobs."als8-8__knn3"]
+jobtype = "model"
+binary = "als8"
+extras = ["@train_preds"]
+
+# --- Voting features ---
+
+[jobs.vfeat1]
+jobtype = "vfeat"
+features = [
+    "vf000_constant",
+    "vf001_user_gt3_on_date",
+    "vf002_log_movie_cnt",
+    "vf003_log_user_dates",
+    "vf004_log_user_cnt",
+    "vf005_user_std",
+    "vf006_movie_std",
+    "vf007_log_user_tenure",
+    "vf008_log_user_date_cnt",
+    "vf009_log_product",
+    "vf010_bayesian_movie_minus_user",
+    "vf011_bayesian_user_mean",
+    "vf012_log_avg_rater_cnt",
+    "vf013_log_movie_date_std",
+    "vf014_user_date_bias_std",
+    "vf015_movie_single_day_pct",
+    "vf016_user_avg_movie_pop",
+    "vf017_log_sim_sum",
+    "vf018_sim_top20_pct",
+    "vf019_max_sim",
+    "vf020_svd_user_norm",
+    "vf021_svd_movie_norm",
+    "vf022_ordinal_svd_std",
+    "vf023_user_overlap",
+    "vf024_sameday_corr",
+    "vf025_has_r1_same_day",
+    "vf026_has_r2_same_day",
+    "vf027_has_r3_same_day",
+    "vf028_has_r4_same_day",
+    "vf029_has_r5_same_day",
+    "vf030_has_r1_other_day",
+    "vf031_has_r2_other_day",
+    "vf032_has_r3_other_day",
+    "vf033_has_r4_other_day",
+    "vf034_has_r5_other_day",
+    "vf035_log_r1_same_day",
+    "vf036_log_r2_same_day",
+    "vf037_log_r3_same_day",
+    "vf038_log_r4_same_day",
+    "vf039_log_r5_same_day",
+    "vf040_log_r1_other_day",
+    "vf041_log_r2_other_day",
+    "vf042_log_r3_other_day",
+    "vf043_log_r4_other_day",
+    "vf044_log_r5_other_day",
+    "vf045_movie_log_age",
+    "vf046_user_rating_velocity",
+    "vf047_movie_rating_velocity",
+    "vf048_user_date_position",
+    "vf049_movie_date_position",
+    "vf050_log_day",
+    "vf051_day_sin7",
+    "vf052_day_sin30",
+    "vf053_user_log_avg_day_gap",
+    "vf054_movie_log_distinct_dates",
+    "vf055_user_skewness",
+    "vf056_movie_skewness",
+    "vf057_user_kurtosis",
+    "vf058_movie_kurtosis",
+    "vf059_user_entropy",
+    "vf060_movie_entropy",
+    "vf061_user_pct_extreme",
+    "vf062_movie_pct_extreme",
+    "vf063_user_mode_frac",
+    "vf064_movie_mode_frac",
+    "vf065_movie_avg_rater_tenure",
+    "vf066_user_avg_movie_date_std",
+    "vf067_log_cnt_geometric",
+    "vf068_log_cnt_harmonic",
+    "vf069_user_std_x_movie_std",
+    "vf070_movie_avg_rater_std",
+    "vf071_user_avg_movie_mean",
+    "vf072_log_user_cnt_over_movie_cnt",
+    "vf073_user_tenure_x_log_movie_cnt",
+    "vf074_user_date_bias_std_x_movie_std",
+    "vf075_pct_r1_same_day",
+    "vf076_pct_r2_same_day",
+    "vf077_pct_r3_same_day",
+    "vf078_pct_r4_same_day",
+    "vf079_pct_r5_same_day",
+    "vf080_user_log_avg_batch",
+    "vf081_user_multi_day_pct",
+    "vf082_movie_log_ratings_per_date",
+    "vf083_user_log_max_day_cnt",
+    "vf084_same_day_mean_rating",
+    "vf085_same_day_std_rating",
+    "vf086_user_pct_popular",
+    "vf087_movie_pct_heavy_raters",
+    "vf088_user_last_date_diff",
+    "vf089_movie_last_date_diff",
+    "vf090_movie_rating_slope",
+    "vf091_user_rating_slope",
+    "vf092_movie_early_late_diff",
+    "vf093_user_early_late_diff",
+    "vf094_movie_temporal_z",
+    "vf095_user_temporal_z",
+    "vf096_user_herfindahl",
+    "vf097_movie_herfindahl",
+    "vf098_user_n_distinct_ratings",
+    "vf099_user_top2_concentration",
+    "vf100_movie_top2_concentration",
+    "vf101_movie_bimodality",
+    "vf102_user_bimodality",
+    "vf103_user_movie_mean_gap",
+    "vf104_user_movie_std_ratio",
+    "vf105_user_movie_entropy_diff",
+    "vf106_user_pct_at_movie_mode",
+    "vf107_movie_pct_at_user_mode",
+    "vf108_user_movie_dist_overlap",
+    "vf109_user_movie_dist_cosine",
+    "vf110_is_single_rating_day",
+    "vf111_same_day_cnt_norm",
+    "vf112_same_day_entropy",
+    "vf113_same_day_range",
+    "vf114_same_day_pct_high",
+    "vf115_same_day_pct_low",
+    "vf116_is_first_date",
+    "vf117_is_last_date",
+    "vf118_user_day_index_norm",
+    "vf119_log_movie_same_day_cnt",
+    "vf120_item_year_norm",
+    "vf121_log_item_age_at_rating",
+    "vf122_is_early_adopter",
+    "vf123_is_late_adopter",
+    "vf124_movie_maturity",
+    "vf125_user_avg_item_year",
+    "vf126_user_item_year_std",
+    "vf127_user_prefers_old",
+    "vf128_movie_avg_rater_mean",
+    "vf129_movie_avg_rater_entropy",
+]
+
+# --- LightGBM blends ---
+
+[jobs.gbr1]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+seeds = [1, 2, 3, 4, 5, 6, 7, 8]
+
+[jobs.gbr2]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+seeds = [1, 2, 3, 4, 5, 6]
+
+[jobs.gbr3]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+seeds = [1, 2, 3]
+
+[jobs.gbc1]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+seeds = [1, 2, 3, 4, 5]
+
+# --- MLP blends ---
+
+[jobs.mlpr1]
+jobtype = "mlpblend"
+groups = ["integrated", "rbm", "other"]
+seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+
+# --- FWLS blends ---
+
+[jobs.fwls1]
+jobtype = "fwlsblend"
+groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend"]
+seeds = [1]

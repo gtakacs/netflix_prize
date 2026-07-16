@@ -1,0 +1,58 @@
+use netflix_prize::{fit2, tx::{TxConfig, TxModel}, SPLIT_NEW};
+
+fn main() {
+    let cfg = TxConfig {
+        n_feat: 300,
+        n_epochs: 23,
+        seed: 42,
+        shuffle_users: true,
+        n_time_bins: 32,
+        beta: 0.3,
+        n_freq_bins: 16,
+        lr_u: 0.003,
+        lr_ud: 0.00125,
+        lr_u2: 7e-6,
+        lr_ub: 0.0031,
+        lr_ubd: 0.003,
+        lr_i: 0.0036,
+        lr_ib: 0.0036,
+        lr_y: 0.0005,
+        lr_yb: 2.5e-5,
+        lr_yd: 0.000267,
+        lr_tu: 0.0,
+        lr_ti: 0.000225,
+        lr_ta: 2.25e-5,
+        lr_ibf: 5e-5,
+        lr_iqf: 5e-6,
+        lr_cu: 0.002,
+        reg_iqf: 0.007,
+        reg_cu: 0.01,
+        reg_u: 0.0504,
+        reg_u2: 0.4,
+        reg_ud: 0.04,
+        reg_i: 0.00735,
+        reg_y: 0.04,
+        reg_yd: 0.02667,
+        sigma_iqf: 0.005,
+        sigma_u: 0.0015,
+        sigma_i: 0.005,
+        sigma_y: 0.00333,
+        sigma_yd: 0.009,
+        reset_u_epoch: 10,
+        // Global neighborhood (active for tsvdx6)
+        max_neighbors: 100,
+        lr_w: 0.0015, lr_c: 0.0015, reg_w: 0.002, reg_c: 0.002,
+        // Same-day neighborhood (v2: lower lr_w_day/lr_c_day than tsvdx6-300)
+        lr_w_day: 0.0008, lr_c_day: 0.0008, reg_w_day: 0.002, reg_c_day: 0.002,
+        // Sub-model lr multipliers (v2: w_nbr=0.7 vs 0.8 in tsvdx6-300)
+        w_bias: 0.8, w_factor: 0.8, w_nbr: 0.7,
+        sum_err_bug: false,
+        lambda1: 25.0,
+        lambda2: 10.0,
+        ordinal_head: None,
+        save_ifeat: false,
+        low_memory: false,
+        full_su: true,
+    };
+    fit2!(TxModel, cfg, "rtg", "tsvdx6-300-v2", SPLIT_NEW);
+}
