@@ -37,7 +37,7 @@ models      = "models-new.toml"
 inputs      = ["src/bin/gbm-{split.name}.rs"]
 inputs_from = ["vfeat1"]
 outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
-cmd = "cargo build --release --features lgbm --bin gbm-{split.name} && ./target/release/gbm-{split.name} {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds}"
+cmd = "cargo build --release --features lgbm --bin gbm-{split.name} && ./target/release/gbm-{split.name} {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds} {exclude}"
 
 # MLP cross-fit blend of base predictors + voting features. Like gbmblend but
 # with the mlp-<split> binary; one prediction per seed ({name}-s<seed>). MLP
@@ -48,7 +48,7 @@ models      = "models-new.toml"
 inputs      = ["src/bin/mlp-{split.name}.rs"]
 inputs_from = ["vfeat1"]
 outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
-cmd = "cargo build --release --features blas --bin mlp-{split.name} && ./target/release/mlp-{split.name} {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds}"
+cmd = "cargo build --release --features blas --bin mlp-{split.name} && ./target/release/mlp-{split.name} {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds} {exclude}"
 
 # FWLS (feature-weighted linear stacking) cross-fit blend: ridge on the
 # interaction features (base prediction × voting feature) with a 2-fold split,
@@ -60,7 +60,7 @@ models      = "models-new.toml"
 inputs      = ["src/bin/fwls.rs"]
 inputs_from = ["vfeat1"]
 outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
-cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds}"
+cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds} {exclude}"
 
 [defaults.paropt]
 inputs_from = ["ingest", "newsplit"]
@@ -922,6 +922,7 @@ seeds = [1, 2, 3, 4, 5, 6, 7, 8]
 [jobs.gbr2]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
+exclude = ["cfnade-96-ema95", "cfnade-48-swa47", "cfnade-12-ema95"]
 seeds = [1, 2, 3, 4, 5, 6]
 
 [jobs.gbr3]

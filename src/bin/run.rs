@@ -67,6 +67,12 @@ struct JobConfig {
     /// the comma-joined list to the `cmd` as `{groups}`; empty resolves to `all`.
     #[serde(default)]
     groups: Vec<String>,
+    /// Base-predictor names to drop from a blend job's model set. Each entry is
+    /// brace-expanded (like a model spec) and `>`-stripped before matching. The
+    /// runner both skips them when gating on `models` predictions and renders
+    /// them to the `cmd` as `{exclude}` = `-x '<name>' ...` (empty when unset).
+    #[serde(default)]
+    exclude: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -184,10 +190,19 @@ fn expand_blend_models(job: &mut JobConfig) {
     let Some(path) = job.models.clone() else { return; };
     let mg = load_models_toml(&path);
     let groups = select_groups(&mg, &job.groups);
+    // Names dropped via `exclude` must not gate the job (mirrors the binaries'
+    // `-x` filtering); brace-expand and `>`-strip each entry to match resolved names.
+    let excluded: std::collections::HashSet<String> = job.exclude.iter()
+        .flat_map(|raw| expand_specs(raw))
+        .map(|spec| spec.trim_start_matches('>').to_string())
+        .collect();
     for specs in groups.values() {
         for raw in specs {
             for spec in expand_specs(raw) {
                 let name = spec.trim_start_matches('>');
+                if excluded.contains(name) {
+                    continue;
+                }
                 for ds in ["{pr}", "{fulltrain_pr}"] {
                     let inp = format!("{{preds}}/{}.{}.npy", name, ds);
                     if !job.inputs.contains(&inp) {
@@ -218,6 +233,13 @@ fn build_subst_vars(job_name: &str, job: &JobConfig, pipeline: &Pipeline) -> Has
     }
     let groups_csv = if job.groups.is_empty() { "all".to_string() } else { job.groups.join(",") };
     vars.insert("groups".to_string(), groups_csv);
+    // Render exclusions as repeated `-x '<name>'` flags (empty string when unset,
+    // so a trailing `{exclude}` in the cmd template simply disappears).
+    let exclude_flags = job.exclude.iter()
+        .map(|e| format!("-x '{}'", e))
+        .collect::<Vec<_>>()
+        .join(" ");
+    vars.insert("exclude".to_string(), exclude_flags);
     vars
 }
 

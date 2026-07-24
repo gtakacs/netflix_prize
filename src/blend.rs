@@ -8,7 +8,7 @@ use ndarray::{Array1, Array2};
 use ndarray_npy::{read_npy, write_npy};
 use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
 use rayon::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub const DATA_DIR: &str = "data";
 pub const NOCLIP_OP: char = '>';
@@ -179,6 +179,92 @@ fn resolve_group(
             std::process::exit(2);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Model registry: flatten groups + apply exclusions
+// ---------------------------------------------------------------------------
+
+/// Flattened, exclusion-filtered model registry produced by [`flatten_groups`].
+pub struct FlatModels {
+    /// Deduplicated model names (clip prefix stripped), in first-seen order.
+    pub names: Vec<String>,
+    /// Parallel clip flags (`false` = no-clip, i.e. a `>` appeared for the name).
+    pub clip: Vec<bool>,
+    /// Group name → indices into `names`. Groups left empty by exclusion are dropped.
+    pub group_indices: IndexMap<String, Vec<usize>>,
+}
+
+impl FlatModels {
+    /// Reconstruct clip-prefixed spec strings (`>name` when no-clip) in `names`
+    /// order — the shape consumed by `load_preds`/`build_xy`.
+    pub fn specs(&self) -> Vec<String> {
+        self.names
+            .iter()
+            .zip(&self.clip)
+            .map(|(n, &c)| if c { n.clone() } else { format!("{NOCLIP_OP}{n}") })
+            .collect()
+    }
+}
+
+/// Flatten the selected `groups` into a deduplicated `(name, clip)` registry with
+/// group membership, dropping any model whose name matches an entry in `exclude`.
+/// Each `exclude` raw spec is brace-expanded via [`expand_specs`] and `>`-stripped
+/// before matching. Deduplication is by clip-stripped name in first-seen order,
+/// with the no-clip (`>`) variant winning on conflict. Emits a warning for any
+/// `--exclude` that matched no model and for any group left empty by exclusion.
+pub fn flatten_groups(groups: &IndexMap<String, Vec<String>>, exclude: &[String]) -> FlatModels {
+    let mut excluded: HashSet<String> = HashSet::new();
+    for raw in exclude {
+        for spec in expand_specs(raw) {
+            let name = spec.strip_prefix(NOCLIP_OP).unwrap_or(&spec).to_string();
+            excluded.insert(name);
+        }
+    }
+    let mut exclude_hit: HashSet<String> = HashSet::new();
+
+    let mut names: Vec<String> = Vec::new();
+    let mut clip: Vec<bool> = Vec::new();
+    let mut idx_of: HashMap<String, usize> = HashMap::new();
+    let mut group_indices: IndexMap<String, Vec<usize>> = IndexMap::new();
+
+    for (gname, specs) in groups {
+        let mut idxs = Vec::new();
+        for raw in specs {
+            for spec in expand_specs(raw) {
+                let (name, c) = match spec.strip_prefix(NOCLIP_OP) {
+                    Some(rest) => (rest.to_string(), false),
+                    None => (spec.clone(), true),
+                };
+                if excluded.contains(&name) {
+                    exclude_hit.insert(name);
+                    continue;
+                }
+                let i = *idx_of.entry(name.clone()).or_insert_with(|| {
+                    names.push(name.clone());
+                    clip.push(c);
+                    names.len() - 1
+                });
+                // Any '>' wins: a no-clip appearance disables clipping for the name.
+                if !c {
+                    clip[i] = false;
+                }
+                idxs.push(i);
+            }
+        }
+        // Drop groups emptied by exclusion rather than emit a degenerate row.
+        if idxs.is_empty() {
+            eprintln!("warning: group '{gname}' is empty after exclusion — skipping");
+            continue;
+        }
+        group_indices.insert(gname.clone(), idxs);
+    }
+
+    for name in excluded.difference(&exclude_hit) {
+        eprintln!("warning: --exclude '{name}' matched no model");
+    }
+
+    FlatModels { names, clip, group_indices }
 }
 
 /// Load one model's predictions for `dataset` from

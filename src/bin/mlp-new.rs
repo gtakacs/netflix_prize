@@ -6,10 +6,9 @@
 #[cfg(feature = "blas")]
 extern crate blas_src;
 
-use indexmap::IndexMap;
 use netflix_prize::blend::{
-    build_xy, cvk_blend, expand_specs, load_models_toml, load_quiz_mask, save_preds,
-    select_groups, NOCLIP_OP,
+    build_xy, cvk_blend, flatten_groups, load_models_toml, load_quiz_mask, save_preds,
+    select_groups,
 };
 use netflix_prize::mlp::{MlpBlender, MlpCfg};
 use std::collections::HashMap;
@@ -20,6 +19,7 @@ struct Args {
     pipeline: String,
     models: String,
     groups: Vec<String>,
+    exclude: Vec<String>,
     seeds: Vec<u64>,
 }
 
@@ -52,6 +52,7 @@ fn print_help() {
     println!("  -p FILE, --pipeline FILE   pipeline TOML (default: pipeline-old.toml)");
     println!("  -t FILE, --models FILE     base-predictor models TOML (default: models-new.toml)");
     println!("  --groups G,G,...           model groups to use (default: all groups in the TOML)");
+    println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
     println!("  --seeds N,N,...            net+fold seeds; one output NAME-s<N> per seed (data loaded once)");
     println!("  --seed N                   add a single seed (repeatable)");
     println!("  -h, --help                 show this help");
@@ -71,6 +72,7 @@ fn parse_args() -> Args {
         pipeline: "pipeline-old.toml".to_string(),
         models: "models-new.toml".to_string(),
         groups: Vec::new(),
+        exclude: Vec::new(),
         seeds: Vec::new(),
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -87,6 +89,7 @@ fn parse_args() -> Args {
                 }
                 i += 2;
             }
+            "-x" | "--exclude" => { a.exclude.push(need(&argv, i)); i += 2; }
             "--seed" => { a.seeds.push(need(&argv, i).parse().expect("bad --seed")); i += 2; }
             "--seeds" => {
                 for tok in need(&argv, i).split(',') {
@@ -133,34 +136,6 @@ fn load_pipeline_split(path: &str) -> HashMap<String, String> {
     p.split
 }
 
-/// Flatten all model groups into a single spec list, deduplicating by the
-/// clip-stripped name. If a name appears both clipped and `>`-prefixed, the
-/// no-clip variant wins (matching the ridge registry semantics).
-fn flatten_models(groups: &IndexMap<String, Vec<String>>) -> Vec<String> {
-    let mut idx_of: HashMap<String, usize> = HashMap::new();
-    let mut out: Vec<String> = Vec::new();
-    for specs in groups.values() {
-        for raw in specs {
-            for spec in expand_specs(raw) {
-                let noclip = spec.starts_with(NOCLIP_OP);
-                let name = spec.trim_start_matches(NOCLIP_OP).to_string();
-                match idx_of.get(&name) {
-                    Some(&i) => {
-                        if noclip && !out[i].starts_with(NOCLIP_OP) {
-                            out[i] = format!("{NOCLIP_OP}{name}");
-                        }
-                    }
-                    None => {
-                        idx_of.insert(name, out.len());
-                        out.push(spec);
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
 /// All voting-feature column names in `preds_dir` for `dataset`: files named
 /// `vf<digit>...{dataset}.npy`, with the `.{dataset}.npy` suffix stripped,
 /// sorted by name for deterministic column order.
@@ -196,13 +171,16 @@ fn main() -> ExitCode {
     let p = blend_config(&args.name);
     let mg = load_models_toml(&args.models);
     let groups = select_groups(&mg, &args.groups);
-    let base = flatten_models(&groups);
+    let base = flatten_groups(&groups, &args.exclude).specs();
     let voting = glob_voting(&preds, &pr);
 
     let seeds_str = args.seeds.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
     let groups_str = if args.groups.is_empty() { "all".to_string() } else { args.groups.join(",") };
     println!("Pipeline:  {} (split = {})", args.pipeline, split_name);
     println!("Models:    {} ({} base predictors, groups: {})", args.models, base.len(), groups_str);
+    if !args.exclude.is_empty() {
+        println!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
+    }
     println!("Voting:    {} features (glob {}/vf*.{}.npy)", voting.len(), preds, pr);
     println!("Columns:   {}", base.len() + voting.len());
     println!("Seeds:     {} (net init + fold permutation)", seeds_str);

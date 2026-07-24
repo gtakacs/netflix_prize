@@ -9,7 +9,7 @@ extern crate blas_src;
 
 use blas::dsyrk;
 use indexmap::IndexMap;
-use netflix_prize::blend::{expand_specs, load_models_toml, select_groups};
+use netflix_prize::blend::{flatten_groups, load_models_toml, select_groups};
 use nalgebra::{DMatrix, DVector};
 use ndarray::Array1;
 use ndarray_npy::read_npy;
@@ -19,7 +19,6 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::process::ExitCode;
 
-const NOCLIP_OP: char = '>';
 // Default clip bounds: inputs are clipped wide (mostly to tame outliers), the
 // blended output is clipped tight to the rating scale.
 const IN_CLIP_MIN: f64 = 0.0;
@@ -298,61 +297,11 @@ fn build_registry(
         groups.insert("manual".to_string(), args.models_manual.clone());
     }
 
-    // Normalized set of names to drop (each --exclude arg is brace-expanded and
-    // stripped of a leading '>' so it matches the resolved registry name).
-    let mut excluded: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for raw in &args.models_exclude {
-        for spec in expand_specs(raw) {
-            let name = spec.strip_prefix(NOCLIP_OP).unwrap_or(&spec).to_string();
-            excluded.insert(name);
-        }
-    }
-    let mut exclude_hit: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    let mut unique: Vec<String> = Vec::new();
-    let mut clip: Vec<bool> = Vec::new();
-    let mut idx_of: HashMap<String, usize> = HashMap::new();
-    let mut group_indices: IndexMap<String, Vec<usize>> = IndexMap::new();
-
-    for (gname, specs) in &groups {
-        let mut idxs = Vec::new();
-        for raw in specs {
-            for spec in expand_specs(raw) {
-                let (name, c) = if let Some(rest) = spec.strip_prefix(NOCLIP_OP) {
-                    (rest.to_string(), false)
-                } else {
-                    (spec.clone(), true)
-                };
-                if excluded.contains(&name) {
-                    exclude_hit.insert(name);
-                    continue;
-                }
-                let i = *idx_of.entry(name.clone()).or_insert_with(|| {
-                    unique.push(name.clone());
-                    clip.push(c);
-                    unique.len() - 1
-                });
-                // If the same name appears with conflicting clip flags, prefer no-clip
-                // (any '>' wins). This matches the Python load_preds semantics where
-                // '>' on the spec disables clipping at load time.
-                if !c { clip[i] = false; }
-                idxs.push(i);
-            }
-        }
-        // Drop groups emptied by exclusion rather than emit a degenerate
-        // bias-only fit row downstream.
-        if idxs.is_empty() {
-            eprintln!("warning: group '{}' is empty after exclusion — skipping", gname);
-            continue;
-        }
-        group_indices.insert(gname.clone(), idxs);
-    }
-
-    for name in excluded.difference(&exclude_hit) {
-        eprintln!("warning: --exclude '{}' matched no model", name);
-    }
-
-    (unique, clip, group_indices)
+    // Flatten groups → (name, clip, group→indices), applying --exclude. Each
+    // exclude arg is brace-expanded and '>'-stripped before matching; models are
+    // deduplicated by clip-stripped name with any '>' winning.
+    let flat = flatten_groups(&groups, &args.models_exclude);
+    (flat.names, flat.clip, flat.group_indices)
 }
 
 // ---------------------------------------------------------------------------

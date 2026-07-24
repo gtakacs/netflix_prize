@@ -8,12 +8,11 @@ extern crate blas;
 extern crate blas_src;
 
 use blas::dsyrk;
-use indexmap::IndexMap;
 use nalgebra::{DMatrix, DVector};
 use ndarray::Array1;
 use ndarray_npy::read_npy;
 use netflix_prize::blend::{
-    expand_specs, load_models_toml, save_preds, select_groups, CLIP_MAX, CLIP_MIN, NOCLIP_OP,
+    flatten_groups, load_models_toml, save_preds, select_groups, CLIP_MAX, CLIP_MIN,
 };
 use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
 use rayon::prelude::*;
@@ -95,6 +94,7 @@ struct Args {
     pipeline: String,
     models: String,
     groups: Vec<String>,
+    exclude: Vec<String>,
     seeds: Vec<u64>,
 }
 
@@ -118,6 +118,7 @@ fn print_help() {
     println!("  -p FILE, --pipeline FILE   pipeline TOML (default: pipeline-old.toml)");
     println!("  -t FILE, --models FILE     base-predictor models TOML (default: models-new.toml)");
     println!("  --groups G,G,...           model groups to use (default: all groups in the TOML)");
+    println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
     println!("  --seeds N,N,...            fold seeds; one output NAME-s<N> per seed (data loaded once)");
     println!("  --seed N                   add a single fold seed (repeatable)");
     println!("  -h, --help                 show this help");
@@ -139,6 +140,7 @@ fn parse_args() -> Args {
         pipeline: "pipeline-old.toml".to_string(),
         models: "models-new.toml".to_string(),
         groups: Vec::new(),
+        exclude: Vec::new(),
         seeds: Vec::new(),
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -155,6 +157,7 @@ fn parse_args() -> Args {
                 }
                 i += 2;
             }
+            "-x" | "--exclude" => { a.exclude.push(need(&argv, i)); i += 2; }
             "--seed" => { a.seeds.push(need(&argv, i).parse().expect("bad --seed")); i += 2; }
             "--seeds" => {
                 for tok in need(&argv, i).split(',') {
@@ -203,34 +206,6 @@ fn load_pipeline_split(path: &str) -> HashMap<String, String> {
     let s = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
     let p: P = toml::from_str(&s).unwrap_or_else(|e| panic!("parse {path}: {e}"));
     p.split
-}
-
-/// Flatten the selected groups into `(model_name, clip)` pairs, deduplicating by
-/// name. A `>`-prefixed spec disables clipping; if a name appears both ways the
-/// no-clip variant wins (matching the ridge/gbm registry semantics).
-fn flatten_models(groups: &IndexMap<String, Vec<String>>) -> (Vec<String>, Vec<bool>) {
-    let mut names: Vec<String> = Vec::new();
-    let mut clip: Vec<bool> = Vec::new();
-    let mut idx_of: HashMap<String, usize> = HashMap::new();
-    for specs in groups.values() {
-        for raw in specs {
-            for spec in expand_specs(raw) {
-                let (name, c) = match spec.strip_prefix(NOCLIP_OP) {
-                    Some(rest) => (rest.to_string(), false),
-                    None => (spec.clone(), true),
-                };
-                match idx_of.get(&name) {
-                    Some(&i) => { if !c { clip[i] = false; } }
-                    None => {
-                        idx_of.insert(name.clone(), names.len());
-                        names.push(name);
-                        clip.push(c);
-                    }
-                }
-            }
-        }
-    }
-    (names, clip)
 }
 
 /// All voting-feature column names in `preds_dir` for `dataset`: files named
@@ -486,7 +461,8 @@ fn main() -> ExitCode {
     let params = blend_config(&args.name);
     let mg = load_models_toml(&args.models);
     let groups = select_groups(&mg, &args.groups);
-    let (model_names, model_clip) = flatten_models(&groups);
+    let flat = flatten_groups(&groups, &args.exclude);
+    let (model_names, model_clip) = (flat.names, flat.clip);
     let voting = glob_voting(&preds, &pr);
 
     let m = model_names.len();
@@ -497,6 +473,9 @@ fn main() -> ExitCode {
 
     println!("Pipeline:  {} (split = {})", args.pipeline, split_name);
     println!("Models:    {} ({} predictors, groups: {})", args.models, m, groups_str);
+    if !args.exclude.is_empty() {
+        println!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
+    }
     println!("Voting:    {} context features (glob {}/vf*.{}.npy)", p, preds, pr);
     println!("Interact:  D = M·P + 1 = {}·{} + 1 = {}", m, p, d);
     println!("Lambda:    {}", params.lambda);
