@@ -134,6 +134,10 @@ rbm = [
 
     "rbmx2-500bp_ep29",
     "rbmx2-500bp__knnf",
+
+    "cfnade-96-ema95",
+    "cfnade-48-swa47",
+    "cfnade-12-ema95",
 ]
 
 other = [
