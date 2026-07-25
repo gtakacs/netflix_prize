@@ -930,6 +930,11 @@ jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
 seeds = [1, 2, 3]
 
+[jobs.gbr_opt]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+seeds = [1]
+
 [jobs.gbc1]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]

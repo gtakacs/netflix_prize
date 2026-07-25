@@ -38,6 +38,13 @@ mod real {
         num_leaves: usize,
         iters: usize,
         lr: f64,
+        min_data_in_leaf: usize,
+        feature_fraction: f64,
+        bagging_fraction: f64,
+        bagging_freq: usize,
+        lambda_l1: f64,
+        lambda_l2: f64,
+        max_bin: usize,
         folds: usize,
         threads: usize,
         /// `false` -> regression objective; `true` -> 5-class multiclass with the
@@ -46,12 +53,35 @@ mod real {
         multiclass: bool,
     }
 
+    /// Baseline: LightGBM defaults + the hand-set blends' shared knobs
+    /// (num_leaves 63, 200 iters, lr 0.1, 2-fold, 16 threads, regression). Each
+    /// `blend_config` branch overrides only what differs via struct-update.
+    impl Default for BlendParams {
+        fn default() -> Self {
+            Self {
+                num_leaves: 63, iters: 200, lr: 0.1,
+                min_data_in_leaf: 20, feature_fraction: 1.0,
+                bagging_fraction: 1.0, bagging_freq: 0,
+                lambda_l1: 0.0, lambda_l2: 0.0, max_bin: 255,
+                folds: 2, threads: 16, multiclass: false,
+            }
+        }
+    }
+
     fn blend_config(name: &str) -> BlendParams {
         match name {
-            "gbr1" => BlendParams { num_leaves: 63, iters: 200, lr: 0.1, folds: 2, threads: 16, multiclass: false },
-            "gbr2" => BlendParams { num_leaves: 63, iters: 50,  lr: 0.1, folds: 2, threads: 16, multiclass: false },
-            "gbr3" => BlendParams { num_leaves: 63, iters: 10,  lr: 0.1, folds: 2, threads: 16, multiclass: false },
-            "gbc1" => BlendParams { num_leaves: 63, iters: 200, lr: 0.1, folds: 2, threads: 16, multiclass: true },
+            "gbr1" => BlendParams::default(),
+            "gbr2" => BlendParams { iters: 50, ..Default::default() },
+            "gbr3" => BlendParams { iters: 10, ..Default::default() },
+            "gbc1" => BlendParams { multiclass: true, ..Default::default() },
+            // Bayesian-optimized regression GBR (tuned with the cfnade predictors in the set).
+            "gbr_opt" => BlendParams {
+                num_leaves: 95, iters: 192, lr: 0.044121174451031774,
+                min_data_in_leaf: 388, feature_fraction: 0.9740037968504494,
+                bagging_fraction: 0.9171367599808904, bagging_freq: 3,
+                lambda_l1: 4.074486360693566, lambda_l2: 4.156792180633296e-7,
+                max_bin: 127, ..Default::default()
+            },
             _ => panic!("unknown blend job '{name}' (add a branch in blend_config)"),
         }
     }
@@ -223,6 +253,13 @@ mod real {
             num_iterations: p.iters,
             num_leaves: p.num_leaves,
             learning_rate: p.lr,
+            min_data_in_leaf: p.min_data_in_leaf,
+            feature_fraction: p.feature_fraction,
+            bagging_fraction: p.bagging_fraction,
+            bagging_freq: p.bagging_freq,
+            lambda_l1: p.lambda_l1,
+            lambda_l2: p.lambda_l2,
+            max_bin: p.max_bin,
             num_threads: p.threads,
             ..Default::default()
         };
