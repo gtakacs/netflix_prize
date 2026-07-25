@@ -34,6 +34,7 @@ mod real {
 
     /// LightGBM + cross-fit parameters for a named blend. Add a branch per blend
     /// (mirrors the base-predictor dispatchers in `tsvdx4-new.rs` etc.).
+    #[derive(Debug)]
     struct BlendParams {
         num_leaves: usize,
         iters: usize,
@@ -228,12 +229,7 @@ mod real {
         println!("Voting:    {} features (glob {}/vf*.{}.npy)", voting.len(), preds, pr);
         println!("Columns:   {}", base.len() + voting.len());
         println!("Seeds:     {} (fold permutation)", seeds_str);
-        println!("Folds:     {}", p.folds);
-        let objective = if p.multiclass { "multiclass" } else { "regression" };
-        println!(
-            "LightGBM:  objective={} num_leaves={} iters={} lr={} threads={}",
-            objective, p.num_leaves, p.iters, p.lr, p.threads,
-        );
+        println!("Params:    {:?}", p);
         println!();
 
         println!("Loading probe set ({})...", pr);

@@ -24,21 +24,50 @@ struct Args {
 }
 
 /// MLP + cross-fit parameters for a named blend. Add a branch per blend.
+#[derive(Debug)]
 struct BlendParams {
     hidden: Vec<usize>,
     alpha: f64,
     lr: f64,
     iters: usize,
     batch: usize,
+    momentum: f64,
+    tol: f64,
+    n_iter_no_change: usize,
     folds: usize,
+}
+
+/// Baseline = the `mlpr1` config (create_nn: 64×64, alpha 0.05, lr 0.0004, 64
+/// iters, sklearn defaults for momentum/tol/early-stop, 2-fold). Each
+/// `blend_config` branch overrides only what differs via struct-update.
+impl Default for BlendParams {
+    fn default() -> Self {
+        Self {
+            hidden: vec![64, 64],
+            alpha: 0.05,
+            lr: 0.0004,
+            iters: 64,
+            batch: 200,
+            momentum: 0.9,
+            tol: 1e-4,
+            n_iter_no_change: 10,
+            folds: 2,
+        }
+    }
 }
 
 fn blend_config(name: &str) -> BlendParams {
     match name {
         // create_nn: (64, 64), alpha 0.05, lr 0.0004, 64 iters, 2-fold.
-        "mlpr1" => BlendParams { hidden: vec![64, 64], alpha: 0.05, lr: 0.0004, iters: 64, batch: 200, folds: 2 },
+        "mlpr1" => BlendParams::default(),
         // create_nn2: (64, 48, 32), otherwise identical.
-        "mlpr2" => BlendParams { hidden: vec![64, 48, 32], alpha: 0.05, lr: 0.0004, iters: 64, batch: 200, folds: 2 },
+        "mlpr2" => BlendParams { hidden: vec![64, 48, 32], ..Default::default() },
+        // Bayesian-optimized MLP (tuned with the cfnade predictors in the set).
+        "mlpr_opt" => BlendParams {
+            hidden: vec![32, 32], alpha: 0.24101624563575427, lr: 0.0005339808669500829,
+            iters: 80, momentum: 0.9148116502629432, tol: 2.890613343488106e-5,
+            n_iter_no_change: 9, ..Default::default()
+        },
         _ => panic!("unknown blend job '{name}' (add a branch in blend_config)"),
     }
 }
@@ -184,11 +213,7 @@ fn main() -> ExitCode {
     println!("Voting:    {} features (glob {}/vf*.{}.npy)", voting.len(), preds, pr);
     println!("Columns:   {}", base.len() + voting.len());
     println!("Seeds:     {} (net init + fold permutation)", seeds_str);
-    println!("Folds:     {}", p.folds);
-    println!(
-        "MLP:       hidden={:?} alpha={} lr={} iters={} batch={}",
-        p.hidden, p.alpha, p.lr, p.iters, p.batch,
-    );
+    println!("Params:    {:?}", p);
     println!();
 
     println!("Loading probe set ({})...", pr);
@@ -208,6 +233,9 @@ fn main() -> ExitCode {
             lr: p.lr,
             max_iter: p.iters,
             batch_size: p.batch,
+            momentum: p.momentum,
+            tol: p.tol,
+            n_iter_no_change: p.n_iter_no_change,
             seed,
             ..Default::default()
         };
