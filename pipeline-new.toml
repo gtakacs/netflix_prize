@@ -753,18 +753,22 @@ binary = "aex"
 [jobs."cfnade-96"]
 jobtype = "model"
 binary = "cfnade"
+keep_epochs = [10, 95]
 
 [jobs."cfnade-48"]
 jobtype = "model"
 binary = "cfnade"
-
-[jobs."cfnade-24"]
-jobtype = "model"
-binary = "cfnade"
+keep_epochs = [25, 95]
 
 [jobs."cfnade-12"]
 jobtype = "model"
 binary = "cfnade"
+keep_epochs = [40]
+
+[jobs."cfnade-96r"]
+jobtype = "model"
+binary = "cfnade"
+keep_epochs = [95]
 
 [jobs."als8-8"] # verified
 jobtype = "model"

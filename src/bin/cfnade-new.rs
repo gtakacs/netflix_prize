@@ -15,12 +15,14 @@ fn main() {
     let job_name = args.get(1).map(|s| s.as_str()).unwrap_or("");
 
     match job_name {
-        // Capacity-scaled presets (hidden, rank); all other knobs are the
-        // canonical defaults (epochs 96, swa_start 18, ms [64,72]).
-        "cfnade-96" => run_preset(job_name, 320, 96),
-        "cfnade-48" => run_preset(job_name, 160, 48),
-        "cfnade-24" => run_preset(job_name, 80, 24),
-        "cfnade-12" => run_preset(job_name, 40, 12),
+        // Capacity-scaled presets (hidden, rank, n_epochs); other knobs are the
+        // canonical defaults (swa_start 18, ms [64,72]).
+        "cfnade-96" => run_preset(job_name, 320, 96, 95),
+        "cfnade-48" => run_preset(job_name, 160, 48, 95),
+        "cfnade-12" => run_preset(job_name, 40, 12, 40),
+
+        // Same as cfnade-96 but with SWA averaging disabled (raw SGD weights).
+        "cfnade-96r" => run_preset_noswa(job_name, 320, 96, 95),
 
         "--test" => run_test(),
 
@@ -33,8 +35,19 @@ fn main() {
 /// Run a capacity-scaled preset through the standard fit2 pipeline.
 /// `save_probe_each_epoch` writes per-epoch predictions: `{name}_ep{NN}.probex.npy`
 /// in phase 1 and `{name}_ep{NN}.qual.npy` in the fulltrain phase.
-fn run_preset(job_name: &str, n_hidden: usize, rank: usize) {
-    let cfg = CfNadeConfig { n_hidden, rank, ..CfNadeConfig::default() };
+fn run_preset(job_name: &str, n_hidden: usize, rank: usize, n_epochs: usize) {
+    run_preset_swa(job_name, n_hidden, rank, n_epochs, CfNadeConfig::default().swa_start);
+}
+
+/// Like `run_preset` but with SWA averaging disabled: `swa_start > n_epochs`
+/// keeps `swa_count` at 0, so `update_swa`/`swap_with_swa` are no-ops and every
+/// prediction (per-epoch and final) uses the raw SGD weights.
+fn run_preset_noswa(job_name: &str, n_hidden: usize, rank: usize, n_epochs: usize) {
+    run_preset_swa(job_name, n_hidden, rank, n_epochs, usize::MAX);
+}
+
+fn run_preset_swa(job_name: &str, n_hidden: usize, rank: usize, n_epochs: usize, swa_start: usize) {
+    let cfg = CfNadeConfig { n_hidden, rank, n_epochs, swa_start, ..CfNadeConfig::default() };
     fit2!(CfNadeModel, cfg, "rtg", job_name, SPLIT_NEW, save_probe_each_epoch: true);
 }
 
