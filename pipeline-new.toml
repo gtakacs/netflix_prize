@@ -922,7 +922,7 @@ seeds = [1, 2, 3, 4, 5, 6, 7]
 [jobs.gbr2]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
-exclude = ["cfnade-96-ema95", "cfnade-48-swa47", "cfnade-12-ema95"]
+exclude = ["cfnade-96-ema95", "cfnade-48_ep47", "cfnade-12-ema95"]
 seeds = [1, 2, 3, 4, 5, 6]
 
 [jobs.gbr3]
