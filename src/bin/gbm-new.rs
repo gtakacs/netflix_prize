@@ -83,6 +83,14 @@ mod real {
                 lambda_l1: 4.074486360693566, lambda_l2: 4.156792180633296e-7,
                 max_bin: 127, ..Default::default()
             },
+            // Bayesian-optimized multiclass classifier GBC (tuned with the cfnade predictors in the set).
+            "gbc_opt" => BlendParams {
+                num_leaves: 191, iters: 400, lr: 0.019929113104398585,
+                min_data_in_leaf: 527, feature_fraction: 0.6706351917324398,
+                bagging_fraction: 0.9755609862783436, bagging_freq: 3,
+                lambda_l1: 2.0251302591612124e-7, lambda_l2: 5.4822642770934344e-6,
+                max_bin: 127, multiclass: true, ..Default::default()
+            },
             _ => panic!("unknown blend job '{name}' (add a branch in blend_config)"),
         }
     }

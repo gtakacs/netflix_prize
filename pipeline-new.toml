@@ -944,6 +944,11 @@ jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
 seeds = [1, 2, 3, 4, 5]
 
+[jobs.gbc_opt]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+seeds = [1]
+
 # --- MLP blends ---
 
 [jobs.mlpr1]
