@@ -60,7 +60,9 @@ pub fn log_columns(models: &[String], voting: &[String]) {
 /// - Braced (clearer in TOML files): `prefix{a,b,c}suffix` or `prefix{1..3}suffix`.
 ///   `{...}` is a comma list whose items may be integer `..` ranges; the prefix
 ///   and suffix wrap each result. `{}` is a shell metacharacter, so quote it on
-///   the command line — it is meant for files.
+///   the command line — it is meant for files. An empty *first* item is the bare
+///   `prefix+suffix` (shell-style `tsvdx4-60{,__knns,__epochs}`); an empty item
+///   anywhere else (a trailing/middle stray comma) is a hard error.
 /// - Raw (convenient in the shell, no quoting): `prefix:item,item,...`. A single
 ///   `:` marks the shared prefix; each comma item is appended to it and may be
 ///   text (`tsvdx4-:60,70b`) or an integer `..` range (`gbr1_s:1..3`). The `:`
@@ -83,12 +85,23 @@ pub fn expand_specs(spec: &str) -> Vec<String> {
 
 /// Split `list` on commas, expand each item's integer `..` range, and wrap each
 /// result with `prefix`/`suffix`.
+///
+/// An empty alternative = the bare `prefix+suffix`, allowed ONLY as the first
+/// item (shell-style `a{,b,c}`). A trailing or middle empty item is a malformed
+/// spec (usually a stray comma) and panics, to force a fix.
 fn expand_list(list: &str, prefix: &str, suffix: &str) -> Vec<String> {
     let mut out = Vec::new();
-    for item in list.split(',') {
+    for (idx, item) in list.split(',').enumerate() {
         let item = item.trim();
         if item.is_empty() {
-            continue;
+            if idx == 0 {
+                out.push(format!("{prefix}{suffix}"));
+                continue;
+            }
+            panic!(
+                "malformed brace spec '{prefix}{{{list}}}{suffix}': an empty \
+                 alternative is allowed only as the first item (leading comma)"
+            );
         }
         let mut expanded = Vec::new();
         expand_range_into(item, &mut expanded);
