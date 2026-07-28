@@ -17,9 +17,10 @@ fn main() {
 #[cfg(feature = "lgbm")]
 mod real {
     use netflix_prize::blend::{
-        build_xy, cvk_blend, flatten_groups, load_models_toml, load_quiz_mask, save_preds,
-        select_groups, LgbmBlender, LgbmCfg, LgbmMode,
+        build_xy, close_log, cvk_blend, flatten_groups, load_models_toml, load_quiz_mask, log_columns,
+        open_log, save_preds, select_groups, LgbmBlender, LgbmCfg, LgbmMode,
     };
+    use netflix_prize::teeln;
     use std::collections::HashMap;
     use std::process::ExitCode;
 
@@ -230,18 +231,20 @@ mod real {
         let base = flatten_groups(&groups, &args.exclude).specs();
         let voting = glob_voting(&preds, &pr);
 
+        open_log(&preds, &args.name);
         let seeds_str = args.seeds.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
         let groups_str = if args.groups.is_empty() { "all".to_string() } else { args.groups.join(",") };
-        println!("Pipeline:  {} (split = {})", args.pipeline, split_name);
-        println!("Models:    {} ({} base predictors, groups: {})", args.models, base.len(), groups_str);
+        teeln!("[{}]", args.name);
+        teeln!("Pipeline:  {} (split = {})", args.pipeline, split_name);
+        teeln!("Models:    {} ({} base predictors, groups: {})", args.models, base.len(), groups_str);
         if !args.exclude.is_empty() {
-            println!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
+            teeln!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
         }
-        println!("Voting:    {} features (glob {}/vf*.{}.npy)", voting.len(), preds, pr);
-        println!("Columns:   {}", base.len() + voting.len());
-        println!("Seeds:     {} (fold permutation)", seeds_str);
-        println!("Params:    {:?}", p);
-        println!();
+        teeln!("Voting:    {} features (glob {}/vf*.{}.npy)", voting.len(), preds, pr);
+        teeln!("Seeds:     {} (fold permutation)", seeds_str);
+        teeln!("Params:    {:?}", p);
+        log_columns(&base, &voting);
+        teeln!();
 
         println!("Loading probe set ({})...", pr);
         let (x_pr, y_pr) = build_xy(&base, &voting, &preds, &preds, &pr);
@@ -273,8 +276,8 @@ mod real {
 
         // Feature matrices are loaded once and reused across all seeds.
         for &seed in &args.seeds {
-            println!();
-            println!("=== seed {} ===", seed);
+            teeln!();
+            teeln!("=== seed {} ===", seed);
             let (p_pr, p_ql) = cvk_blend::<LgbmBlender>(
                 &x_pr,
                 y_pr.as_slice().unwrap(),
@@ -289,9 +292,10 @@ mod real {
             let ql_path = format!("{preds}/{}-s{seed}.{fulltrain_pr}.npy", args.name);
             save_preds(&pr_path, &p_pr);
             save_preds(&ql_path, &p_ql);
-            println!("Saved {} / {}", pr_path, ql_path);
+            teeln!("Saved {} / {}", pr_path, ql_path);
         }
 
+        close_log();
         ExitCode::SUCCESS
     }
 }

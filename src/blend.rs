@@ -9,11 +9,51 @@ use ndarray_npy::{read_npy, write_npy};
 use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::{BufWriter, Write};
 
 pub const DATA_DIR: &str = "data";
 pub const NOCLIP_OP: char = '>';
 pub const CLIP_MIN: f32 = 1.00;
 pub const CLIP_MAX: f32 = 4.95;
+
+// ---------------------------------------------------------------------------
+// Blend run logging (tee to `{preds_dir}/{name}.out`)
+// ---------------------------------------------------------------------------
+
+/// Open `{preds_dir}/{name}.out` as the crate-wide tee log (same mechanism as
+/// `fit2_inner`), so subsequent `teeln!` calls write to stdout *and* the file.
+/// Overwrites any prior log; pair with [`close_log`].
+pub fn open_log(preds_dir: &str, name: &str) {
+    std::fs::create_dir_all(preds_dir).ok();
+    let path = format!("{preds_dir}/{name}.out");
+    *crate::LOG_FILE.lock().unwrap() =
+        Some(BufWriter::new(File::create(&path).unwrap_or_else(|e| panic!("create {path}: {e}"))));
+}
+
+/// Flush and close the tee log opened by [`open_log`].
+pub fn close_log() {
+    if let Some(mut f) = crate::LOG_FILE.lock().unwrap().take() {
+        let _ = f.flush();
+    }
+}
+
+/// Tee the exact blend input column order (stdout + `.out`): base predictors
+/// first in `models` order, then `voting` features — matching `build_xy`'s
+/// column layout. A leading `>` on a model marks a no-clip column.
+pub fn log_columns(models: &[String], voting: &[String]) {
+    let n = models.len();
+    crate::teeln!(
+        "Columns:   {} ({} base + {} voting), in build order:",
+        n + voting.len(), n, voting.len(),
+    );
+    for (j, m) in models.iter().enumerate() {
+        crate::teeln!("  {:>4}  {}", j, m);
+    }
+    for (k, f) in voting.iter().enumerate() {
+        crate::teeln!("  {:>4}  {}  (voting)", n + k, f);
+    }
+}
 
 /// Expand a model spec into individual names. Two forms:
 ///

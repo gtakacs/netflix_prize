@@ -12,8 +12,10 @@ use nalgebra::{DMatrix, DVector};
 use ndarray::Array1;
 use ndarray_npy::read_npy;
 use netflix_prize::blend::{
-    flatten_groups, load_models_toml, save_preds, select_groups, CLIP_MAX, CLIP_MIN,
+    close_log, flatten_groups, load_models_toml, log_columns, open_log, save_preds, select_groups,
+    CLIP_MAX, CLIP_MIN,
 };
+use netflix_prize::teeln;
 use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -471,16 +473,19 @@ fn main() -> ExitCode {
     let groups_str = if args.groups.is_empty() { "all".to_string() } else { args.groups.join(",") };
     let seeds_str = args.seeds.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
 
-    println!("Pipeline:  {} (split = {})", args.pipeline, split_name);
-    println!("Models:    {} ({} predictors, groups: {})", args.models, m, groups_str);
+    open_log(&preds, &args.name);
+    teeln!("[{}]", args.name);
+    teeln!("Pipeline:  {} (split = {})", args.pipeline, split_name);
+    teeln!("Models:    {} ({} predictors, groups: {})", args.models, m, groups_str);
     if !args.exclude.is_empty() {
-        println!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
+        teeln!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
     }
-    println!("Voting:    {} context features (glob {}/vf*.{}.npy)", p, preds, pr);
-    println!("Interact:  D = M·P + 1 = {}·{} + 1 = {}", m, p, d);
-    println!("Lambda:    {}", params.lambda);
-    println!("Seeds:     {} (2-fold split per seed)", seeds_str);
-    println!();
+    teeln!("Voting:    {} context features (glob {}/vf*.{}.npy)", p, preds, pr);
+    teeln!("Interact:  D = M·P + 1 = {}·{} + 1 = {}", m, p, d);
+    teeln!("Lambda:    {}", params.lambda);
+    teeln!("Seeds:     {} (2-fold split per seed)", seeds_str);
+    log_columns(&model_names, &voting);
+    teeln!();
 
     // Probe data: predictions + context features fully in memory (for fold
     // gathering); ratings as f64.
@@ -513,8 +518,8 @@ fn main() -> ExitCode {
     };
 
     for &seed in &args.seeds {
-        println!();
-        println!("=== seed {} ===", seed);
+        teeln!();
+        teeln!("=== seed {} ===", seed);
 
         let mut idxs: Vec<usize> = (0..n).collect();
         idxs.shuffle(&mut StdRng::seed_from_u64(seed));
@@ -531,13 +536,13 @@ fn main() -> ExitCode {
         for (k, &(tr, te)) in [(0usize, 1usize), (1, 0)].iter().enumerate() {
             let train = &folds[tr];
             let test = &folds[te];
-            println!("  fold {}/2: train {} predict {}", k + 1, train.len(), test.len());
+            teeln!("  fold {}/2: train {} predict {}", k + 1, train.len(), test.len());
 
             let (amat, b) = build_gram_fold(train, &xpr, &fpr, &y_pr, m, p, params.lambda);
             let w = solve_fold(amat, b);
 
             let p_te = predict_rows(test, &xpr, &fpr, &w, m, p, true);
-            println!("    fold RMSE {:.5}", rmse_sel(&p_te, &y_pr, test));
+            teeln!("    fold RMSE {:.5}", rmse_sel(&p_te, &y_pr, test));
             for (ii, &row) in test.iter().enumerate() {
                 yhat_pr[row] = p_te[ii];
             }
@@ -560,15 +565,16 @@ fn main() -> ExitCode {
             }
         }
         let quiz_rmse = (quiz_sse / quiz_n as f64).sqrt();
-        println!(" ProbeRMSE: {:.5}", probe_rmse);
-        println!("  QuizRMSE: {:.5}", quiz_rmse);
+        teeln!(" ProbeRMSE: {:.5}", probe_rmse);
+        teeln!("  QuizRMSE: {:.5}", quiz_rmse);
 
         let pr_path = format!("{preds}/{}-s{seed}.{pr}.npy", args.name);
         let ql_path = format!("{preds}/{}-s{seed}.{fulltrain_pr}.npy", args.name);
         save_preds(&pr_path, &Array1::from_iter(yhat_pr.iter().map(|&v| v as f32)));
         save_preds(&ql_path, &Array1::from_iter(yhat_ql.iter().map(|&v| v as f32)));
-        println!("Saved {} / {}", pr_path, ql_path);
+        teeln!("Saved {} / {}", pr_path, ql_path);
     }
 
+    close_log();
     ExitCode::SUCCESS
 }

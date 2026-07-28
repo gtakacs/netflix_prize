@@ -36,7 +36,7 @@ outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
 models      = "models-new.toml"
 inputs      = ["src/bin/gbm-{split.name}.rs"]
 inputs_from = ["vfeat1"]
-outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
+outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
 cmd = "cargo build --release --features lgbm --bin gbm-{split.name} && ./target/release/gbm-{split.name} {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds} {exclude}"
 
 # MLP cross-fit blend of base predictors + voting features. Like gbmblend but
@@ -47,7 +47,7 @@ cmd = "cargo build --release --features lgbm --bin gbm-{split.name} && ./target/
 models      = "models-new.toml"
 inputs      = ["src/bin/mlp-{split.name}.rs"]
 inputs_from = ["vfeat1"]
-outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
+outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
 cmd = "cargo build --release --features blas --bin mlp-{split.name} && ./target/release/mlp-{split.name} {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds} {exclude}"
 
 # FWLS (feature-weighted linear stacking) cross-fit blend: ridge on the
@@ -59,7 +59,7 @@ cmd = "cargo build --release --features blas --bin mlp-{split.name} && ./target/
 models      = "models-new.toml"
 inputs      = ["src/bin/fwls.rs"]
 inputs_from = ["vfeat1"]
-outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
+outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
 cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds} {exclude}"
 
 [defaults.paropt]

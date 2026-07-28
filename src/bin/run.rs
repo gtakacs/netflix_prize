@@ -310,7 +310,9 @@ fn expand_seeds(outputs: &[String], seeds: &[u64]) -> Vec<String> {
     }
     let mut out = Vec::new();
     for tpl in outputs {
-        if tpl.contains("{name}.") {
+        // Only per-seed prediction files (`.npy`) are seed-expanded; a single
+        // `{name}.out` log covers the whole job, so it passes through unchanged.
+        if tpl.contains("{name}.") && tpl.ends_with(".npy") {
             for s in seeds {
                 out.push(tpl.replace("{name}.", &format!("{{name}}-s{s}.")));
             }
