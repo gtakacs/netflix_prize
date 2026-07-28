@@ -60,10 +60,9 @@ fn blend_config(name: &str) -> BlendParams {
     match name {
         // create_nn: (64, 64), alpha 0.05, lr 0.0004, 64 iters, 2-fold.
         "mlpr1" => BlendParams::default(),
-        // create_nn2: (64, 48, 32), otherwise identical.
-        "mlpr2" => BlendParams { hidden: vec![64, 48, 32], ..Default::default() },
-        // Bayesian-optimized MLP (tuned with the cfnade predictors in the set).
-        "mlpr_opt" => BlendParams {
+
+        // Bayesian-optimized MLP.
+        "mlpr2o" => BlendParams {
             hidden: vec![32, 32], alpha: 0.24101624563575427, lr: 0.0005339808669500829,
             iters: 80, momentum: 0.9148116502629432, tol: 2.890613343488106e-5,
             n_iter_no_change: 9, ..Default::default()

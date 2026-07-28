@@ -926,40 +926,40 @@ seeds = [1, 2, 3, 4, 5, 6, 7]
 [jobs.gbr2]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
-exclude = ["cfnade-96-ema95", "cfnade-48_ep47", "cfnade-12-ema95"]
-seeds = [1, 2, 3, 4, 5, 6]
+exclude = ["cfnade-96_ep95", "cfnade-96_ep10", "cfnade-48_ep95", "cfnade-48_ep25", "cfnade-12_ep40", "cfnade-96r_ep95"]
+seeds = [1, 2, 3]
 
 [jobs.gbr3]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
-seeds = [1, 2, 3]
+seeds = [1]
 
-[jobs.gbr_opt]
+[jobs.gbr4o]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
-seeds = [1, 2, 3, 4]
+seeds = [1, 2, 3]
 
 [jobs.gbc1]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
 seeds = [1, 2, 3, 4, 5]
 
-[jobs.gbc_opt]
+[jobs.gbc2o]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
 seeds = [1]
 
 # --- MLP blends ---
 
-[jobs.mlpr1]
-jobtype = "mlpblend"
-groups = ["integrated", "rbm", "other"]
-seeds = [1, 2, 3, 4, 5, 6, 7, 8]
+# [jobs.mlpr1]
+# jobtype = "mlpblend"
+# groups = ["integrated", "rbm", "other"]
+# seeds = [1, 2, 3, 4, 5, 6, 7, 8]
 
-[jobs.mlpr_opt]
+[jobs.mlpr2o]
 jobtype = "mlpblend"
 groups = ["integrated", "rbm", "other"]
-seeds = [1, 2, 3, 4, 5, 6, 7]
+seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 # --- FWLS blends ---
 

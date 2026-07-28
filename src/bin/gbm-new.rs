@@ -74,17 +74,20 @@ mod real {
             "gbr1" => BlendParams::default(),
             "gbr2" => BlendParams { iters: 50, ..Default::default() },
             "gbr3" => BlendParams { iters: 10, ..Default::default() },
-            "gbc1" => BlendParams { multiclass: true, ..Default::default() },
-            // Bayesian-optimized regression GBR (tuned with the cfnade predictors in the set).
-            "gbr_opt" => BlendParams {
+
+            // Bayesian-optimized regression GBR.
+            "gbr4o" => BlendParams {
                 num_leaves: 95, iters: 192, lr: 0.044121174451031774,
                 min_data_in_leaf: 388, feature_fraction: 0.9740037968504494,
                 bagging_fraction: 0.9171367599808904, bagging_freq: 3,
                 lambda_l1: 4.074486360693566, lambda_l2: 4.156792180633296e-7,
                 max_bin: 127, ..Default::default()
             },
-            // Bayesian-optimized multiclass classifier GBC (tuned with the cfnade predictors in the set).
-            "gbc_opt" => BlendParams {
+
+            "gbc1" => BlendParams { multiclass: true, ..Default::default() },
+
+            // Bayesian-optimized multiclass classifier GBC.
+            "gbc2o" => BlendParams {
                 num_leaves: 191, iters: 400, lr: 0.019929113104398585,
                 min_data_in_leaf: 527, feature_fraction: 0.6706351917324398,
                 bagging_fraction: 0.9755609862783436, bagging_freq: 3,
