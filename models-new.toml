@@ -1,13 +1,8 @@
 integrated = [
-    "tsvdx4-60",
-    "tsvdx4-60__knns",
-    "tsvdx4-60__epochs",
-    "tsvdx4-d0tb__epochs",
-    "tsvdx4-d0tb__knn3",
+    "tsvdx4-60{,__knns,__epochs}",
+    "tsvdx4-d0tb__{epochs,knn3}",
     "tsvdx4-f1__epochs",
-    "tsvdx4-h8nb",
-    "tsvdx4-h8nb_ep01",
-    "tsvdx4-h8nb__knn3",
+    "tsvdx4-h8nb{,_ep01,__knn3}",
     "tsvdx4-l32nb_ep03",
     "tsvdx4-m1n",
     "tsvdx4-n8nbo__knn3",
@@ -15,24 +10,17 @@ integrated = [
 
     "tsvdx4-160o-nsvd1",
     ">tsvdx4-80o-bias",
-    "tsvdx4-60o__knns",
-    "tsvdx4-60o__epochs",
+    "tsvdx4-60o__{knns,epochs}",
 
     "tsvdx4-2400lm__knns",
     ">tsvdx4-2400lm-bias",
     "tsvdx4-1600lm_ep02",
-    "tsvdx4-400lm__knnf",
-    "tsvdx4-400lm__epochs",
-    ">tsvdx4-400lm-mf",
-    ">tsvdx4-400lm-nsvd1",
+    "tsvdx4-400lm__{knnf,epochs}",
+    ">tsvdx4-400lm-{mf,nsvd1}",
 
-    "tsvdx5-400__knn3",
-    "tsvdx5-400__nlpp__knn3",
-    "tsvdx5-300__epochs",
-    "tsvdx5-300__nlpp__knn3",
-    "tsvdx5-300__nlpp__knn-w",
-    "tsvdx5-150__nlpp",
-    "tsvdx5-150__nlpp__knnf",
+    "tsvdx5-400__{knn3,nlpp__knn3}",
+    "tsvdx5-300__{epochs,nlpp__knn3,nlpp__knn-w}",
+    "tsvdx5-150__{nlpp,nlpp__knnf}",
     ">tsvdx5-150-mf",
     "tsvdx5-60",
     ">tsvdx5-40-nsvd1",
@@ -41,76 +29,49 @@ integrated = [
 
     "tsvdx5-150o",
     ">tsvdx5-150o-bias",
-    "tsvdx5-150o_ep06",
-    "tsvdx5-150o_ep16",
-    "tsvdx5-150o_ep24",
-    "tsvdx5-120o",
-    "tsvdx5-120o__knn3",
-    "tsvdx5-120o__epochs",
+    "tsvdx5-150o_ep{06,16,24}",
+    "tsvdx5-120o{,__knn3,__epochs}",
     ">tsvdx5-120o-bias",
 
     "tsvdx5-1200lm__epochs",
     ">tsvdx5-1200lm-bias",
 
-    "tsvdx4-4800lm_ep03",
-    "tsvdx4-4800lm_ep13",
-    "tsvdx4-4800lm_ep21",
-    "tsvdx4-4800lm_ep24",
-    "tsvdx4-4800lm__knnf",
-    "tsvdx4-4800lm__knns",
-    "tsvdx4-4800lm__knn-d",
+    "tsvdx4-4800lm_ep{03,13,21,24}",
+    "tsvdx4-4800lm__{knnf,knns,knn-d}",
 
     "tsvdx4-q16tb__epochs",
     "tsvdx4-s20fo_ep08",
     "tsvdx4-t8cu_ep06",
 
-    "tsvdx4-16-t_ep01",
-    "tsvdx4-16-t",
+    "tsvdx4-16-{t_ep01,t}",
     ">tsvdx4-16-t__knnf",
 
-    "tsvdx6-300",
-    "tsvdx6-300_ep03",
-    "tsvdx6-300_ep12",
-    "tsvdx6-300_ep20",
-    "tsvdx6-300-v2",
+    "tsvdx6-300{,_ep03,_ep12,_ep20,-v2}",
 
-    "bk1-10_ep04",
-    "bk1-10",
+    "bk1-{10_ep04,10}",
     "bk3-20__knns",
     "bk3-30",
 
-    "tsvdx4p-1000lm__knnf",   # non-deterministic!
-    "tsvdx4p-2000lm__knnf",   # non-deterministic!
-    "tsvdx4p-4000lm__epochs", # non-deterministic!
-    "tsvdx4p-6000lm__knnf",   # non-deterministic!
-    "tsvdx4p-8000lm__knnf",   # non-deterministic!
-    "tsvdx4p-16000lm_ep09",   # non-deterministic!
-    "tsvdx4p-16000lm_ep19",   # non-deterministic!
+    "tsvdx4p-{1000,2000}lm__knnf", # non-deterministic!
+    "tsvdx4p-4000lm__epochs",      # non-deterministic!
+    "tsvdx4p-{6000,8000}lm__knnf", # non-deterministic!
+    "tsvdx4p-16000lm_ep{09,19}",   # non-deterministic!
 ]
 
 rbm = [
-    "rbmx2-800bp_ep03",
-    "rbmx2-800bp_ep24",
-    "rbmx2-800bp_ep27",
+    "rbmx2-800bp_ep{03,24,27}",
     "rbmx2-600_ep27",
-    "rbmx2-500",
-    "rbmx2-500__knnf",
-    "rbmx2-500__knn-m",
-    "rbmx2-500__knn-w",
+    "rbmx2-500{,__knnf,__knn-m,__knn-w}",
     "rbmx2-400__knnf",
     ">rbmx2-400-p4",
     "rbmx2-200__knn3",
-    "rbmx2-350e",
-    "rbmx2-350e__epochs",
-    "rbmx2-160f",
-    "rbmx2-160f__epochs",
-    "rbmx2-150__knnf",
-    "rbmx2-150__knns",
+    "rbmx2-350e{,__epochs}",
+    "rbmx2-160f{,__epochs}",
+    "rbmx2-150__{knnf,knns}",
     "rbmx2-60__knn3",
     "rbmx2-40__knn3",
     "rbmx2-14e",
-    "rbmx2-12__asym-16__knnf",
-    "rbmx2-12__asym-16__knn3",
+    "rbmx2-12__asym-16__{knnf,knn3}",
     "rbmx2-10__knn3",
     "rbmx2-10__tsvdx4-10lm__epochs",
     ">rbmx2-10__tsvdx4-10lm-nsvd1",
@@ -119,58 +80,40 @@ rbm = [
     "rbmx2-0",
     "rbmx2-8e__knnf",
 
-    "rbmx2-100e_ep02",
-    "rbmx2-100e_ep07",
-    "rbmx2-100e_ep15",
+    "rbmx2-100e_ep{02,07,15}",
 
     "rbmx2-16-t",
     "rbmx2-32-t",
 
-    "rbmx2-300s__knnf",
-    "rbmx2-300s__knn3",
-    "rbmx2-300s_ep24",
-    "rbmx2-300s_ep38",
-    "rbmx2-300s_ep46",
+    "rbmx2-300s{__knnf,__knn3}",
+    "rbmx2-300s_ep{24,38,46}",
 
-    "rbmx2-500bp_ep29",
-    "rbmx2-500bp__knnf",
-
-    "cfnade-96_ep95",
-    "cfnade-96_ep10",
-    "cfnade-48_ep95",
-    "cfnade-48_ep25",
-    "cfnade-12_ep40",
-    "cfnade-96r_ep95",
+    "rbmx2-500bp{_ep29,__knnf}",
 ]
 
 other = [
+    "cfnade-96_ep{95,10}",
+    "cfnade-48_ep{95,25}",
+    "cfnade-12_ep40",
+    "cfnade-96r_ep95",
+
     "mf-61__knn3",
-    "mf-61__asym-16",
-    "mf-61__asym-16_ep02",
-    "mf-61__asym-16_ep07",
-    "mf-60",
-    "mf-60__knn3",
-    "als8-8",
-    "als8-8__knn3",
+    "mf-61__asym-16{,_ep02,_ep07}",
+    "mf-60{,__knn3}",
+    "als8-8{,__knn3}",
     "mfrbmx-50",
 
-    "aex-16",
-    "aex-32",
-    "aex-64",
-    "aex-128",
+    "aex-{16,32,64,128}",
     
-    "bknbrx-50_ep05",  # non-deterministic!
-    "bknbrx-50_ep09",  # non-deterministic!
-    "bknbrx-50_ep17",  # non-deterministic!
-    "bknbrx-50_ep21",  # non-deterministic!
-    "bknbrx-100_ep01", # non-deterministic!
-    "bknbrx-100_ep05", # non-deterministic!
+    "bknbrx-50_ep{05,09,17,21}", # non-deterministic!
+    "bknbrx-100_ep{01,05}",      # non-deterministic!
 ]
 
 # Second-level blend outputs (predictions produced by the gbm/mlp blend jobs).
 # Only consumed by blenders that explicitly list these groups via `--groups`
 # (e.g. fwls); the gbr*/gbc*/mlpr* jobs select the base groups instead, so they
 # never blend over their own outputs.
+
 gbmblend = [
     "gbr1-s{1..7}",
     "gbr2-s{1..3}",
