@@ -465,7 +465,8 @@ fn main() -> ExitCode {
     let groups = select_groups(&mg, &args.groups);
     let flat = flatten_groups(&groups, &args.exclude);
     let (model_names, model_clip) = (flat.names, flat.clip);
-    let voting = glob_voting(&preds, &pr);
+    let vf_dir = format!("{preds}/vf");
+    let voting = glob_voting(&vf_dir, &pr);
 
     let m = model_names.len();
     let p = voting.len();
@@ -480,7 +481,7 @@ fn main() -> ExitCode {
     if !args.exclude.is_empty() {
         teeln!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
     }
-    teeln!("Voting:    {} context features (glob {}/vf*.{}.npy)", p, preds, pr);
+    teeln!("Voting:    {} context features (glob {}/vf*.{}.npy)", p, vf_dir, pr);
     teeln!("Interact:  D = M·P + 1 = {}·{} + 1 = {}", m, p, d);
     teeln!("Lambda:    {}", params.lambda);
     teeln!("Seeds:     {} (2-fold split per seed)", seeds_str);
@@ -494,7 +495,7 @@ fn main() -> ExitCode {
     let n = y_pr.len();
     let no_clip = vec![false; p];
     let xpr = load_cols(&model_names, &model_clip, &preds, &pr, n);
-    let fpr = load_cols(&voting, &no_clip, &preds, &pr, n);
+    let fpr = load_cols(&voting, &no_clip, &vf_dir, &pr, n);
 
     // Qual data: ratings + quiz mask in memory; predictions streamed per block.
     let y_ql: Array1<i8> = read_npy(format!("data/{fulltrain_pr}/ratings.npy"))
@@ -505,11 +506,11 @@ fn main() -> ExitCode {
     let quiz_n = is_test.iter().filter(|&&t| t == 0).count();
     println!("Probe: {} rows, Qual: {} rows ({} quiz)", n, n_q, quiz_n);
 
-    let open_readers = |names: &[String]| -> Vec<NpyF32Reader> {
+    let open_readers = |names: &[String], dir: &str| -> Vec<NpyF32Reader> {
         names
             .iter()
             .map(|name| {
-                let path = format!("{preds}/{name}.{fulltrain_pr}.npy");
+                let path = format!("{dir}/{name}.{fulltrain_pr}.npy");
                 let r = NpyF32Reader::open(&path);
                 assert_eq!(r.len, n_q, "{}: len {} != qual {}", path, r.len, n_q);
                 r
@@ -530,8 +531,8 @@ fn main() -> ExitCode {
         let mut yhat_ql = vec![0.0f64; n_q];
 
         // Qual readers reused across folds (re-seeked per block).
-        let mut xr = open_readers(&model_names);
-        let mut fr = open_readers(&voting);
+        let mut xr = open_readers(&model_names, &preds);
+        let mut fr = open_readers(&voting, &vf_dir);
 
         for (k, &(tr, te)) in [(0usize, 1usize), (1, 0)].iter().enumerate() {
             let train = &folds[tr];

@@ -2383,6 +2383,10 @@ fn save_features(features: &[Array1<f32>], sel: &Selection, dir: &str, ds_name: 
 /// are not computed at all.
 pub fn save_vfeat1(name: &str, sel: Selection, split: Split) {
     std::fs::create_dir_all(split.preds_dir).unwrap();
+    // Voting features live in a `vf/` subdir of the preds dir (the `.out` log
+    // stays in the preds dir itself).
+    let vf_dir = format!("{}/vf", split.preds_dir);
+    std::fs::create_dir_all(&vf_dir).unwrap();
 
     let owns_log = crate::LOG_FILE.lock().unwrap().is_none();
     if owns_log {
@@ -2399,7 +2403,7 @@ pub fn save_vfeat1(name: &str, sel: Selection, split: Split) {
     let pr = Dataset::load(split.pr, "rtg", split.preds_dir);
     let stats = VotingFeatures1::new(&tr, &sel);
     let features = stats.compute_all(&pr);
-    save_features(&features, &sel, split.preds_dir, split.pr);
+    save_features(&features, &sel, &vf_dir, split.pr);
     drop(features);
     drop(stats);
     drop(pr);
@@ -2410,7 +2414,7 @@ pub fn save_vfeat1(name: &str, sel: Selection, split: Split) {
     let qual = Dataset::load(split.fulltrain_pr, "rtg", split.preds_dir);
     let stats = VotingFeatures1::new(&fulltrain, &sel);
     let features = stats.compute_all(&qual);
-    save_features(&features, &sel, split.preds_dir, split.fulltrain_pr);
+    save_features(&features, &sel, &vf_dir, split.fulltrain_pr);
 
     if owns_log {
         if let Some(mut lf) = crate::LOG_FILE.lock().unwrap().take() {

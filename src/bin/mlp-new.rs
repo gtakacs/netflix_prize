@@ -201,7 +201,8 @@ fn main() -> ExitCode {
     let mg = load_models_toml(&args.models);
     let groups = select_groups(&mg, &args.groups);
     let base = flatten_groups(&groups, &args.exclude).specs();
-    let voting = glob_voting(&preds, &pr);
+    let vf_dir = format!("{preds}/vf");
+    let voting = glob_voting(&vf_dir, &pr);
 
     open_log(&preds, &args.name);
     let seeds_str = args.seeds.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
@@ -212,16 +213,16 @@ fn main() -> ExitCode {
     if !args.exclude.is_empty() {
         teeln!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
     }
-    teeln!("Voting:    {} features (glob {}/vf*.{}.npy)", voting.len(), preds, pr);
+    teeln!("Voting:    {} features (glob {}/vf*.{}.npy)", voting.len(), vf_dir, pr);
     teeln!("Seeds:     {} (net init + fold permutation)", seeds_str);
     teeln!("Params:    {:?}", p);
     log_columns(&base, &voting);
     teeln!();
 
     println!("Loading probe set ({})...", pr);
-    let (x_pr, y_pr) = build_xy(&base, &voting, &preds, &preds, &pr);
+    let (x_pr, y_pr) = build_xy(&base, &voting, &preds, &vf_dir, &pr);
     println!("Loading qual set ({})...", fulltrain_pr);
-    let (x_ql, y_ql) = build_xy(&base, &voting, &preds, &preds, &fulltrain_pr);
+    let (x_ql, y_ql) = build_xy(&base, &voting, &preds, &vf_dir, &fulltrain_pr);
     let qz = load_quiz_mask(&fulltrain_pr);
     println!("Probe: {} rows, Qual: {} rows", y_pr.len(), y_ql.len());
 

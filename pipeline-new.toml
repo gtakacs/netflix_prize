@@ -82,8 +82,8 @@ inputs_from = ["ingest", "newsplit"]
 inputs = ["src/bin/{name}-{split.name}.rs"]
 # `{feature}` is expanded once per entry in the job's `features` list.
 outputs = [
-    "{preds}/{feature}.{pr}.npy",
-    "{preds}/{feature}.{fulltrain_pr}.npy",
+    "{preds}/vf/{feature}.{pr}.npy",
+    "{preds}/vf/{feature}.{fulltrain_pr}.npy",
     "{preds}/{name}.out",
 ]
 cmd = "cargo build --release --bin {name}-{split.name} && ./target/release/{name}-{split.name}"
