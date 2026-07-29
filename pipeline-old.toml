@@ -1,6 +1,6 @@
 # Pipeline definition for SPLIT_OLD
 # Data: data/{train,probe,fulltrain,qual}/
-# Outputs: preds/, features/
+# Outputs: preds_old/
 
 [split]
 name         = "old"
@@ -8,8 +8,8 @@ tr           = "train"
 pr           = "probe"
 fulltrain_tr = "fulltrain"
 fulltrain_pr = "qual"
-preds        = "preds"
-features     = "features"
+preds        = "preds_old"
+sim          = "sim"
 
 # --- Defaults per job type ---
 
