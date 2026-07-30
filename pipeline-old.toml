@@ -40,6 +40,16 @@ inputs        = ["src/bin/gbm.rs"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
 cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-old.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
 
+# MLP cross-fit blend for the old split. The mlp binary is split-agnostic (the
+# split comes from -p); models/voting come from the old-split TOMLs. No vfeat
+# producer here — voting files gate via {voting}. Built with the 'blas' feature.
+[defaults.mlpblend]
+models        = "models-old.toml"
+voting_models = "voting-old.toml"
+inputs        = ["src/bin/mlp.rs"]
+outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
+cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-old.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
+
 # --- Data preparation ---
 
 # Download the original Netflix Prize dataset from archive.org (no Kaggle
@@ -64,5 +74,30 @@ cmd = "./target/release/ingest"
 [jobs.gbr1]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
-voting = ["gold"]
+voting = ["all"]
 seeds = [1, 2, 3, 4, 5, 6, 7]
+
+[jobs.gbr2]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+voting = ["all"]
+exclude = ["cfnade-96_ep95"]
+seeds = [1, 2, 3]
+
+[jobs.gbr3]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+voting = ["all"]
+seeds = [1]
+
+[jobs.gbr4o]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+voting = ["all"]
+seeds = [1, 2, 3]
+
+[jobs.mlpr2o]
+jobtype = "mlpblend"
+groups = ["integrated", "rbm", "other"]
+voting = ["all"]
+seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9]
