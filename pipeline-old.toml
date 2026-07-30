@@ -50,6 +50,17 @@ inputs        = ["src/bin/mlp.rs"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
 cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-old.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
 
+# FWLS (feature-weighted linear stacking) cross-fit blend for the old split. The
+# fwls binary is split-agnostic (the split comes from -p); models/voting come
+# from the old-split TOMLs. No vfeat producer here — voting files gate via
+# {voting}. Built with the 'blas' feature.
+[defaults.fwlsblend]
+models        = "models-old.toml"
+voting_models = "voting-old.toml"
+inputs        = ["src/bin/fwls.rs"]
+outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
+cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-old.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
+
 # --- Data preparation ---
 
 # Download the original Netflix Prize dataset from archive.org (no Kaggle
@@ -96,8 +107,18 @@ groups = ["integrated", "rbm", "other"]
 voting = ["all"]
 seeds = [1, 2, 3]
 
+# --- MLP blends ---
+
 [jobs.mlpr2o]
 jobtype = "mlpblend"
 groups = ["integrated", "rbm", "other"]
 voting = ["all"]
-seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+seeds = [1, 2, 3, 4, 5, 6, 7]
+
+# --- FWLS blends ---
+
+[jobs.fwls1]
+jobtype = "fwlsblend"
+groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend"]
+voting = ["all"]
+seeds = [1]
