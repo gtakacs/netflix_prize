@@ -33,34 +33,37 @@ outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
 # come from the `groups` of {models} (default: all groups) + the voting (vf*)
 # glob. Built with the 'lgbm' feature (compiles LightGBM C++ on first build).
 [defaults.gbmblend]
-models      = "models-new.toml"
-inputs      = ["src/bin/gbm-{split.name}.rs"]
-inputs_from = ["vfeat1"]
-outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features lgbm --bin gbm-{split.name} && ./target/release/gbm-{split.name} {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds} {exclude}"
+models        = "models-new.toml"
+voting_models = "voting-new.toml"
+inputs        = ["src/bin/gbm.rs"]
+inputs_from   = ["vfeat1"]
+outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
+cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-new.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
 
 # MLP cross-fit blend of base predictors + voting features. Like gbmblend but
-# with the mlp-<split> binary; one prediction per seed ({name}-s<seed>). MLP
+# with the mlp binary; one prediction per seed ({name}-s<seed>). MLP
 # params come from blend_config(NAME). Built with the 'blas' feature so the dense
 # products go through OpenBLAS (dgemm).
 [defaults.mlpblend]
-models      = "models-new.toml"
-inputs      = ["src/bin/mlp-{split.name}.rs"]
-inputs_from = ["vfeat1"]
-outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin mlp-{split.name} && ./target/release/mlp-{split.name} {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds} {exclude}"
+models        = "models-new.toml"
+voting_models = "voting-new.toml"
+inputs        = ["src/bin/mlp.rs"]
+inputs_from   = ["vfeat1"]
+outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
+cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-new.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
 
 # FWLS (feature-weighted linear stacking) cross-fit blend: ridge on the
 # interaction features (base prediction × voting feature) with a 2-fold split,
 # one prediction per seed. Lambda from blend_config(NAME). Model groups from
-# {models} via {groups}; context features are the vfeat1 vf* glob. The `fwls`
+# {models} via {groups}; context features from {voting_models} via {voting}. The `fwls`
 # binary is split-agnostic (the split comes from -p). Built with 'blas'.
 [defaults.fwlsblend]
-models      = "models-new.toml"
-inputs      = ["src/bin/fwls.rs"]
-inputs_from = ["vfeat1"]
-outputs     = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} --groups {groups} --seeds {seeds} {exclude}"
+models        = "models-new.toml"
+voting_models = "voting-new.toml"
+inputs        = ["src/bin/fwls.rs"]
+inputs_from   = ["vfeat1"]
+outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
+cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
 
 [defaults.paropt]
 inputs_from = ["ingest", "newsplit"]
@@ -80,10 +83,12 @@ cmd = "cargo build --release --bin nbstats-{split.name} && ./target/release/nbst
 [defaults.vfeat]
 inputs_from = ["ingest", "newsplit"]
 inputs = ["src/bin/{name}-{split.name}.rs"]
-# `{feature}` is expanded once per entry in the job's `features` list.
+voting_models = "voting-new.toml"
+# `{feature}` expands once per resolved voting spec (from `voting_models`/`voting`);
+# specs carry the `vf/` prefix, so outputs land in `{preds}/vf/`.
 outputs = [
-    "{preds}/vf/{feature}.{pr}.npy",
-    "{preds}/vf/{feature}.{fulltrain_pr}.npy",
+    "{preds}/{feature}.{pr}.npy",
+    "{preds}/{feature}.{fulltrain_pr}.npy",
     "{preds}/{name}.out",
 ]
 cmd = "cargo build --release --bin {name}-{split.name} && ./target/release/{name}-{split.name}"
@@ -783,170 +788,45 @@ extras = ["@train_preds"]
 
 [jobs.vfeat1]
 jobtype = "vfeat"
-features = [
-    "vf000_constant",
-    "vf001_user_gt3_on_date",
-    "vf002_log_movie_cnt",
-    "vf003_log_user_dates",
-    "vf004_log_user_cnt",
-    "vf005_user_std",
-    "vf006_movie_std",
-    "vf007_log_user_tenure",
-    "vf008_log_user_date_cnt",
-    "vf009_log_product",
-    "vf010_bayesian_movie_minus_user",
-    "vf011_bayesian_user_mean",
-    "vf012_log_avg_rater_cnt",
-    "vf013_log_movie_date_std",
-    "vf014_user_date_bias_std",
-    "vf015_movie_single_day_pct",
-    "vf016_user_avg_movie_pop",
-    "vf017_log_sim_sum",
-    "vf018_sim_top20_pct",
-    "vf019_max_sim",
-    "vf020_svd_user_norm",
-    "vf021_svd_movie_norm",
-    "vf022_ordinal_svd_std",
-    "vf023_user_overlap",
-    "vf024_sameday_corr",
-    "vf025_has_r1_same_day",
-    "vf026_has_r2_same_day",
-    "vf027_has_r3_same_day",
-    "vf028_has_r4_same_day",
-    "vf029_has_r5_same_day",
-    "vf030_has_r1_other_day",
-    "vf031_has_r2_other_day",
-    "vf032_has_r3_other_day",
-    "vf033_has_r4_other_day",
-    "vf034_has_r5_other_day",
-    "vf035_log_r1_same_day",
-    "vf036_log_r2_same_day",
-    "vf037_log_r3_same_day",
-    "vf038_log_r4_same_day",
-    "vf039_log_r5_same_day",
-    "vf040_log_r1_other_day",
-    "vf041_log_r2_other_day",
-    "vf042_log_r3_other_day",
-    "vf043_log_r4_other_day",
-    "vf044_log_r5_other_day",
-    "vf045_movie_log_age",
-    "vf046_user_rating_velocity",
-    "vf047_movie_rating_velocity",
-    "vf048_user_date_position",
-    "vf049_movie_date_position",
-    "vf050_log_day",
-    "vf051_day_sin7",
-    "vf052_day_sin30",
-    "vf053_user_log_avg_day_gap",
-    "vf054_movie_log_distinct_dates",
-    "vf055_user_skewness",
-    "vf056_movie_skewness",
-    "vf057_user_kurtosis",
-    "vf058_movie_kurtosis",
-    "vf059_user_entropy",
-    "vf060_movie_entropy",
-    "vf061_user_pct_extreme",
-    "vf062_movie_pct_extreme",
-    "vf063_user_mode_frac",
-    "vf064_movie_mode_frac",
-    "vf065_movie_avg_rater_tenure",
-    "vf066_user_avg_movie_date_std",
-    "vf067_log_cnt_geometric",
-    "vf068_log_cnt_harmonic",
-    "vf069_user_std_x_movie_std",
-    "vf070_movie_avg_rater_std",
-    "vf071_user_avg_movie_mean",
-    "vf072_log_user_cnt_over_movie_cnt",
-    "vf073_user_tenure_x_log_movie_cnt",
-    "vf074_user_date_bias_std_x_movie_std",
-    "vf075_pct_r1_same_day",
-    "vf076_pct_r2_same_day",
-    "vf077_pct_r3_same_day",
-    "vf078_pct_r4_same_day",
-    "vf079_pct_r5_same_day",
-    "vf080_user_log_avg_batch",
-    "vf081_user_multi_day_pct",
-    "vf082_movie_log_ratings_per_date",
-    "vf083_user_log_max_day_cnt",
-    "vf084_same_day_mean_rating",
-    "vf085_same_day_std_rating",
-    "vf086_user_pct_popular",
-    "vf087_movie_pct_heavy_raters",
-    "vf088_user_last_date_diff",
-    "vf089_movie_last_date_diff",
-    "vf090_movie_rating_slope",
-    "vf091_user_rating_slope",
-    "vf092_movie_early_late_diff",
-    "vf093_user_early_late_diff",
-    "vf094_movie_temporal_z",
-    "vf095_user_temporal_z",
-    "vf096_user_herfindahl",
-    "vf097_movie_herfindahl",
-    "vf098_user_n_distinct_ratings",
-    "vf099_user_top2_concentration",
-    "vf100_movie_top2_concentration",
-    "vf101_movie_bimodality",
-    "vf102_user_bimodality",
-    "vf103_user_movie_mean_gap",
-    "vf104_user_movie_std_ratio",
-    "vf105_user_movie_entropy_diff",
-    "vf106_user_pct_at_movie_mode",
-    "vf107_movie_pct_at_user_mode",
-    "vf108_user_movie_dist_overlap",
-    "vf109_user_movie_dist_cosine",
-    "vf110_is_single_rating_day",
-    "vf111_same_day_cnt_norm",
-    "vf112_same_day_entropy",
-    "vf113_same_day_range",
-    "vf114_same_day_pct_high",
-    "vf115_same_day_pct_low",
-    "vf116_is_first_date",
-    "vf117_is_last_date",
-    "vf118_user_day_index_norm",
-    "vf119_log_movie_same_day_cnt",
-    "vf120_item_year_norm",
-    "vf121_log_item_age_at_rating",
-    "vf122_is_early_adopter",
-    "vf123_is_late_adopter",
-    "vf124_movie_maturity",
-    "vf125_user_avg_item_year",
-    "vf126_user_item_year_std",
-    "vf127_user_prefers_old",
-    "vf128_movie_avg_rater_mean",
-    "vf129_movie_avg_rater_entropy",
-]
+voting = ["all"]
 
 # --- LightGBM blends ---
 
 [jobs.gbr1]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
+voting = ["all"]
 seeds = [1, 2, 3, 4, 5, 6, 7]
 
 [jobs.gbr2]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
+voting = ["all"]
 exclude = ["cfnade-96_ep95", "cfnade-96_ep10", "cfnade-48_ep95", "cfnade-48_ep25", "cfnade-12_ep40", "cfnade-96r_ep95"]
 seeds = [1, 2, 3]
 
 [jobs.gbr3]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
+voting = ["all"]
 seeds = [1]
 
 [jobs.gbr4o]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
+voting = ["all"]
 seeds = [1, 2, 3]
 
 [jobs.gbc1]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
+voting = ["all"]
 seeds = [1, 2, 3, 4, 5]
 
 [jobs.gbc2o]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
+voting = ["all"]
 seeds = [1]
 
 # --- MLP blends ---
@@ -959,6 +839,7 @@ seeds = [1]
 [jobs.mlpr2o]
 jobtype = "mlpblend"
 groups = ["integrated", "rbm", "other"]
+voting = ["all"]
 seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 # --- FWLS blends ---
@@ -966,4 +847,5 @@ seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 [jobs.fwls1]
 jobtype = "fwlsblend"
 groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend"]
+voting = ["all"]
 seeds = [1]

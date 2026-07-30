@@ -1,0 +1,42 @@
+# Voting-feature groups for SPLIT_OLD (mirrors models-old.toml).
+
+gold = [
+    "fwls/A1",           # constant 1.0
+    "fwls/F3",           # binary: user gave rating=3 on same day
+    "fwls/C1",           # log(avg user rating count for movie's raters)
+    "claude105/035",     # knn_same_day: kNN prediction from user's same-day rated movies
+    "fwls/A4",           # log(user's distinct rating date count)
+    "fwls/A8",           # log(days since user's first rating + 1)
+    "claude105/030",     # log_movie_same_day_count: log(movie's rating count on this day + 1)
+    "claude105/088",     # log_user_movie_support: log(1 + shared raters with >=3 movie overlap)
+    "fwls/F19",          # log(1 + count of user's rating=4 on other days)
+    "fwls/A9",           # log(user's rating count on this date + 1)
+    "fwls/A5",           # log(user's total rating count)
+    "knn-25w__tsvdx-16", # tsvdx on the residual of weighted support based kNN
+    "claude105/015",     # user_days_active_32d: user's distinct active days in last 32 days
+    "claude105/050",     # user_rating_entropy: entropy of user's 1-5 rating distribution
+    "fwls/A10",          # log(movie_cnt) * log(user_cnt)
+    "claude105/025",     # movie_last_32d_avg: regularized avg movie rating in last 32 days
+    "fwls/C2",           # log(std dev of movie's rating dates)
+    "fwls/F4",           # binary: user gave rating=4 on same day
+    "fwls/F5",           # binary: user gave rating=5 on same day
+    #"mf-binsvd8",        # MF with SVD of binarized rating matrix as item fetures
+    "fwls/D1",           # log(1 + sum of positive item-item correlations for user's rated items)
+    "claude105/084",     # log_user_similar_movies: log(1 + user's movies with sim>0.1 to this movie)
+    "claude105/085",     # user_rates_popular: user's avg movie popularity / dataset avg
+
+    # "logreg_gold-2",
+    # "logreg_gold-3",
+    # "logreg_gold-4",
+    # "logreg_gold-5",
+]
+
+silver = [
+    "fwls_A{2,3,6,7}",
+    "fwls_B{1,2}",
+    "fwls_C{3,4,5}",
+    "fwls_D{2,3}",
+    "fwls_E{1,2,3,4,5}",
+    "fwls_F{1,2,6,7,8,9,10,11,12,13,14,15,16,17,18,20}",
+    "claude105/{026,082,097}",
+]

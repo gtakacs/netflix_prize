@@ -4,7 +4,7 @@
 //! transitive runs are intentionally out of scope for this initial version.
 
 use indexmap::IndexMap;
-use netflix_prize::blend::{expand_specs, load_models_toml, select_groups};
+use netflix_prize::blend::{expand_specs, load_models_toml, resolve_voting, select_groups};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -73,6 +73,17 @@ struct JobConfig {
     /// them to the `cmd` as `{exclude}` = `-x '<name>' ...` (empty when unset).
     #[serde(default)]
     exclude: Vec<String>,
+    /// Path to a voting-feature groups TOML. For `vfeat` jobs the runner resolves
+    /// the selected `voting` groups into the job's `{feature}` outputs (so the
+    /// feature list lives once, in the TOML); for blend jobs it gates on those
+    /// feature files and exposes the path to the `cmd` as `{voting_models}`.
+    voting_models: Option<String>,
+    /// Voting-feature group names selected from `voting_models`; must be given
+    /// explicitly (use `["all"]` for every group) — an empty list is a hard error
+    /// for any job that sets `voting_models`. Exposed to the `cmd` as `{voting}`
+    /// (comma-joined).
+    #[serde(default)]
+    voting: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -109,6 +120,8 @@ fn merge_with_defaults(job: &JobConfig, defaults: &HashMap<String, JobConfig>) -
             if merged.cmd.is_empty() { merged.cmd = d.cmd.clone(); }
             if merged.models.is_none() { merged.models = d.models.clone(); }
             if merged.groups.is_empty() { merged.groups = d.groups.clone(); }
+            if merged.voting_models.is_none() { merged.voting_models = d.voting_models.clone(); }
+            if merged.voting.is_empty() { merged.voting = d.voting.clone(); }
         }
     }
     merged
@@ -214,6 +227,36 @@ fn expand_blend_models(job: &mut JobConfig) {
     }
 }
 
+/// Voting-feature wiring for jobs with a `voting_models` TOML. For `vfeat`
+/// producer jobs, resolve the selected voting groups into the job's `{feature}`
+/// list (so the names live once, in the voting TOML, not re-listed here). For
+/// blend consumer jobs, add each voting feature's `{pr}`/`{fulltrain_pr}` file as
+/// a gating input (covers both `vf/…` features and predictors used as voting).
+fn expand_voting(name: &str, job: &mut JobConfig) {
+    let Some(path) = job.voting_models.clone() else { return; };
+    if job.voting.is_empty() {
+        panic!(
+            "job '{name}' (voting_models = \"{path}\") must specify voting explicitly \
+             (e.g. voting = [\"all\"]); implicit all is not allowed"
+        );
+    }
+    let specs = resolve_voting(&path, &job.voting);
+    if job.jobtype.as_deref() == Some("vfeat") {
+        if job.features.is_empty() {
+            job.features = specs;
+        }
+        return;
+    }
+    for spec in &specs {
+        for ds in ["{pr}", "{fulltrain_pr}"] {
+            let inp = format!("{{preds}}/{}.{}.npy", spec, ds);
+            if !job.inputs.contains(&inp) {
+                job.inputs.push(inp);
+            }
+        }
+    }
+}
+
 fn build_subst_vars(job_name: &str, job: &JobConfig, pipeline: &Pipeline) -> HashMap<String, String> {
     let mut vars: HashMap<String, String> = HashMap::new();
     for (k, v) in &pipeline.split {
@@ -233,6 +276,8 @@ fn build_subst_vars(job_name: &str, job: &JobConfig, pipeline: &Pipeline) -> Has
     }
     let groups_csv = if job.groups.is_empty() { "all".to_string() } else { job.groups.join(",") };
     vars.insert("groups".to_string(), groups_csv);
+    if let Some(vm) = &job.voting_models { vars.insert("voting_models".to_string(), vm.clone()); }
+    vars.insert("voting".to_string(), job.voting.join(","));
     // Render exclusions as repeated `-x '<name>'` flags (empty string when unset,
     // so a trailing `{exclude}` in the cmd template simply disappears).
     let exclude_flags = job.exclude.iter()
@@ -330,6 +375,7 @@ fn resolve_pipeline(p: &Pipeline) -> IndexMap<String, ResolvedJob> {
         expand_extras(name, &mut merged);
         expand_eblend_inputs(name, &mut merged);
         expand_blend_models(&mut merged);
+        expand_voting(name, &mut merged);
         let subst = build_subst_vars(name, &merged, p);
         let outputs_tpl = expand_features(&merged.outputs, &merged.features);
         let outputs_tpl = match &merged.keep_epochs {

@@ -320,6 +320,18 @@ pub fn flatten_groups(groups: &IndexMap<String, Vec<String>>, exclude: &[String]
     FlatModels { names, clip, group_indices }
 }
 
+/// Resolve the voting-feature specs selected from `voting_toml` by `groups`
+/// (empty = all groups), as names relative to the preds dir — e.g.
+/// `vf/vf000_constant` for a computed voting feature, or a bare predictor name
+/// to use a normal prediction as a context feature. Reuses the model-group
+/// machinery: `{a,b}` / `..` expansion, dedup, group order. Voting features
+/// carry no clip flag, so only the flattened names are returned.
+pub fn resolve_voting(voting_toml: &str, groups: &[String]) -> Vec<String> {
+    let mg = load_models_toml(voting_toml);
+    let selected = select_groups(&mg, groups);
+    flatten_groups(&selected, &[]).names
+}
+
 /// Load one model's predictions for `dataset` from
 /// `{preds_dir}/{model}.{dataset}.npy`. A leading `>` in `spec` disables
 /// clipping; otherwise values are clamped to [CLIP_MIN, CLIP_MAX]. A missing

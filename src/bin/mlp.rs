@@ -1,5 +1,5 @@
 //! MLP cross-fit blending of base predictors + voting features. Counterpart to
-//! `gbm-new.rs`; one job per named blend (mirrors the Python `blending/mlp.py`
+//! `gbm.rs`; one job per named blend (mirrors the Python `blending/mlp.py`
 //! `mlpr*` jobs). Builds with pure-Rust matmul by default; `--features blas`
 //! routes the dense products through OpenBLAS (`cblas_dgemm`).
 
@@ -8,7 +8,7 @@ extern crate blas_src;
 
 use netflix_prize::blend::{
     build_xy, close_log, cvk_blend, flatten_groups, load_models_toml, load_quiz_mask, log_columns,
-    open_log, save_preds, select_groups,
+    open_log, resolve_voting, save_preds, select_groups,
 };
 use netflix_prize::mlp::{MlpBlender, MlpCfg};
 use netflix_prize::teeln;
@@ -21,6 +21,8 @@ struct Args {
     models: String,
     groups: Vec<String>,
     exclude: Vec<String>,
+    voting_models: String,
+    voting: Vec<String>,
     seeds: Vec<u64>,
 }
 
@@ -73,15 +75,16 @@ fn blend_config(name: &str) -> BlendParams {
 }
 
 fn print_help() {
-    println!("Usage: mlp-new NAME [-n | -p FILE] [-t FILE] (--seeds N,N,... | --seed N)");
+    println!("Usage: mlp NAME -p FILE -t FILE --voting-models FILE --voting G,... (--seeds N,N,... | --seed N)");
     println!();
     println!("  NAME                       blend name; MLP params come from");
     println!("                             blend_config(NAME); produces NAME-s<seed>.*");
-    println!("  -n, --new                  use pipeline-new.toml for [split]");
-    println!("  -p FILE, --pipeline FILE   pipeline TOML (default: pipeline-old.toml)");
-    println!("  -t FILE, --models FILE     base-predictor models TOML (default: models-new.toml)");
+    println!("  -p FILE, --pipeline FILE   pipeline TOML (required; carries the split)");
+    println!("  -t FILE, --models FILE     base-predictor models TOML (required)");
     println!("  --groups G,G,...           model groups to use (default: all groups in the TOML)");
     println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
+    println!("  --voting-models FILE       voting-feature groups TOML (required)");
+    println!("  --voting G,G,...           voting-feature groups to use (required; 'all' for every group)");
     println!("  --seeds N,N,...            net+fold seeds; one output NAME-s<N> per seed (data loaded once)");
     println!("  --seed N                   add a single seed (repeatable)");
     println!("  -h, --help                 show this help");
@@ -98,10 +101,12 @@ fn need(argv: &[String], i: usize) -> String {
 fn parse_args() -> Args {
     let mut a = Args {
         name: String::new(),
-        pipeline: "pipeline-old.toml".to_string(),
-        models: "models-new.toml".to_string(),
+        pipeline: String::new(),
+        models: String::new(),
         groups: Vec::new(),
         exclude: Vec::new(),
+        voting_models: String::new(),
+        voting: Vec::new(),
         seeds: Vec::new(),
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -109,7 +114,6 @@ fn parse_args() -> Args {
     while i < argv.len() {
         match argv[i].as_str() {
             "-h" | "--help" => { print_help(); std::process::exit(0); }
-            "-n" | "--new" => { a.pipeline = "pipeline-new.toml".to_string(); i += 1; }
             "-p" | "--pipeline" => { a.pipeline = need(&argv, i); i += 2; }
             "-t" | "--models" => { a.models = need(&argv, i); i += 2; }
             "--groups" => {
@@ -119,6 +123,13 @@ fn parse_args() -> Args {
                 i += 2;
             }
             "-x" | "--exclude" => { a.exclude.push(need(&argv, i)); i += 2; }
+            "--voting-models" => { a.voting_models = need(&argv, i); i += 2; }
+            "--voting" => {
+                for tok in need(&argv, i).split(',') {
+                    a.voting.push(tok.trim().to_string());
+                }
+                i += 2;
+            }
             "--seed" => { a.seeds.push(need(&argv, i).parse().expect("bad --seed")); i += 2; }
             "--seeds" => {
                 for tok in need(&argv, i).split(',') {
@@ -146,8 +157,24 @@ fn parse_args() -> Args {
         print_help();
         std::process::exit(2);
     }
+    for (val, flag) in [
+        (&a.pipeline, "-p FILE (pipeline TOML)"),
+        (&a.models, "-t FILE (models TOML)"),
+        (&a.voting_models, "--voting-models FILE"),
+    ] {
+        if val.is_empty() {
+            eprintln!("error: {flag} is required");
+            print_help();
+            std::process::exit(2);
+        }
+    }
     if a.seeds.is_empty() {
         eprintln!("error: provide --seeds N,N,... or --seed N");
+        print_help();
+        std::process::exit(2);
+    }
+    if a.voting.is_empty() {
+        eprintln!("error: --voting is required (use 'all' for every group)");
         print_help();
         std::process::exit(2);
     }
@@ -165,29 +192,6 @@ fn load_pipeline_split(path: &str) -> HashMap<String, String> {
     p.split
 }
 
-/// All voting-feature column names in `preds_dir` for `dataset`: files named
-/// `vf<digit>...{dataset}.npy`, with the `.{dataset}.npy` suffix stripped,
-/// sorted by name for deterministic column order.
-fn glob_voting(preds_dir: &str, dataset: &str) -> Vec<String> {
-    let suffix = format!(".{dataset}.npy");
-    let mut names: Vec<String> = std::fs::read_dir(preds_dir)
-        .unwrap_or_else(|e| panic!("read_dir {preds_dir}: {e}"))
-        .flatten()
-        .filter_map(|e| {
-            let f = e.file_name().to_string_lossy().into_owned();
-            let is_vf = f.starts_with("vf")
-                && f.as_bytes().get(2).is_some_and(u8::is_ascii_digit);
-            if is_vf && f.ends_with(&suffix) {
-                Some(f[..f.len() - suffix.len()].to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
-    names.sort();
-    names
-}
-
 fn main() -> ExitCode {
     let args = parse_args();
 
@@ -201,28 +205,28 @@ fn main() -> ExitCode {
     let mg = load_models_toml(&args.models);
     let groups = select_groups(&mg, &args.groups);
     let base = flatten_groups(&groups, &args.exclude).specs();
-    let vf_dir = format!("{preds}/vf");
-    let voting = glob_voting(&vf_dir, &pr);
+    let voting = resolve_voting(&args.voting_models, &args.voting);
 
     open_log(&preds, &args.name);
     let seeds_str = args.seeds.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
     let groups_str = if args.groups.is_empty() { "all".to_string() } else { args.groups.join(",") };
+    let voting_str = args.voting.join(",");
     teeln!("[{}]", args.name);
     teeln!("Pipeline:  {} (split = {})", args.pipeline, split_name);
     teeln!("Models:    {} ({} base predictors, groups: {})", args.models, base.len(), groups_str);
     if !args.exclude.is_empty() {
         teeln!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
     }
-    teeln!("Voting:    {} features (glob {}/vf*.{}.npy)", voting.len(), vf_dir, pr);
+    teeln!("Voting:    {} ({} features, groups: {})", args.voting_models, voting.len(), voting_str);
     teeln!("Seeds:     {} (net init + fold permutation)", seeds_str);
     teeln!("Params:    {:?}", p);
     log_columns(&base, &voting);
     teeln!();
 
     println!("Loading probe set ({})...", pr);
-    let (x_pr, y_pr) = build_xy(&base, &voting, &preds, &vf_dir, &pr);
+    let (x_pr, y_pr) = build_xy(&base, &voting, &preds, &preds, &pr);
     println!("Loading qual set ({})...", fulltrain_pr);
-    let (x_ql, y_ql) = build_xy(&base, &voting, &preds, &vf_dir, &fulltrain_pr);
+    let (x_ql, y_ql) = build_xy(&base, &voting, &preds, &preds, &fulltrain_pr);
     let qz = load_quiz_mask(&fulltrain_pr);
     println!("Probe: {} rows, Qual: {} rows", y_pr.len(), y_ql.len());
 

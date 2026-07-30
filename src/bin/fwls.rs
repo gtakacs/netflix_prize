@@ -2,7 +2,7 @@
 //! the interaction features (model prediction × voting feature) with a 2-fold
 //! split, mirroring `blending/fwls.py`. The Gram matrix over the `D = M·P + 1`
 //! interaction columns is accumulated in row blocks via BLAS `dsyrk`. Dispatcher
-//! shape matches `gbm-new`/`mlp-new`; requires the `blas` feature (OpenBLAS).
+//! shape matches `gbm`/`mlp`; requires the `blas` feature (OpenBLAS).
 
 extern crate blas;
 extern crate blas_src;
@@ -12,8 +12,8 @@ use nalgebra::{DMatrix, DVector};
 use ndarray::Array1;
 use ndarray_npy::read_npy;
 use netflix_prize::blend::{
-    close_log, flatten_groups, load_models_toml, log_columns, open_log, save_preds, select_groups,
-    CLIP_MAX, CLIP_MIN,
+    close_log, flatten_groups, load_models_toml, log_columns, open_log, resolve_voting, save_preds,
+    select_groups, CLIP_MAX, CLIP_MIN,
 };
 use netflix_prize::teeln;
 use rand::{prelude::SliceRandom, rngs::StdRng, SeedableRng};
@@ -97,6 +97,8 @@ struct Args {
     models: String,
     groups: Vec<String>,
     exclude: Vec<String>,
+    voting_models: String,
+    voting: Vec<String>,
     seeds: Vec<u64>,
 }
 
@@ -121,11 +123,14 @@ fn print_help() {
     println!("  -t FILE, --models FILE     base-predictor models TOML (default: models-new.toml)");
     println!("  --groups G,G,...           model groups to use (default: all groups in the TOML)");
     println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
+    println!("  --voting-models FILE       voting-feature groups TOML (default: voting-new.toml)");
+    println!("  --voting G,G,...           voting-feature groups to use (required; 'all' for every group)");
     println!("  --seeds N,N,...            fold seeds; one output NAME-s<N> per seed (data loaded once)");
     println!("  --seed N                   add a single fold seed (repeatable)");
     println!("  -h, --help                 show this help");
     println!();
-    println!("  Context (voting) features are the vf*.{{pr}}.npy glob in the preds dir.");
+    println!("  Context (voting) features come from the --voting-models TOML (names relative");
+    println!("  to the preds dir, e.g. vf/<name> or a bare predictor).");
 }
 
 fn need(argv: &[String], i: usize) -> String {
@@ -143,6 +148,8 @@ fn parse_args() -> Args {
         models: "models-new.toml".to_string(),
         groups: Vec::new(),
         exclude: Vec::new(),
+        voting_models: "voting-new.toml".to_string(),
+        voting: Vec::new(),
         seeds: Vec::new(),
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -160,6 +167,13 @@ fn parse_args() -> Args {
                 i += 2;
             }
             "-x" | "--exclude" => { a.exclude.push(need(&argv, i)); i += 2; }
+            "--voting-models" => { a.voting_models = need(&argv, i); i += 2; }
+            "--voting" => {
+                for tok in need(&argv, i).split(',') {
+                    a.voting.push(tok.trim().to_string());
+                }
+                i += 2;
+            }
             "--seed" => { a.seeds.push(need(&argv, i).parse().expect("bad --seed")); i += 2; }
             "--seeds" => {
                 for tok in need(&argv, i).split(',') {
@@ -192,6 +206,11 @@ fn parse_args() -> Args {
         print_help();
         std::process::exit(2);
     }
+    if a.voting.is_empty() {
+        eprintln!("error: --voting is required (use 'all' for every group)");
+        print_help();
+        std::process::exit(2);
+    }
     a
 }
 
@@ -208,29 +227,6 @@ fn load_pipeline_split(path: &str) -> HashMap<String, String> {
     let s = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
     let p: P = toml::from_str(&s).unwrap_or_else(|e| panic!("parse {path}: {e}"));
     p.split
-}
-
-/// All voting-feature column names in `preds_dir` for `dataset`: files named
-/// `vf<digit>...{dataset}.npy`, suffix stripped, sorted for a deterministic
-/// column order. These are the FWLS context features.
-fn glob_voting(preds_dir: &str, dataset: &str) -> Vec<String> {
-    let suffix = format!(".{dataset}.npy");
-    let mut names: Vec<String> = std::fs::read_dir(preds_dir)
-        .unwrap_or_else(|e| panic!("read_dir {preds_dir}: {e}"))
-        .flatten()
-        .filter_map(|e| {
-            let f = e.file_name().to_string_lossy().into_owned();
-            let is_vf = f.starts_with("vf")
-                && f.as_bytes().get(2).is_some_and(u8::is_ascii_digit);
-            if is_vf && f.ends_with(&suffix) {
-                Some(f[..f.len() - suffix.len()].to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
-    names.sort();
-    names
 }
 
 // ---------------------------------------------------------------------------
@@ -465,13 +461,13 @@ fn main() -> ExitCode {
     let groups = select_groups(&mg, &args.groups);
     let flat = flatten_groups(&groups, &args.exclude);
     let (model_names, model_clip) = (flat.names, flat.clip);
-    let vf_dir = format!("{preds}/vf");
-    let voting = glob_voting(&vf_dir, &pr);
+    let voting = resolve_voting(&args.voting_models, &args.voting);
 
     let m = model_names.len();
     let p = voting.len();
     let d = m * p + 1;
     let groups_str = if args.groups.is_empty() { "all".to_string() } else { args.groups.join(",") };
+    let voting_str = args.voting.join(",");
     let seeds_str = args.seeds.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
 
     open_log(&preds, &args.name);
@@ -481,7 +477,7 @@ fn main() -> ExitCode {
     if !args.exclude.is_empty() {
         teeln!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
     }
-    teeln!("Voting:    {} context features (glob {}/vf*.{}.npy)", p, vf_dir, pr);
+    teeln!("Voting:    {} ({} context features, groups: {})", args.voting_models, p, voting_str);
     teeln!("Interact:  D = M·P + 1 = {}·{} + 1 = {}", m, p, d);
     teeln!("Lambda:    {}", params.lambda);
     teeln!("Seeds:     {} (2-fold split per seed)", seeds_str);
@@ -495,7 +491,7 @@ fn main() -> ExitCode {
     let n = y_pr.len();
     let no_clip = vec![false; p];
     let xpr = load_cols(&model_names, &model_clip, &preds, &pr, n);
-    let fpr = load_cols(&voting, &no_clip, &vf_dir, &pr, n);
+    let fpr = load_cols(&voting, &no_clip, &preds, &pr, n);
 
     // Qual data: ratings + quiz mask in memory; predictions streamed per block.
     let y_ql: Array1<i8> = read_npy(format!("data/{fulltrain_pr}/ratings.npy"))
@@ -532,7 +528,7 @@ fn main() -> ExitCode {
 
         // Qual readers reused across folds (re-seeked per block).
         let mut xr = open_readers(&model_names, &preds);
-        let mut fr = open_readers(&voting, &vf_dir);
+        let mut fr = open_readers(&voting, &preds);
 
         for (k, &(tr, te)) in [(0usize, 1usize), (1, 0)].iter().enumerate() {
             let train = &folds[tr];
