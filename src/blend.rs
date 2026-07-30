@@ -547,7 +547,7 @@ pub fn cvk_blend<B: Blender>(
         }
 
         let y_te = gather(y_pr, &te);
-        println!(
+        crate::teeln!(
             "  fold {}/{}: train {} predict {} RMSE {:.5}",
             k + 1, n_folds, tr.len(), te.len(), rmse(&p_te, &y_te),
         );
@@ -568,8 +568,8 @@ pub fn cvk_blend<B: Blender>(
         *v *= inv;
     }
 
-    println!(" ProbeRMSE: {:.5}", rmse(&yhat_pr, y_pr));
-    println!("  QuizRMSE: {:.5}", rmse_masked(&yhat_ql, y_ql, qz));
+    crate::teeln!(" ProbeRMSE: {:.5}", rmse(&yhat_pr, y_pr));
+    crate::teeln!("  QuizRMSE: {:.5}", rmse_masked(&yhat_ql, y_ql, qz));
 
     (Array1::from(yhat_pr), Array1::from(yhat_ql))
 }
