@@ -127,6 +127,10 @@ mlpblend = [
     "mlpr2o-s{1..9}",
 ]
 
+fwlsblend = [
+    "fwls1-s1",
+]
+
 # Meta-groups: named unions of group (or other meta) names, usable only via
 # -g/--groups. They are never iterated as real groups, so they don't affect the
 # default (no -g) run. `all` stays a builtin (every real group); `base` selects

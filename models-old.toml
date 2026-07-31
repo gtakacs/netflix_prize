@@ -121,7 +121,26 @@ other = [
     "tsvdx4_20260304_1536_ep17",
     "tsvdx4_20260304_1536_ep11",
     ">tsvdx4_20260304_1536_epblended_lambda500",
+    "cfnade_rmsew010_ep38",
+]
+
+gbmblend = [
+    "gbr1-s{1..7}",
+    "gbr2-s{1..3}",
+    "gbr3-s{1}",
+    "gbr4o-s{1..3}",
+    "gbc1-s{1..4}",
+    "gbc2o-s{1}",
+]
+
+mlpblend = [
+    "mlpr2o-s{1..7}",
+]
+
+fwlsblend = [
+    "fwls1-s1",
 ]
 
 [meta]
 base   = ["integrated", "rbm", "other"]
+blends = ["gbmblend", "mlpblend"]

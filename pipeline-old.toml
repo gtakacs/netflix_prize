@@ -107,6 +107,18 @@ groups = ["integrated", "rbm", "other"]
 voting = ["all"]
 seeds = [1, 2, 3]
 
+[jobs.gbc1]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+voting = ["all"]
+seeds = [1, 2, 3, 4]
+
+[jobs.gbc2o]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+voting = ["all"]
+seeds = [1]
+
 # --- MLP blends ---
 
 [jobs.mlpr2o]
