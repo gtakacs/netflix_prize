@@ -94,12 +94,21 @@ impl NpyF32Reader {
 // CLI
 // ---------------------------------------------------------------------------
 
-struct Args {
-    pipeline: String,
-    models_toml: Option<String>,
+/// One predictor source: a split's pipeline (→ preds dir) plus the models TOML
+/// and group/manual/exclude selection to pull from it. Single-split runs have
+/// exactly one source; `--from` builds one per split for cross-split blending.
+struct Source {
+    label: String,               // "old" / "new" (split name, for reporting)
+    pipeline: String,            // pipeline-<split>.toml
+    models_toml: Option<String>, // None → default models-<label>.toml (cross-split) or manual-only (legacy)
     models_manual: Vec<String>,
     models_exclude: Vec<String>,
     groups: Vec<String>,
+}
+
+struct Args {
+    sources: Vec<Source>,
+    cross_split: bool, // true when --from was used (multi-source quiz blend)
     lambda: f64,
     forward: bool,
     max_features: Option<usize>,
@@ -143,106 +152,194 @@ fn print_help() {
     println!("                             Z'y from rounded per-model + constant RMSE probes");
     println!("    --decimals N             RMSE feedback precision for --quiz-blend (default 4)");
     println!();
+    println!("  Cross-split quiz blending (combine qual.npy predictors from BOTH splits):");
+    println!("    --from SPLIT             open a source scope for SPLIT (old|new); the models");
+    println!("                             flags -t/-g/-m/-x after it apply to that source.");
+    println!("                             -t defaults to models-<split>.toml. Repeat --from to");
+    println!("                             mix splits. Implies --quiz-blend; the Gram is built");
+    println!("                             over the full qual set from each source's preds dir.");
+    println!("                             Example: ridge --quiz-blend --from old -g integrated \\");
+    println!("                                            --from new -g integrated,rbm,other");
+    println!();
     println!("    -h, --help               show this help");
 }
 
-fn set_models_toml(a: &mut Args, path: String, flag: &str) {
-    if a.models_toml.is_some() {
+fn set_models_toml(dst: &mut Option<String>, path: String, flag: &str) {
+    if dst.is_some() {
         eprintln!("error: '{}' conflicts with an earlier models TOML selection", flag);
         std::process::exit(2);
     }
-    a.models_toml = Some(path);
+    *dst = Some(path);
 }
 
-fn parse_args() -> Args {
-    let mut a = Args {
+/// A fresh legacy (single-source) selection, defaulting to the old pipeline.
+fn legacy_source() -> Source {
+    Source {
+        label: "old".to_string(),
         pipeline: PIPELINE_OLD.to_string(),
         models_toml: None,
         models_manual: Vec::new(),
         models_exclude: Vec::new(),
         groups: Vec::new(),
-        lambda: 10.0,
-        forward: false,
-        max_features: None,
-        fixed_group: None,
-        in_clip_min: IN_CLIP_MIN,
-        in_clip_max: IN_CLIP_MAX,
-        out_clip_min: OUT_CLIP_MIN,
-        out_clip_max: OUT_CLIP_MAX,
-        quiz_blend: false,
-        decimals: 4,
-    };
+    }
+}
+
+fn parse_args() -> Args {
+    let mut lambda = 10.0;
+    let mut forward = false;
+    let mut max_features: Option<usize> = None;
+    let mut fixed_group: Option<String> = None;
+    let (mut in_clip_min, mut in_clip_max) = (IN_CLIP_MIN, IN_CLIP_MAX);
+    let (mut out_clip_min, mut out_clip_max) = (OUT_CLIP_MIN, OUT_CLIP_MAX);
+    let mut quiz_blend = false;
+    let mut decimals = 4;
+
+    // Legacy single-source accumulator (used when no --from is given), plus the
+    // list of --from sources. The two are mutually exclusive.
+    let mut legacy = legacy_source();
+    let mut legacy_touched = false; // any top-level split/models flag seen?
+    let mut from_sources: Vec<Source> = Vec::new();
+    let mut using_from = false;
+
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     while i < argv.len() {
-        match argv[i].as_str() {
+        // Selection flags (-t/-g/-m/-x) target the current --from source, or the
+        // legacy accumulator when no --from is active.
+        let flag = argv[i].as_str();
+        match flag {
             "-h" | "--help" => { print_help(); std::process::exit(0); }
-            "-o" | "--old" => { a.pipeline = PIPELINE_OLD.to_string(); i += 1; }
-            "-n" | "--new" => { a.pipeline = PIPELINE_NEW.to_string(); i += 1; }
-            "-O" => {
-                a.pipeline = PIPELINE_OLD.to_string();
-                set_models_toml(&mut a, MODELS_OLD.to_string(), "-O");
-                i += 1;
-            }
-            "-N" => {
-                a.pipeline = PIPELINE_NEW.to_string();
-                set_models_toml(&mut a, MODELS_NEW.to_string(), "-N");
-                i += 1;
-            }
-            "-p" | "--pipeline" => { a.pipeline = need(&argv, i); i += 2; }
-            "-t" | "--models" => {
-                let path = need(&argv, i);
-                set_models_toml(&mut a, path, &argv[i]);
+            "--from" => {
+                let s = need(&argv, i);
+                let pipeline = match s.as_str() {
+                    "old" => PIPELINE_OLD,
+                    "new" => PIPELINE_NEW,
+                    _ => { eprintln!("error: --from expects 'old' or 'new' (got '{}')", s); std::process::exit(2); }
+                };
+                if legacy_touched {
+                    eprintln!("error: cannot mix top-level model/split flags with --from");
+                    std::process::exit(2);
+                }
+                using_from = true;
+                from_sources.push(Source {
+                    label: s.clone(),
+                    pipeline: pipeline.to_string(),
+                    models_toml: None,
+                    models_manual: Vec::new(),
+                    models_exclude: Vec::new(),
+                    groups: Vec::new(),
+                });
                 i += 2;
             }
-            "-g" | "--groups" => {
-                for tok in need(&argv, i).split(',') { a.groups.push(tok.trim().to_string()); }
-                i += 2;
+            "-o" | "--old" | "-n" | "--new" | "-O" | "-N" | "-p" | "--pipeline" => {
+                if using_from {
+                    eprintln!("error: '{}' cannot be combined with --from", flag);
+                    std::process::exit(2);
+                }
+                legacy_touched = true;
+                match flag {
+                    "-o" | "--old" => { legacy.pipeline = PIPELINE_OLD.to_string(); legacy.label = "old".into(); i += 1; }
+                    "-n" | "--new" => { legacy.pipeline = PIPELINE_NEW.to_string(); legacy.label = "new".into(); i += 1; }
+                    "-O" => {
+                        legacy.pipeline = PIPELINE_OLD.to_string(); legacy.label = "old".into();
+                        set_models_toml(&mut legacy.models_toml, MODELS_OLD.to_string(), "-O");
+                        i += 1;
+                    }
+                    "-N" => {
+                        legacy.pipeline = PIPELINE_NEW.to_string(); legacy.label = "new".into();
+                        set_models_toml(&mut legacy.models_toml, MODELS_NEW.to_string(), "-N");
+                        i += 1;
+                    }
+                    _ => { legacy.pipeline = need(&argv, i); i += 2; }
+                }
             }
-            "-m" | "--model" => { a.models_manual.push(need(&argv, i)); i += 2; }
-            "-x" | "--exclude" => { a.models_exclude.push(need(&argv, i)); i += 2; }
-            "--lambda" => {
-                a.lambda = need(&argv, i).parse().expect("bad --lambda value");
-                i += 2;
+            "-t" | "--models" | "-g" | "--groups" | "-m" | "--model" | "-x" | "--exclude" => {
+                let src = if using_from {
+                    from_sources.last_mut().expect("--from source present")
+                } else {
+                    legacy_touched = true;
+                    &mut legacy
+                };
+                match flag {
+                    "-t" | "--models" => {
+                        let path = need(&argv, i);
+                        // In a --from scope -t overrides the split default; the
+                        // conflict guard only applies to legacy -t/-O/-N clashes.
+                        if using_from { src.models_toml = Some(path); }
+                        else { set_models_toml(&mut src.models_toml, path, flag); }
+                        i += 2;
+                    }
+                    "-g" | "--groups" => {
+                        for tok in need(&argv, i).split(',') { src.groups.push(tok.trim().to_string()); }
+                        i += 2;
+                    }
+                    "-m" | "--model" => { src.models_manual.push(need(&argv, i)); i += 2; }
+                    _ => { src.models_exclude.push(need(&argv, i)); i += 2; }
+                }
             }
-            "--forward" => { a.forward = true; i += 1; }
+            "--lambda" => { lambda = need(&argv, i).parse().expect("bad --lambda value"); i += 2; }
+            "--forward" => { forward = true; i += 1; }
             "--max-features" => {
-                a.max_features = Some(need(&argv, i).parse().expect("bad --max-features value"));
+                max_features = Some(need(&argv, i).parse().expect("bad --max-features value"));
                 i += 2;
             }
-            "--fixed" => { a.fixed_group = Some(need(&argv, i)); i += 2; }
-            "--quiz-blend" => { a.quiz_blend = true; i += 1; }
-            "--decimals" => {
-                a.decimals = need(&argv, i).parse().expect("bad --decimals value");
-                i += 2;
-            }
+            "--fixed" => { fixed_group = Some(need(&argv, i)); i += 2; }
+            "--quiz-blend" => { quiz_blend = true; i += 1; }
+            "--decimals" => { decimals = need(&argv, i).parse().expect("bad --decimals value"); i += 2; }
             "--in-clip" => {
                 let (lo, hi) = parse_clip(&need(&argv, i), "--in-clip");
-                a.in_clip_min = lo; a.in_clip_max = hi; i += 2;
+                in_clip_min = lo; in_clip_max = hi; i += 2;
             }
             "--out-clip" => {
                 let (lo, hi) = parse_clip(&need(&argv, i), "--out-clip");
-                a.out_clip_min = lo; a.out_clip_max = hi; i += 2;
+                out_clip_min = lo; out_clip_max = hi; i += 2;
             }
             s => { eprintln!("error: unknown arg '{}'", s); print_help(); std::process::exit(2); }
         }
     }
-    if a.models_toml.is_none() && a.models_manual.is_empty() {
-        eprintln!("error: provide -N/-O, -t MODELS_TOML, and/or -m NAME");
-        std::process::exit(2);
-    }
-    if !a.groups.is_empty() && a.models_toml.is_none() {
-        eprintln!("error: -g/--groups requires a models TOML (-t/-N/-O)");
-        std::process::exit(2);
-    }
-    if !a.forward && (a.max_features.is_some() || a.fixed_group.is_some()) {
+
+    if !forward && (max_features.is_some() || fixed_group.is_some()) {
         eprintln!("warning: --max-features/--fixed have no effect without --forward");
     }
-    if a.quiz_blend && a.forward {
-        eprintln!("error: --quiz-blend cannot be combined with --forward");
-        std::process::exit(2);
+
+    let sources = if using_from {
+        // Cross-split blending always fits on qual → enable quiz-blend implicitly.
+        quiz_blend = true;
+        if forward {
+            eprintln!("error: --from cannot be combined with --forward");
+            std::process::exit(2);
+        }
+        from_sources
+    } else {
+        if legacy.models_toml.is_none() && legacy.models_manual.is_empty() {
+            eprintln!("error: provide -N/-O, -t MODELS_TOML, and/or -m NAME (or --from SPLIT ...)");
+            std::process::exit(2);
+        }
+        if !legacy.groups.is_empty() && legacy.models_toml.is_none() {
+            eprintln!("error: -g/--groups requires a models TOML (-t/-N/-O)");
+            std::process::exit(2);
+        }
+        if quiz_blend && forward {
+            eprintln!("error: --quiz-blend cannot be combined with --forward");
+            std::process::exit(2);
+        }
+        vec![legacy]
+    };
+
+    Args {
+        sources,
+        cross_split: using_from,
+        lambda,
+        forward,
+        max_features,
+        fixed_group,
+        in_clip_min,
+        in_clip_max,
+        out_clip_min,
+        out_clip_max,
+        quiz_blend,
+        decimals,
     }
-    a
 }
 
 fn need(argv: &[String], i: usize) -> String {
@@ -284,24 +381,65 @@ fn load_pipeline_split(path: &str) -> HashMap<String, String> {
     p.split
 }
 
-/// Build the model registry: unique names, clip flags, and group → indices.
+/// Build the merged model registry across all sources: unique names, clip flags,
+/// per-model preds dir, and group → indices. In cross-split mode group keys are
+/// prefixed with the source label (`old/integrated`); a single legacy source
+/// keeps bare group names. Dedup is per-source, so the same predictor name in
+/// two splits yields two distinct columns from two preds dirs.
 fn build_registry(
     args: &Args,
-) -> (Vec<String>, Vec<bool>, IndexMap<String, Vec<usize>>) {
-    let mut groups: IndexMap<String, Vec<String>> = if let Some(p) = &args.models_toml {
-        select_groups(&load_models_toml(p), &args.groups)
-    } else {
-        IndexMap::new()
-    };
-    if !args.models_manual.is_empty() {
-        groups.insert("manual".to_string(), args.models_manual.clone());
+) -> (Vec<String>, Vec<bool>, Vec<String>, IndexMap<String, Vec<usize>>) {
+    let mut names: Vec<String> = Vec::new();
+    let mut clip: Vec<bool> = Vec::new();
+    let mut preds_dirs: Vec<String> = Vec::new();
+    let mut group_indices: IndexMap<String, Vec<usize>> = IndexMap::new();
+
+    for src in &args.sources {
+        let preds_dir = load_pipeline_split(&src.pipeline)
+            .get("preds")
+            .unwrap_or_else(|| panic!("{}: [split].preds missing", src.pipeline))
+            .clone();
+
+        // In a --from scope -t defaults to models-<label>.toml; a legacy
+        // manual-only source keeps no models TOML.
+        let models_toml: Option<String> = src.models_toml.clone().or_else(|| {
+            if args.cross_split {
+                Some(match src.label.as_str() {
+                    "new" => MODELS_NEW.to_string(),
+                    _ => MODELS_OLD.to_string(),
+                })
+            } else {
+                None
+            }
+        });
+
+        let mut groups: IndexMap<String, Vec<String>> = if let Some(p) = &models_toml {
+            select_groups(&load_models_toml(p), &src.groups)
+        } else {
+            IndexMap::new()
+        };
+        if !src.models_manual.is_empty() {
+            groups.insert("manual".to_string(), src.models_manual.clone());
+        }
+
+        // Flatten groups → (name, clip, group→indices), applying --exclude. Each
+        // exclude arg is brace-expanded and '>'-stripped before matching; models
+        // are deduplicated by clip-stripped name with any '>' winning.
+        let flat = flatten_groups(&groups, &src.models_exclude);
+        let offset = names.len();
+        for (nm, cl) in flat.names.iter().zip(flat.clip.iter()) {
+            names.push(nm.clone());
+            clip.push(*cl);
+            preds_dirs.push(preds_dir.clone());
+        }
+        for (gname, idxs) in &flat.group_indices {
+            let key = if args.cross_split { format!("{}/{}", src.label, gname) } else { gname.clone() };
+            let shifted: Vec<usize> = idxs.iter().map(|&x| x + offset).collect();
+            group_indices.insert(key, shifted);
+        }
     }
 
-    // Flatten groups → (name, clip, group→indices), applying --exclude. Each
-    // exclude arg is brace-expanded and '>'-stripped before matching; models are
-    // deduplicated by clip-stripped name with any '>' winning.
-    let flat = flatten_groups(&groups, &args.models_exclude);
-    (flat.names, flat.clip, flat.group_indices)
+    (names, clip, preds_dirs, group_indices)
 }
 
 // ---------------------------------------------------------------------------
@@ -708,33 +846,53 @@ fn recover_quiz_b(a: &[f64], b_true: &[f64], yty: f64, n: usize, m: usize, decim
 fn main() -> ExitCode {
     let args = parse_args();
 
-    let split = load_pipeline_split(&args.pipeline);
-    let pr = split.get("pr").expect("pipeline [split].pr missing").clone();
-    let preds_dir = split.get("preds").expect("pipeline [split].preds missing").clone();
-    let split_name = split.get("name").cloned().unwrap_or_else(|| "?".to_string());
-
-    let (unique, clip, group_indices) = build_registry(&args);
+    let (unique, clip, preds_dirs, group_indices) = build_registry(&args);
     let m = unique.len();
     if m == 0 {
         eprintln!("error: no models left after exclusion");
         return ExitCode::from(2);
     }
 
-    println!("Pipeline:  {} (split = {})", args.pipeline, split_name);
-    match (&args.models_toml, args.models_manual.len()) {
-        (Some(t), 0) => println!("Models:    {} ({} unique across {} group(s))",
-            t, m, group_indices.len()),
-        (Some(t), k) => println!("Models:    {} + {} manual ({} unique across {} group(s))",
-            t, k, m, group_indices.len()),
-        (None, k) => println!("Models:    {} manual model(s)", k),
-    }
-    if args.models_toml.is_some() {
-        let g = if args.groups.is_empty() { "all".to_string() } else { args.groups.join(",") };
-        println!("Groups:    {}", g);
-    }
-    if !args.models_exclude.is_empty() {
-        println!("Excluded:  {} name(s): {}",
-            args.models_exclude.len(), args.models_exclude.join(", "));
+    // The qual dataset name is shared across splits (both pipelines set
+    // fulltrain_pr = "qual"); read it from the first source's pipeline.
+    let split0 = load_pipeline_split(&args.sources[0].pipeline);
+    let qual = split0.get("fulltrain_pr").expect("pipeline [split].fulltrain_pr missing").clone();
+
+    // --- Header ---
+    if args.cross_split {
+        println!("Mode:      cross-split quiz blend ({} sources)", args.sources.len());
+        for src in &args.sources {
+            let mt = src.models_toml.clone().unwrap_or_else(|| match src.label.as_str() {
+                "new" => MODELS_NEW.to_string(),
+                _ => MODELS_OLD.to_string(),
+            });
+            let g = if src.groups.is_empty() { "all".to_string() } else { src.groups.join(",") };
+            let man = if src.models_manual.is_empty() { String::new() }
+                      else { format!(" +{} manual", src.models_manual.len()) };
+            let exc = if src.models_exclude.is_empty() { String::new() }
+                      else { format!(", excl {}", src.models_exclude.len()) };
+            println!("  from {:<3}  {} (groups: {}{}{})", src.label, mt, g, man, exc);
+        }
+        println!("Models:    {} unique columns across {} group(s)", m, group_indices.len());
+    } else {
+        let src = &args.sources[0];
+        let split_name = split0.get("name").cloned().unwrap_or_else(|| "?".to_string());
+        println!("Pipeline:  {} (split = {})", src.pipeline, split_name);
+        match (&src.models_toml, src.models_manual.len()) {
+            (Some(t), 0) => println!("Models:    {} ({} unique across {} group(s))",
+                t, m, group_indices.len()),
+            (Some(t), k) => println!("Models:    {} + {} manual ({} unique across {} group(s))",
+                t, k, m, group_indices.len()),
+            (None, k) => println!("Models:    {} manual model(s)", k),
+        }
+        if src.models_toml.is_some() {
+            let g = if src.groups.is_empty() { "all".to_string() } else { src.groups.join(",") };
+            println!("Groups:    {}", g);
+        }
+        if !src.models_exclude.is_empty() {
+            println!("Excluded:  {} name(s): {}",
+                src.models_exclude.len(), src.models_exclude.join(", "));
+        }
     }
     println!("Lambda λ:  {}", args.lambda);
     println!("In-clip:   [{}, {}] (skips '>' columns)", args.in_clip_min, args.in_clip_max);
@@ -742,25 +900,31 @@ fn main() -> ExitCode {
     print_blas_info();
     println!();
 
-    // Load probe ratings (i8) → f32 (for the probe evaluation pass).
-    let y_path = format!("data/{}/ratings.npy", pr);
-    let y_i8: Array1<i8> = read_npy(&y_path).unwrap_or_else(|e| panic!("read {}: {}", y_path, e));
-    let y: Vec<f64> = y_i8.iter().map(|&r| r as f64).collect();
-    let n_probe = y.len();
-    println!("Probe set: {} ratings ({})", n_probe, y_path);
-
-    // Open one partial probe reader per unique model.
-    let mut readers: Vec<NpyF32Reader> = Vec::with_capacity(m);
-    for name in &unique {
-        let path = format!("{}/{}.{}.npy", preds_dir, name, pr);
-        let r = NpyF32Reader::open(&path);
-        assert_eq!(r.len, n_probe, "{}: length {} != probe {}", path, r.len, n_probe);
-        readers.push(r);
+    // Load probe ratings + open probe readers — legacy single-split only; a
+    // cross-split blend has no shared probe set, so it fits/evaluates on qual.
+    let mut readers: Vec<NpyF32Reader> = Vec::new();
+    let mut probe_y_i8: Option<Array1<i8>> = None;
+    let mut probe_y: Vec<f64> = Vec::new();
+    let mut n_probe = 0usize;
+    if !args.cross_split {
+        let pr = load_pipeline_split(&args.sources[0].pipeline)
+            .get("pr").expect("pipeline [split].pr missing").clone();
+        let y_path = format!("data/{}/ratings.npy", pr);
+        let y_i8: Array1<i8> = read_npy(&y_path).unwrap_or_else(|e| panic!("read {}: {}", y_path, e));
+        probe_y = y_i8.iter().map(|&r| r as f64).collect();
+        n_probe = y_i8.len();
+        println!("Probe set: {} ratings ({})", n_probe, y_path);
+        for (name, dir) in unique.iter().zip(preds_dirs.iter()) {
+            let path = format!("{}/{}.{}.npy", dir, name, pr);
+            let r = NpyF32Reader::open(&path);
+            assert_eq!(r.len, n_probe, "{}: length {} != probe {}", path, r.len, n_probe);
+            readers.push(r);
+        }
+        probe_y_i8 = Some(y_i8);
     }
 
     // Load qual ratings + is_test (for the quiz evaluation pass; in quiz-blend
     // mode the Gram is also built here, over the full qual set).
-    let qual = split.get("fulltrain_pr").expect("pipeline [split].fulltrain_pr missing").clone();
     let y_q_i8: Array1<i8> =
         read_npy(format!("data/{}/ratings.npy", qual))
             .unwrap_or_else(|e| panic!("read data/{}/ratings.npy: {}", qual, e));
@@ -771,10 +935,10 @@ fn main() -> ExitCode {
     let quiz_n_expected = is_test_q.iter().filter(|&&t| t == 0).count();
     println!("Quiz set:  {} of {} qual ratings", quiz_n_expected, n_q);
 
-    // Open one partial qual reader per unique model.
+    // Open one partial qual reader per unique model, from its own preds dir.
     let mut qual_readers: Vec<NpyF32Reader> = Vec::with_capacity(m);
-    for name in &unique {
-        let path = format!("{}/{}.{}.npy", preds_dir, name, qual);
+    for (name, dir) in unique.iter().zip(preds_dirs.iter()) {
+        let path = format!("{}/{}.{}.npy", dir, name, qual);
         let r = NpyF32Reader::open(&path);
         assert_eq!(r.len, n_q, "{}: length {} != qual {}", path, r.len, n_q);
         qual_readers.push(r);
@@ -797,9 +961,9 @@ fn main() -> ExitCode {
         (a, b, yty, n_q)
     } else {
         println!("Building Gram matrix over {} model(s) × {} ratings...", m, n_probe);
-        let (a, b) = build_gram(&y, &mut readers, &clip,
+        let (a, b) = build_gram(&probe_y, &mut readers, &clip,
             args.in_clip_min as f32, args.in_clip_max as f32);
-        let yty: f64 = y.iter().map(|v| v * v).sum();
+        let yty: f64 = probe_y.iter().map(|v| v * v).sum();
         (a, b, yty, n_probe)
     };
 
@@ -848,12 +1012,18 @@ fn main() -> ExitCode {
         println!("           probe & quiz RMSE for every selected prefix ({} fits).", fits.len());
     }
 
-    // Second pass on probe: compute clipped RMSE per fit
-    let (probe_sse, probe_n) = compute_clipped_sse(
-        &mut readers, &clip,
-        args.in_clip_min as f32, args.in_clip_max as f32, args.out_clip_min, args.out_clip_max,
-        &y_i8, None, &fits, m, "probe",
-    );
+    // Second pass on probe: compute clipped RMSE per fit (legacy single-split
+    // only; a cross-split blend has no shared probe, so this is skipped).
+    let (probe_sse, probe_n) = if args.cross_split {
+        (vec![0.0f64; fits.len()], 0usize)
+    } else {
+        compute_clipped_sse(
+            &mut readers, &clip,
+            args.in_clip_min as f32, args.in_clip_max as f32, args.out_clip_min, args.out_clip_max,
+            probe_y_i8.as_ref().expect("probe labels loaded in legacy mode"),
+            None, &fits, m, "probe",
+        )
+    };
 
     // Third pass on qual: compute clipped quiz RMSE per fit (mask via is_test).
     // y_q_i8 / is_test_q / qual_readers were loaded above; reuse them (the
@@ -883,6 +1053,14 @@ fn main() -> ExitCode {
                     "{:>4}  {:<40} {:>13.6} {:>11.6} {:>11.6}  {:>+9.6}",
                     i + 1, step.added, step.in_sample_rmse, p_rmse, q_rmse, delta,
                 );
+            }
+        }
+        None if args.cross_split => {
+            // Cross-split: only the quiz RMSE is meaningful (no shared probe).
+            println!("{:<24} {:>8} {:>14}", "source/group", "models", "quiz_rmse");
+            for ((name, gidxs, _w), q_sse) in fits.iter().zip(quiz_sse.iter()) {
+                let q_rmse = (q_sse / quiz_n as f64).sqrt();
+                println!("{:<24} {:>8} {:>14.6}", name, gidxs.len(), q_rmse);
             }
         }
         None => {
