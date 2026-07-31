@@ -842,6 +842,13 @@ groups = ["integrated", "rbm", "other"]
 voting = ["all"]
 seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
+# Ordinal-classifier MLP (4 sigmoid threshold heads + BCE); mlpc3o params.
+[jobs.mlpc3o]
+jobtype = "mlpblend"
+groups = ["integrated", "rbm", "other"]
+voting = ["all"]
+seeds = [1]
+
 # --- FWLS blends ---
 
 [jobs.fwls1]

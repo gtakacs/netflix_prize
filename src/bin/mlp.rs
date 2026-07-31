@@ -10,7 +10,7 @@ use netflix_prize::blend::{
     build_xy, close_log, cvk_blend, flatten_groups, load_models_toml, load_quiz_mask, log_columns,
     open_log, resolve_voting, save_preds, select_groups,
 };
-use netflix_prize::mlp::{MlpBlender, MlpCfg};
+use netflix_prize::mlp::{MlpBlender, MlpCfg, MlpHead};
 use netflix_prize::teeln;
 use std::collections::HashMap;
 use std::process::ExitCode;
@@ -38,6 +38,9 @@ struct BlendParams {
     tol: f64,
     n_iter_no_change: usize,
     folds: usize,
+    /// Output head: `Regression` (linear + squared loss) for `mlpr*` jobs, or
+    /// `Ordinal` (4 sigmoid threshold heads + BCE) for `mlpc*` jobs.
+    head: MlpHead,
 }
 
 /// Baseline = the `mlpr1` config (create_nn: 64×64, alpha 0.05, lr 0.0004, 64
@@ -55,6 +58,7 @@ impl Default for BlendParams {
             tol: 1e-4,
             n_iter_no_change: 10,
             folds: 2,
+            head: MlpHead::Regression,
         }
     }
 }
@@ -69,6 +73,13 @@ fn blend_config(name: &str) -> BlendParams {
             hidden: vec![32, 32], alpha: 0.24101624563575427, lr: 0.0005339808669500829,
             iters: 80, momentum: 0.9148116502629432, tol: 2.890613343488106e-5,
             n_iter_no_change: 9, ..Default::default()
+        },
+
+        // Bayesian-optimized ordinal MLP.
+        "mlpc3o" => BlendParams {
+            hidden: vec![64, 32], alpha: 0.9723373672604836, lr: 0.000953329728567159,
+            iters: 80, batch: 400, momentum: 0.9380845452666436, tol: 1.4640841816087311e-5,
+            n_iter_no_change: 7, head: MlpHead::Ordinal, ..Default::default()
         },
         _ => panic!("unknown blend job '{name}' (add a branch in blend_config)"),
     }
@@ -244,6 +255,7 @@ fn main() -> ExitCode {
             tol: p.tol,
             n_iter_no_change: p.n_iter_no_change,
             seed,
+            head: p.head,
             ..Default::default()
         };
         let (p_pr, p_ql) = cvk_blend::<MlpBlender>(
