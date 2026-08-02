@@ -96,9 +96,12 @@ struct Args {
     pipeline: String,
     models: String,
     groups: Vec<String>,
+    model_manual: Vec<String>,
     exclude: Vec<String>,
     voting_models: String,
     voting: Vec<String>,
+    feature_manual: Vec<String>,
+    lambda: Option<f64>,
     seeds: Vec<u64>,
 }
 
@@ -107,24 +110,30 @@ struct BlendParams {
     lambda: f64,
 }
 
-fn blend_config(name: &str) -> BlendParams {
+/// Preset FWLS parameters for a known blend name, or `None` for an ad-hoc name
+/// (which then requires `--lambda`).
+fn blend_config(name: &str) -> Option<BlendParams> {
     match name {
-        "fwls1" => BlendParams { lambda: 10000.0 },
-        _ => panic!("unknown blend job '{name}' (add a branch in blend_config)"),
+        "fwls1" => Some(BlendParams { lambda: 10000.0 }),
+        _ => None,
     }
 }
 
 fn print_help() {
     println!("Usage: fwls NAME [-n | -p FILE] [-t FILE] [--groups G,...] (--seeds N,... | --seed N)");
     println!();
-    println!("  NAME                       blend name; FWLS params from blend_config(NAME)");
+    println!("  NAME                       blend name; a preset (blend_config) or any ad-hoc name");
+    println!("                             (ad-hoc requires --lambda). Output goes to NAME-s<seed>.*");
     println!("  -n, --new                  use pipeline-new.toml for [split]");
     println!("  -p FILE, --pipeline FILE   pipeline TOML (default: pipeline-old.toml)");
     println!("  -t FILE, --models FILE     base-predictor models TOML (default: models-new.toml)");
-    println!("  --groups G,G,...           model groups to use (default: all groups in the TOML)");
+    println!("  --groups G,G,...           model groups to use (default: all; omit with -m for manual-only)");
+    println!("  -m NAME, --model NAME      add a single model (repeatable; combines with --groups)");
     println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
     println!("  --voting-models FILE       voting-feature groups TOML (default: voting-new.toml)");
-    println!("  --voting G,G,...           voting-feature groups to use (required; 'all' for every group)");
+    println!("  --voting G,G,...           voting-feature groups ('all' = every group); optional if -f given");
+    println!("  -f NAME, --feature NAME    add a single voting feature (repeatable; may be the only source)");
+    println!("  --lambda VALUE             ridge λ; overrides the preset, required for an ad-hoc name");
     println!("  --seeds N,N,...            fold seeds; one output NAME-s<N> per seed (data loaded once)");
     println!("  --seed N                   add a single fold seed (repeatable)");
     println!("  -h, --help                 show this help");
@@ -147,9 +156,12 @@ fn parse_args() -> Args {
         pipeline: "pipeline-old.toml".to_string(),
         models: "models-new.toml".to_string(),
         groups: Vec::new(),
+        model_manual: Vec::new(),
         exclude: Vec::new(),
         voting_models: "voting-new.toml".to_string(),
         voting: Vec::new(),
+        feature_manual: Vec::new(),
+        lambda: None,
         seeds: Vec::new(),
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -166,6 +178,9 @@ fn parse_args() -> Args {
                 }
                 i += 2;
             }
+            "-m" | "--model" => { a.model_manual.push(need(&argv, i)); i += 2; }
+            "-f" | "--feature" => { a.feature_manual.push(need(&argv, i)); i += 2; }
+            "--lambda" => { a.lambda = Some(need(&argv, i).parse().expect("bad --lambda value")); i += 2; }
             "-x" | "--exclude" => { a.exclude.push(need(&argv, i)); i += 2; }
             "--voting-models" => { a.voting_models = need(&argv, i); i += 2; }
             "--voting" => {
@@ -206,8 +221,8 @@ fn parse_args() -> Args {
         print_help();
         std::process::exit(2);
     }
-    if a.voting.is_empty() {
-        eprintln!("error: --voting is required (use 'all' for every group)");
+    if a.voting.is_empty() && a.feature_manual.is_empty() {
+        eprintln!("error: provide voting features via --voting GROUPS or -f NAME");
         print_help();
         std::process::exit(2);
     }
@@ -456,28 +471,60 @@ fn main() -> ExitCode {
     let preds = split.get("preds").expect("[split].preds missing").clone();
     let split_name = split.get("name").cloned().unwrap_or_else(|| "?".to_string());
 
-    let params = blend_config(&args.name);
-    let mg = load_models_toml(&args.models);
-    let groups = select_groups(&mg, &args.groups);
+    // Params from the named preset (overridable by --lambda), or fully from
+    // --lambda for an ad-hoc blend name.
+    let params = match blend_config(&args.name) {
+        Some(mut p) => { if let Some(l) = args.lambda { p.lambda = l; } p }
+        None => BlendParams {
+            lambda: args.lambda.unwrap_or_else(|| {
+                eprintln!("error: unknown blend '{}': provide --lambda VALUE", args.name);
+                std::process::exit(2);
+            }),
+        },
+    };
+    // Models: from --groups of the models TOML, or purely from -m when no group is
+    // named (manual-only skips loading the TOML entirely).
+    let mut groups = if args.groups.is_empty() && !args.model_manual.is_empty() {
+        indexmap::IndexMap::new()
+    } else {
+        select_groups(&load_models_toml(&args.models), &args.groups)
+    };
+    if !args.model_manual.is_empty() {
+        groups.insert("manual".to_string(), args.model_manual.clone());
+    }
     let flat = flatten_groups(&groups, &args.exclude);
     let (model_names, model_clip) = (flat.names, flat.clip);
-    let voting = resolve_voting(&args.voting_models, &args.voting);
+    assert!(!model_names.is_empty(), "no models selected (use --groups or -m)");
+    // Voting: from --voting of the voting TOML, plus any -f manual features. When
+    // no group is named the voting TOML is not loaded (manual-only).
+    let mut voting = if args.voting.is_empty() {
+        Vec::new()
+    } else {
+        resolve_voting(&args.voting_models, &args.voting)
+    };
+    voting.extend(args.feature_manual.iter().cloned());
+    assert!(!voting.is_empty(), "no voting features selected (use --voting or -f)");
 
     let m = model_names.len();
     let p = voting.len();
     let d = m * p + 1;
-    let groups_str = if args.groups.is_empty() { "all".to_string() } else { args.groups.join(",") };
-    let voting_str = args.voting.join(",");
+    let models_manual_only = args.groups.is_empty() && !args.model_manual.is_empty();
+    let models_src = if models_manual_only { "(manual)".to_string() } else { args.models.clone() };
+    let groups_str = if args.groups.is_empty() {
+        if args.model_manual.is_empty() { "all".to_string() } else { "manual".to_string() }
+    } else { args.groups.join(",") };
+    let voting_src = if args.voting.is_empty() { "(manual)".to_string() } else { args.voting_models.clone() };
+    let voting_str = if args.voting.is_empty() { "manual".to_string() } else { args.voting.join(",") };
     let seeds_str = args.seeds.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
 
     open_log(&preds, &args.name);
     teeln!("[{}]", args.name);
     teeln!("Pipeline:  {} (split = {})", args.pipeline, split_name);
-    teeln!("Models:    {} ({} predictors, groups: {})", args.models, m, groups_str);
+    teeln!("Models:    {} ({} predictors, groups: {})", models_src, m, groups_str);
     if !args.exclude.is_empty() {
         teeln!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
     }
-    teeln!("Voting:    {} ({} context features, groups: {})", args.voting_models, p, voting_str);
+    teeln!("Voting:    {} ({} context features, groups: {})", voting_src, p, voting_str);
     teeln!("Interact:  D = M·P + 1 = {}·{} + 1 = {}", m, p, d);
     teeln!("Lambda:    {}", params.lambda);
     teeln!("Seeds:     {} (2-fold split per seed)", seeds_str);

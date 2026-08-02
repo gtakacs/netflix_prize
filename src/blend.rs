@@ -143,6 +143,27 @@ fn expand_range_into(tok: &str, out: &mut Vec<String>) {
     out.push(tok.to_string());
 }
 
+/// Parse `name`, `name[:stop]`, `name[start:]` or `name[start:stop]` (Python-like
+/// slice; bounds optional) into (name, start, stop). Shared by the `pairs.toml`
+/// loader and by `-g/-G` group selection.
+fn parse_slice(spec: &str) -> (String, Option<usize>, Option<usize>) {
+    if let Some(open) = spec.rfind('[') {
+        if spec.ends_with(']') {
+            let name = spec[..open].to_string();
+            let inner = &spec[open + 1..spec.len() - 1];
+            let (a, b) = inner.split_once(':')
+                .unwrap_or_else(|| panic!("bad slice '{spec}' (use NAME[start:stop])"));
+            let parse = |s: &str, w: &str| -> Option<usize> {
+                let s = s.trim();
+                if s.is_empty() { None }
+                else { Some(s.parse().unwrap_or_else(|_| panic!("bad slice {w} in '{spec}'"))) }
+            };
+            return (name, parse(a, "start"), parse(b, "stop"));
+        }
+    }
+    (spec.to_string(), None, None)
+}
+
 // ---------------------------------------------------------------------------
 // Models TOML: groups + meta-groups
 // ---------------------------------------------------------------------------
@@ -182,6 +203,12 @@ pub fn load_models_toml(path: &str) -> ModelGroups {
 /// recursively to its constituent groups; otherwise it must be a real group.
 /// Unknown names and meta cycles are hard errors. Duplicates are dropped,
 /// keeping first-seen order.
+///
+/// A name may carry a Python-like slice — `integrated[:5]`, `integrated[5:]`,
+/// `integrated[3:7]` — which keeps only that window of the group's *expanded*
+/// model list (brace expansion applied, so the bounds count models, not TOML
+/// lines). On a meta group or `all` the window runs over the concatenation of
+/// its groups in order. Handy for cutting a small U down for a test run.
 pub fn select_groups(mg: &ModelGroups, names: &[String]) -> IndexMap<String, Vec<String>> {
     if names.is_empty() || (names.len() == 1 && names[0] == "all" && !mg.meta.contains_key("all")) {
         return mg.groups.clone();
@@ -189,7 +216,50 @@ pub fn select_groups(mg: &ModelGroups, names: &[String]) -> IndexMap<String, Vec
     let mut out: IndexMap<String, Vec<String>> = IndexMap::new();
     let mut visiting: HashSet<String> = HashSet::new();
     for n in names {
-        resolve_group(mg, n, &mut out, &mut visiting);
+        let (name, start, stop) = parse_slice(n);
+        if start.is_none() && stop.is_none() {
+            resolve_group(mg, &name, &mut out, &mut visiting);
+            continue;
+        }
+        let mut sub: IndexMap<String, Vec<String>> = IndexMap::new();
+        resolve_group(mg, &name, &mut sub, &mut visiting);
+        let sliced = slice_groups(sub, start, stop);
+        if sliced.is_empty() {
+            eprintln!("warning: '{n}' selected no models");
+        }
+        for (g, specs) in sliced {
+            out.entry(g).or_insert(specs);
+        }
+    }
+    out
+}
+
+/// Keep only the `[start, stop)` window of the expanded model list of `groups`,
+/// counted across the whole map in order. Groups left empty are dropped; the
+/// kept entries are already-expanded literal specs (`>` prefix preserved), which
+/// [`expand_specs`] passes through unchanged downstream.
+fn slice_groups(
+    groups: IndexMap<String, Vec<String>>,
+    start: Option<usize>,
+    stop: Option<usize>,
+) -> IndexMap<String, Vec<String>> {
+    let start = start.unwrap_or(0);
+    let stop = stop.unwrap_or(usize::MAX);
+    let mut seen = 0usize;
+    let mut out: IndexMap<String, Vec<String>> = IndexMap::new();
+    for (gname, specs) in groups {
+        let mut kept: Vec<String> = Vec::new();
+        for raw in &specs {
+            for spec in expand_specs(raw) {
+                if seen >= start && seen < stop {
+                    kept.push(spec);
+                }
+                seen += 1;
+            }
+        }
+        if !kept.is_empty() {
+            out.insert(gname, kept);
+        }
     }
     out
 }
@@ -330,6 +400,48 @@ pub fn resolve_voting(voting_toml: &str, groups: &[String]) -> Vec<String> {
     let mg = load_models_toml(voting_toml);
     let selected = select_groups(&mg, groups);
     flatten_groups(&selected, &[]).names
+}
+
+// ---------------------------------------------------------------------------
+// Pair (product) features — shared across blenders
+// ---------------------------------------------------------------------------
+
+/// Load a `pairs.toml` spec (`pairs = ["A × B", ...]`, the fwls-fs interaction
+/// format), optionally sliced (`path[:10]`), into `(left, right)` atom-name
+/// tuples. Each entry must contain exactly one `" × "` separator.
+pub fn load_pairs(spec: &str) -> Vec<(String, String)> {
+    let (path, start, stop) = parse_slice(spec);
+    #[derive(serde::Deserialize)]
+    struct P { #[serde(default)] pairs: Vec<String> }
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let p: P = toml::from_str(&text).unwrap_or_else(|e| panic!("parse {path}: {e}"));
+    let mut out: Vec<(String, String)> = Vec::with_capacity(p.pairs.len());
+    for s in &p.pairs {
+        let parts: Vec<&str> = s.split(" × ").collect();
+        if parts.len() != 2 {
+            panic!("pairs entry '{s}' is not of the form 'A × B'");
+        }
+        out.push((parts[0].trim().to_string(), parts[1].trim().to_string()));
+    }
+    let start = start.unwrap_or(0).min(out.len());
+    let stop = stop.unwrap_or(out.len()).min(out.len());
+    if start >= stop { return Vec::new(); }
+    out[start..stop].to_vec()
+}
+
+/// Deduplicate the atom names referenced by `pairs` (first-seen order) and map
+/// each pair to its (left, right) atom indices — the shared building block for
+/// materializing product columns in any blender.
+pub fn pair_atoms(pairs: &[(String, String)]) -> (Vec<String>, Vec<(usize, usize)>) {
+    let mut index: HashMap<String, usize> = HashMap::new();
+    let mut atoms: Vec<String> = Vec::new();
+    let mut pidx: Vec<(usize, usize)> = Vec::with_capacity(pairs.len());
+    for (a, b) in pairs {
+        let ia = *index.entry(a.clone()).or_insert_with(|| { atoms.push(a.clone()); atoms.len() - 1 });
+        let ib = *index.entry(b.clone()).or_insert_with(|| { atoms.push(b.clone()); atoms.len() - 1 });
+        pidx.push((ia, ib));
+    }
+    (atoms, pidx)
 }
 
 /// Load one model's predictions for `dataset` from

@@ -40,6 +40,10 @@ required-features = ["blas"]
 name = "fwls"
 required-features = ["blas"]
 
+[[bin]]
+name = "fwls-fs"
+required-features = ["blas"]
+
 [target.'cfg(target_os = "macos")'.dependencies]
 blas-src = { version = "0.10", features = ["accelerate"], optional = true }
 
