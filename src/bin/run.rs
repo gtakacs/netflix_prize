@@ -79,11 +79,19 @@ struct JobConfig {
     /// feature files and exposes the path to the `cmd` as `{voting_models}`.
     voting_models: Option<String>,
     /// Voting-feature group names selected from `voting_models`; must be given
-    /// explicitly (use `["all"]` for every group) — an empty list is a hard error
-    /// for any job that sets `voting_models`. Exposed to the `cmd` as `{voting}`
-    /// (comma-joined).
+    /// explicitly — an empty list is a hard error for any job that sets
+    /// `voting_models`. Every name resolves through the voting TOML (there is no
+    /// builtin `all`), so a TOML that wants an everything-group declares it.
+    /// Exposed to the `cmd` as `{voting}` (comma-joined).
     #[serde(default)]
     voting: Vec<String>,
+    /// Extra CLI arguments appended verbatim to the job's `cmd` via `{extra}`
+    /// (empty string when unset, like `{exclude}`). For one-off blend settings a
+    /// jobtype template cannot express — an ad-hoc `--lambda`, an extra `-m`.
+    /// Unlike `groups`/`voting` these are opaque to the runner, so anything that
+    /// should gate the job must still come from the models/voting TOMLs.
+    #[serde(default)]
+    extra_args: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -285,6 +293,7 @@ fn build_subst_vars(job_name: &str, job: &JobConfig, pipeline: &Pipeline) -> Has
         .collect::<Vec<_>>()
         .join(" ");
     vars.insert("exclude".to_string(), exclude_flags);
+    vars.insert("extra".to_string(), job.extra_args.join(" "));
     vars
 }
 

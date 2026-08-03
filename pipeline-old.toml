@@ -59,7 +59,7 @@ models        = "models-old.toml"
 voting_models = "voting-old.toml"
 inputs        = ["src/bin/fwls.rs"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-old.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
+cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-old.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
 # --- Data preparation ---
 

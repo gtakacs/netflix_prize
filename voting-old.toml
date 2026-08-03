@@ -40,3 +40,8 @@ silver = [
     "fwls/F{1,2,6,7,8,9,10,11,12,13,14,15,16,17,18,20}",
     "claude105/{026,082,097}",
 ]
+
+# `all` is an explicit meta group, not a builtin: adding a new group above must
+# not silently widen what the blend jobs already select.
+[meta]
+all = ["gold", "silver"]

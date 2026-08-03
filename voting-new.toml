@@ -2,7 +2,9 @@
 # Specs are names relative to preds_new/: 'vf/<name>' for computed voting
 # features (in preds_new/vf/), or a bare predictor name to use a normal
 # prediction as a context feature. Brace/`..` expansion supported; no glob.
-# The `all` group is the full vfeat1 output set (must match its Selection).
+# The `all` group is the full vfeat1 output set (must match its Selection). It
+# is an ordinary group, not a builtin: a new group added below is only used by
+# jobs that name it.
 
 all = [
     "vf/vf000_constant",
@@ -135,4 +137,30 @@ all = [
     "vf/vf127_user_prefers_old",
     "vf/vf128_movie_avg_rater_mean",
     "vf/vf129_movie_avg_rater_entropy",
+]
+
+# Hand-picked context features for the fwls2 blend (from an fwls-fs forward
+# selection). Mixes computed vf/ features with a few predictions used as
+# context; `all` above is untouched, so no other job sees these.
+fwls2 = [
+    "vf/vf000_constant",
+    "vf/vf125_user_avg_item_year",
+    "vf/vf046_user_rating_velocity",
+    "vf/vf010_bayesian_movie_minus_user",
+    "vf/vf075_pct_r1_same_day",
+    "vf/vf090_movie_rating_slope",
+    "rbmx2-400-p4",
+    "tsvdx5-20-mf",
+    "vf/vf006_movie_std",
+    "vf/vf035_log_r1_same_day",
+    "vf/vf037_log_r3_same_day",
+    "vf/vf113_same_day_range",
+    "rbmx2-10__tsvdx4-10lm-nsvd1",
+    "vf/vf004_log_user_cnt",
+    "vf/vf001_user_gt3_on_date",
+    "vf/vf002_log_movie_cnt",
+    "tsvdx4-60",
+    "rbmx2-400__knnf",
+    "vf/vf005_user_std",
+    "tsvdx5-300__nlpp__knn-w",
 ]

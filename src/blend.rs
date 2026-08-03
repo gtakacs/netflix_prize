@@ -197,20 +197,22 @@ pub fn load_models_toml(path: &str) -> ModelGroups {
     ModelGroups { groups, meta }
 }
 
-/// Resolve `-g/--groups` names into a filtered, ordered group map. Empty names
-/// (or the single builtin token `all`, unless a meta group shadows it) selects
-/// every real group in TOML order. A name matching a `[meta]` entry expands
-/// recursively to its constituent groups; otherwise it must be a real group.
-/// Unknown names and meta cycles are hard errors. Duplicates are dropped,
-/// keeping first-seen order.
+/// Resolve `-g/--groups` names into a filtered, ordered group map. An empty list
+/// means "not specified" and selects every group in TOML order. Otherwise every
+/// name must resolve through the TOML itself: a `[meta]` entry expands
+/// recursively to its constituent groups, else it must be a real group. There is
+/// no builtin `all` token — a TOML that wants one declares it, as a group or as
+/// a meta (`all = ["gold", "silver"]`), so adding a group can never silently
+/// widen what an existing `all` selects. Unknown names and meta cycles are hard
+/// errors. Duplicates are dropped, keeping first-seen order.
 ///
 /// A name may carry a Python-like slice — `integrated[:5]`, `integrated[5:]`,
 /// `integrated[3:7]` — which keeps only that window of the group's *expanded*
 /// model list (brace expansion applied, so the bounds count models, not TOML
-/// lines). On a meta group or `all` the window runs over the concatenation of
-/// its groups in order. Handy for cutting a small U down for a test run.
+/// lines). On a meta group the window runs over the concatenation of its groups
+/// in order. Handy for cutting a small U down for a test run.
 pub fn select_groups(mg: &ModelGroups, names: &[String]) -> IndexMap<String, Vec<String>> {
-    if names.is_empty() || (names.len() == 1 && names[0] == "all" && !mg.meta.contains_key("all")) {
+    if names.is_empty() {
         return mg.groups.clone();
     }
     let mut out: IndexMap<String, Vec<String>> = IndexMap::new();
@@ -280,12 +282,6 @@ fn resolve_group(
             resolve_group(mg, m, out, visiting);
         }
         visiting.remove(name);
-        return;
-    }
-    if name == "all" {
-        for (g, specs) in &mg.groups {
-            out.entry(g.clone()).or_insert_with(|| specs.clone());
-        }
         return;
     }
     match mg.groups.get(name) {

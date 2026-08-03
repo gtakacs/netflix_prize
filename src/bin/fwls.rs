@@ -131,7 +131,7 @@ fn print_help() {
     println!("  -m NAME, --model NAME      add a single model (repeatable; combines with --groups)");
     println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
     println!("  --voting-models FILE       voting-feature groups TOML (default: voting-new.toml)");
-    println!("  --voting G,G,...           voting-feature groups ('all' = every group); optional if -f given");
+    println!("  --voting G,G,...           voting-feature groups from the TOML; optional if -f given");
     println!("  -f NAME, --feature NAME    add a single voting feature (repeatable; may be the only source)");
     println!("  --lambda VALUE             ridge λ; overrides the preset, required for an ad-hoc name");
     println!("  --seeds N,N,...            fold seeds; one output NAME-s<N> per seed (data loaded once)");

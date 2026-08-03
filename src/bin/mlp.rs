@@ -95,7 +95,7 @@ fn print_help() {
     println!("  --groups G,G,...           model groups to use (default: all groups in the TOML)");
     println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
     println!("  --voting-models FILE       voting-feature groups TOML (required)");
-    println!("  --voting G,G,...           voting-feature groups to use (required; 'all' for every group)");
+    println!("  --voting G,G,...           voting-feature groups to use (required; 'all' if the TOML defines it)");
     println!("  --seeds N,N,...            net+fold seeds; one output NAME-s<N> per seed (data loaded once)");
     println!("  --seed N                   add a single seed (repeatable)");
     println!("  -h, --help                 show this help");
@@ -185,7 +185,7 @@ fn parse_args() -> Args {
         std::process::exit(2);
     }
     if a.voting.is_empty() {
-        eprintln!("error: --voting is required (use 'all' for every group)");
+        eprintln!("error: --voting is required (name a group from the voting TOML, e.g. 'all')");
         print_help();
         std::process::exit(2);
     }

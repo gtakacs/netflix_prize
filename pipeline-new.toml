@@ -63,7 +63,7 @@ voting_models = "voting-new.toml"
 inputs        = ["src/bin/fwls.rs"]
 inputs_from   = ["vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
+cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
 [defaults.paropt]
 inputs_from = ["ingest", "newsplit"]
@@ -856,3 +856,14 @@ jobtype = "fwlsblend"
 groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend"]
 voting = ["all"]
 seeds = [1]
+
+# Narrow FWLS: base + blend predictors against a hand-picked 20-feature context
+# set (voting group `fwls2`), plus vf090 pulled in as a model factor. An ad-hoc
+# blend name, so λ comes from --lambda rather than blend_config.
+
+[jobs.fwls2]
+jobtype = "fwlsblend"
+groups = ["base", "blends"]
+voting = ["fwls2"]
+seeds = [1]
+extra_args = ["--lambda", "50", "-m", "vf/vf090_movie_rating_slope"]
