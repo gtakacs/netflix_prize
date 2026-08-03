@@ -867,3 +867,10 @@ groups = ["base", "blends"]
 voting = ["fwls2"]
 seeds = [1]
 extra_args = ["--lambda", "50", "-m", "vf/vf090_movie_rating_slope"]
+
+[jobs.fwls3]
+jobtype = "fwlsblend"
+groups = ["integrated"]
+voting = ["all"]
+seeds = [1]
+extra_args = ["--lambda", "50"]

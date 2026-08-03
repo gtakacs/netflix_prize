@@ -130,6 +130,7 @@ mlpblend = [
 fwlsblend = [
     "fwls1-s1",
     "fwls2-s1",
+    "fwls3-s1",
 ]
 
 # Meta-groups: named unions of group (or other meta) names, usable only via
