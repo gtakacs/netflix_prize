@@ -29,6 +29,7 @@ mod real {
         pipeline: String,
         models: String,
         groups: Vec<String>,
+        model_manual: Vec<String>,
         exclude: Vec<String>,
         voting_models: String,
         voting: Vec<String>,
@@ -108,7 +109,8 @@ mod real {
         println!("                             blend_config(NAME); produces NAME-s<seed>.*");
         println!("  -p FILE, --pipeline FILE   pipeline TOML (required; carries the split)");
         println!("  -t FILE, --models FILE     base-predictor models TOML (required)");
-        println!("  --groups G,G,...           model groups to use (default: all groups in the TOML)");
+        println!("  --groups G,G,...           model groups (default: the TOML's `all`; omit with -m for manual-only)");
+        println!("  -m NAME, --model NAME      add a single base predictor (repeatable; combines with --groups)");
         println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
         println!("  --voting-models FILE       voting-feature groups TOML (required)");
         println!("  --voting G,G,...           voting-feature groups to use (required; 'all' if the TOML defines it)");
@@ -131,6 +133,7 @@ mod real {
             pipeline: String::new(),
             models: String::new(),
             groups: Vec::new(),
+            model_manual: Vec::new(),
             exclude: Vec::new(),
             voting_models: String::new(),
             voting: Vec::new(),
@@ -149,6 +152,7 @@ mod real {
                     }
                     i += 2;
                 }
+                "-m" | "--model" => { a.model_manual.push(need(&argv, i)); i += 2; }
                 "-x" | "--exclude" => { a.exclude.push(need(&argv, i)); i += 2; }
                 "--voting-models" => { a.voting_models = need(&argv, i); i += 2; }
                 "--voting" => {
@@ -230,18 +234,31 @@ mod real {
         let split_name = split.get("name").cloned().unwrap_or_else(|| "?".to_string());
 
         let p = blend_config(&args.name);
-        let mg = load_models_toml(&args.models);
-        let groups = select_groups(&mg, &args.groups);
+        // Models: from --groups of the models TOML, or purely from -m when no group
+        // is named (manual-only skips loading the TOML entirely).
+        let mut groups = if args.groups.is_empty() && !args.model_manual.is_empty() {
+            indexmap::IndexMap::new()
+        } else {
+            select_groups(&load_models_toml(&args.models), &args.groups)
+        };
+        if !args.model_manual.is_empty() {
+            groups.insert("manual".to_string(), args.model_manual.clone());
+        }
         let base = flatten_groups(&groups, &args.exclude).specs();
+        assert!(!base.is_empty(), "no models selected (use --groups or -m)");
         let voting = resolve_voting(&args.voting_models, &args.voting);
 
         open_log(&preds, &args.name);
         let seeds_str = args.seeds.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
-        let groups_str = if args.groups.is_empty() { "all".to_string() } else { args.groups.join(",") };
+        let models_src = if args.groups.is_empty() && !args.model_manual.is_empty() {
+            "(manual)".to_string()
+        } else { args.models.clone() };
+        let groups_str = if !args.groups.is_empty() { args.groups.join(",") }
+            else if args.model_manual.is_empty() { "all".to_string() } else { "manual".to_string() };
         let voting_str = args.voting.join(",");
         teeln!("[{}]", args.name);
         teeln!("Pipeline:  {} (split = {})", args.pipeline, split_name);
-        teeln!("Models:    {} ({} base predictors, groups: {})", args.models, base.len(), groups_str);
+        teeln!("Models:    {} ({} base predictors, groups: {})", models_src, base.len(), groups_str);
         if !args.exclude.is_empty() {
             teeln!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
         }

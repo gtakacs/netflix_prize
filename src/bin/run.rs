@@ -64,9 +64,16 @@ struct JobConfig {
     seeds: Vec<u64>,
     /// Model-group names a blend job consumes from its `models` TOML. When
     /// non-empty the runner gates only on those groups' predictions and exposes
-    /// the comma-joined list to the `cmd` as `{groups}`; empty resolves to `all`.
+    /// the comma-joined list to the `cmd` as `{groups}`; empty resolves to the
+    /// TOML's `all` group (or every group when it defines none).
     #[serde(default)]
     groups: Vec<String>,
+    /// Individual base predictors for a blend job, named directly instead of (or
+    /// alongside) `groups`. Rendered into the `cmd` as `-m '<name>'` flags, and
+    /// gated on like any group member. With `groups` empty these are the whole
+    /// model set, so the job never pulls in the models TOML's groups.
+    #[serde(default)]
+    models_manual: Vec<String>,
     /// Base-predictor names to drop from a blend job's model set. Each entry is
     /// brace-expanded (like a model spec) and `>`-stripped before matching. The
     /// runner both skips them when gating on `models` predictions and renders
@@ -203,32 +210,46 @@ fn expand_extras(job_name: &str, job: &mut JobConfig) {
     }
 }
 
-/// For jobs with a `models` TOML: read it, flatten all groups, and add each
-/// base predictor's `{pr}` and `{fulltrain_pr}` prediction files as inputs so
-/// the runner gates on them. The `>` no-clip prefix is stripped. The paths are
-/// kept as templates (`{preds}`, `{pr}`, `{fulltrain_pr}` substituted later).
+/// For jobs with a `models` TOML: resolve the selected groups plus any
+/// `models_manual` names, and add each base predictor's `{pr}` and
+/// `{fulltrain_pr}` prediction files as inputs so the runner gates on them. The
+/// `>` no-clip prefix is stripped. The paths are kept as templates (`{preds}`,
+/// `{pr}`, `{fulltrain_pr}` substituted later).
+///
+/// `groups` left empty means "every group in the TOML" as before — except when
+/// `models_manual` is given, which then *is* the whole model set. The resolved
+/// group names are written back into `job.groups` so the rendered `--groups`
+/// lists them explicitly (there is no builtin `all` to fall back on).
 fn expand_blend_models(job: &mut JobConfig) {
     let Some(path) = job.models.clone() else { return; };
-    let mg = load_models_toml(&path);
-    let groups = select_groups(&mg, &job.groups);
+    let manual_only = job.groups.is_empty() && !job.models_manual.is_empty();
+    let groups = if manual_only {
+        IndexMap::new()
+    } else {
+        let mg = load_models_toml(&path);
+        let sel = select_groups(&mg, &job.groups);
+        if job.groups.is_empty() {
+            job.groups = sel.keys().cloned().collect();
+        }
+        sel
+    };
     // Names dropped via `exclude` must not gate the job (mirrors the binaries'
     // `-x` filtering); brace-expand and `>`-strip each entry to match resolved names.
     let excluded: std::collections::HashSet<String> = job.exclude.iter()
         .flat_map(|raw| expand_specs(raw))
         .map(|spec| spec.trim_start_matches('>').to_string())
         .collect();
-    for specs in groups.values() {
-        for raw in specs {
-            for spec in expand_specs(raw) {
-                let name = spec.trim_start_matches('>');
-                if excluded.contains(name) {
-                    continue;
-                }
-                for ds in ["{pr}", "{fulltrain_pr}"] {
-                    let inp = format!("{{preds}}/{}.{}.npy", name, ds);
-                    if !job.inputs.contains(&inp) {
-                        job.inputs.push(inp);
-                    }
+    let from_groups = groups.values().flat_map(|specs| specs.iter());
+    for raw in from_groups.chain(job.models_manual.iter()).cloned().collect::<Vec<_>>() {
+        for spec in expand_specs(&raw) {
+            let name = spec.trim_start_matches('>');
+            if excluded.contains(name) {
+                continue;
+            }
+            for ds in ["{pr}", "{fulltrain_pr}"] {
+                let inp = format!("{{preds}}/{}.{}.npy", name, ds);
+                if !job.inputs.contains(&inp) {
+                    job.inputs.push(inp);
                 }
             }
         }
@@ -282,8 +303,17 @@ fn build_subst_vars(job_name: &str, job: &JobConfig, pipeline: &Pipeline) -> Has
         let csv = job.seeds.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
         vars.insert("seeds".to_string(), csv);
     }
-    let groups_csv = if job.groups.is_empty() { "all".to_string() } else { job.groups.join(",") };
-    vars.insert("groups".to_string(), groups_csv);
+    // `{model_sel}` is the whole model-selection argument: the `--groups` flag
+    // (omitted when the job names its predictors directly) plus one `-m` per
+    // manual name. By this point expand_blend_models has filled in `groups` for
+    // a job that left it empty, so there is never a bare `--groups all` to emit.
+    let mut model_sel: Vec<String> = Vec::new();
+    if !job.groups.is_empty() {
+        model_sel.push(format!("--groups {}", job.groups.join(",")));
+    }
+    model_sel.extend(job.models_manual.iter().map(|m| format!("-m '{}'", m)));
+    vars.insert("model_sel".to_string(), model_sel.join(" "));
+    vars.insert("groups".to_string(), job.groups.join(","));
     if let Some(vm) = &job.voting_models { vars.insert("voting_models".to_string(), vm.clone()); }
     vars.insert("voting".to_string(), job.voting.join(","));
     // Render exclusions as repeated `-x '<name>'` flags (empty string when unset,

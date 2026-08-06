@@ -197,14 +197,18 @@ pub fn load_models_toml(path: &str) -> ModelGroups {
     ModelGroups { groups, meta }
 }
 
-/// Resolve `-g/--groups` names into a filtered, ordered group map. An empty list
-/// means "not specified" and selects every group in TOML order. Otherwise every
-/// name must resolve through the TOML itself: a `[meta]` entry expands
-/// recursively to its constituent groups, else it must be a real group. There is
-/// no builtin `all` token — a TOML that wants one declares it, as a group or as
-/// a meta (`all = ["gold", "silver"]`), so adding a group can never silently
-/// widen what an existing `all` selects. Unknown names and meta cycles are hard
-/// errors. Duplicates are dropped, keeping first-seen order.
+/// Resolve `-g/--groups` names into a filtered, ordered group map. Every name
+/// resolves through the TOML itself: a `[meta]` entry expands recursively to its
+/// constituent groups, else it must be a real group. There is no builtin `all`
+/// token — a TOML that wants one declares it, as a group or as a meta
+/// (`all = ["gold", "silver"]`), so adding a group can never silently widen what
+/// an existing `all` selects.
+///
+/// An empty list means "not specified", which resolves to the `all` group when
+/// the TOML defines one and to every group otherwise. So a TOML with a helper
+/// group it does not consider part of "everything" (a saved selection, a scan
+/// set) just leaves that group out of its `all`. Unknown names and meta cycles
+/// are hard errors. Duplicates are dropped, keeping first-seen order.
 ///
 /// A name may carry a Python-like slice — `integrated[:5]`, `integrated[5:]`,
 /// `integrated[3:7]` — which keeps only that window of the group's *expanded*
@@ -213,7 +217,10 @@ pub fn load_models_toml(path: &str) -> ModelGroups {
 /// in order. Handy for cutting a small U down for a test run.
 pub fn select_groups(mg: &ModelGroups, names: &[String]) -> IndexMap<String, Vec<String>> {
     if names.is_empty() {
-        return mg.groups.clone();
+        if !mg.meta.contains_key("all") && !mg.groups.contains_key("all") {
+            return mg.groups.clone();
+        }
+        return select_groups(mg, std::slice::from_ref(&"all".to_string()));
     }
     let mut out: IndexMap<String, Vec<String>> = IndexMap::new();
     let mut visiting: HashSet<String> = HashSet::new();

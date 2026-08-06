@@ -109,6 +109,109 @@ other = [
     "bknbrx-100_ep{01,05}",      # non-deterministic!
 ]
 
+# Column-mode fwls-fs selection (fwls-fs-full.log, 168 steps, 3-fold CV): the
+# columns picked in the *model* role, in selection order. '>' no-clip flags
+# mirror the entries above; the fwls5 job pairs this with --in-clip 0,6.
+fwls5 = [
+    "tsvdx5-400__nlpp__knn3",
+    "rbmx2-500__knn-w",
+    "tsvdx4-4800lm__knnf",
+    "cfnade-96_ep95",
+    "rbmx2-200__knn3",
+    "rbmx2-500bp__knnf",
+    "mf-61__asym-16",
+    "tsvdx5-150o_ep24",
+    "als8-8__knn3",
+    "tsvdx4-4800lm__knns",
+    "cfnade-48_ep25",
+    "tsvdx4-400lm__epochs",
+    "tsvdx6-300_ep12",
+    ">tsvdx4-16-t__knnf",
+    "vf/vf124_movie_maturity",
+    "tsvdx5-150__nlpp__knnf",
+    "cfnade-48_ep95",
+    "vf/vf084_same_day_mean_rating",
+    ">tsvdx5-40-nsvd1",
+    "vf/vf028_has_r4_same_day",
+    "vf/vf061_user_pct_extreme",
+    "vf/vf010_bayesian_movie_minus_user",
+    "tsvdx4-p0tbo__knn3",
+    "tsvdx5-60",
+    "rbmx2-40__knn3",
+    "vf/vf092_movie_early_late_diff",
+    "rbmx2-8e__knnf",
+    "tsvdx5-1200lm__epochs",
+    "tsvdx4-h8nb_ep01",
+    "vf/vf019_max_sim",
+    "rbmx2-600_ep27",
+    "rbmx2-100e_ep15",
+    "tsvdx4-1600lm_ep02",
+    "vf/vf016_user_avg_movie_pop",
+    "tsvdx4-4800lm__knn-d",
+    "vf/vf024_sameday_corr",
+    "vf/vf119_log_movie_same_day_cnt",
+    "rbmx2-300s__knn3",
+    "aex-64",
+    "cfnade-96_ep10",
+    "tsvdx5-300__nlpp__knn-w",
+    "vf/vf072_log_user_cnt_over_movie_cnt",
+    "bknbrx-50_ep17",
+    "rbmx2-16-t",
+    "tsvdx4-q16tb__epochs",
+    "mf-61__knn3",
+    "rbmx2-12__asym-16__knnf",
+    "vf/vf080_user_log_avg_batch",
+    "tsvdx5-400__knn3",
+    "tsvdx4-60o__epochs",
+    "rbmx2-800bp_ep03",
+    "rbmx2-10r__knn3",
+    "vf/vf015_movie_single_day_pct",
+    "tsvdx4-400lm__knnf",
+    ">rbmx2-400-p4",
+    "tsvdx4-2400lm__knns",
+    "cfnade-12_ep40",
+    "mfrbmx-50",
+    ">tsvdx4-400lm-nsvd1",
+    ">tsvdx4-400lm-mf",
+    ">tsvdx5-150-mf",
+    "tsvdx6-300_ep20",
+    "vf/vf056_movie_skewness",
+    "vf/vf085_same_day_std_rating",
+    "vf/vf021_svd_movie_norm",
+    "rbmx2-300s_ep46",
+    "vf/vf129_movie_avg_rater_entropy",
+    "tsvdx6-300_ep03",
+    ">tsvdx5-20-mf",
+    "vf/vf043_log_r4_other_day",
+    "vf/vf045_movie_log_age",
+    "rbmx2-160f",
+    "mf-61__asym-16_ep02",
+    "tsvdx4-d0tb__knn3",
+    "tsvdx4p-16000lm_ep09",
+    "vf/vf109_user_movie_dist_cosine",
+    "tsvdx5-120o",
+    "tsvdx5-120o__knn3",
+    "vf/vf116_is_first_date",
+    "vf/vf060_movie_entropy",
+    "bk3-20__knns",
+    "vf/vf008_log_user_date_cnt",
+    "tsvdx4p-8000lm__knnf",
+    "vf/vf097_movie_herfindahl",
+    "rbmx2-14e",
+    "tsvdx4-60__epochs",
+    "tsvdx4-60",
+    "vf/vf090_movie_rating_slope",
+    "tsvdx4-n8nbo__knn3",
+    "tsvdx4-t8cu_ep06",
+    "vf/vf127_user_prefers_old",
+    "tsvdx4-60o__knns",
+    "vf/vf114_same_day_pct_high",
+    ">tsvdx5-120o-bias",
+    "tsvdx4-4800lm_ep13",
+    "tsvdx5-120o__epochs",
+    "bknbrx-50_ep21",
+]
+
 # Second-level blend outputs (predictions produced by the gbm/mlp blend jobs).
 # Only consumed by blenders that explicitly list these groups via `--groups`
 # (e.g. fwls); the gbr*/gbc*/mlpr* jobs select the base groups instead, so they
@@ -131,6 +234,8 @@ fwlsblend = [
     "fwls1-s1",
     "fwls2-s1",
     "fwls3-s1",
+    "fwls4-s1",
+    "fwls5-s1",
 ]
 
 # Meta-groups: named unions of group (or other meta) names, usable only via
@@ -140,3 +245,7 @@ fwlsblend = [
 [meta]
 base   = ["integrated", "rbm", "other"]
 blends = ["gbmblend", "mlpblend"]
+# `all` is what an unqualified selection (no -g/--groups) resolves to: the
+# maintained list of *real* predictor groups. Add new real groups here;
+# selection/helper groups stay out so they never leak into a default run.
+all    = ["integrated", "rbm", "other", "gbmblend", "mlpblend", "fwlsblend"]

@@ -102,6 +102,7 @@ struct Args {
     voting: Vec<String>,
     feature_manual: Vec<String>,
     lambda: Option<f64>,
+    in_clip: (f32, f32),
     seeds: Vec<u64>,
 }
 
@@ -127,13 +128,15 @@ fn print_help() {
     println!("  -n, --new                  use pipeline-new.toml for [split]");
     println!("  -p FILE, --pipeline FILE   pipeline TOML (default: pipeline-old.toml)");
     println!("  -t FILE, --models FILE     base-predictor models TOML (default: models-new.toml)");
-    println!("  --groups G,G,...           model groups to use (default: all; omit with -m for manual-only)");
+    println!("  --groups G,G,...           model groups (default: the TOML's `all`; omit with -m for manual-only)");
     println!("  -m NAME, --model NAME      add a single model (repeatable; combines with --groups)");
     println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
     println!("  --voting-models FILE       voting-feature groups TOML (default: voting-new.toml)");
     println!("  --voting G,G,...           voting-feature groups from the TOML; optional if -f given");
     println!("  -f NAME, --feature NAME    add a single voting feature (repeatable; may be the only source)");
     println!("  --lambda VALUE             ridge λ; overrides the preset, required for an ad-hoc name");
+    println!("  --in-clip MIN,MAX          clip range for clipped model columns (default {CLIP_MIN},{CLIP_MAX});");
+    println!("                             use 0,6 to match an fwls-fs selection run");
     println!("  --seeds N,N,...            fold seeds; one output NAME-s<N> per seed (data loaded once)");
     println!("  --seed N                   add a single fold seed (repeatable)");
     println!("  -h, --help                 show this help");
@@ -162,6 +165,7 @@ fn parse_args() -> Args {
         voting: Vec::new(),
         feature_manual: Vec::new(),
         lambda: None,
+        in_clip: (CLIP_MIN, CLIP_MAX),
         seeds: Vec::new(),
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -181,6 +185,16 @@ fn parse_args() -> Args {
             "-m" | "--model" => { a.model_manual.push(need(&argv, i)); i += 2; }
             "-f" | "--feature" => { a.feature_manual.push(need(&argv, i)); i += 2; }
             "--lambda" => { a.lambda = Some(need(&argv, i).parse().expect("bad --lambda value")); i += 2; }
+            "--in-clip" => {
+                let raw = need(&argv, i);
+                let (lo, hi) = raw.split_once(',')
+                    .unwrap_or_else(|| { eprintln!("error: --in-clip expects MIN,MAX (got '{raw}')"); std::process::exit(2) });
+                a.in_clip = (
+                    lo.trim().parse().expect("bad --in-clip MIN"),
+                    hi.trim().parse().expect("bad --in-clip MAX"),
+                );
+                i += 2;
+            }
             "-x" | "--exclude" => { a.exclude.push(need(&argv, i)); i += 2; }
             "--voting-models" => { a.voting_models = need(&argv, i); i += 2; }
             "--voting" => {
@@ -249,8 +263,8 @@ fn load_pipeline_split(path: &str) -> HashMap<String, String> {
 // ---------------------------------------------------------------------------
 
 /// Read `names` columns fully into memory (one Vec<f32> each), clipping column
-/// `i` to [CLIP_MIN, CLIP_MAX] when `clip[i]`. Columns are loaded in parallel.
-fn load_cols(names: &[String], clip: &[bool], preds_dir: &str, ds: &str, n: usize) -> Vec<Vec<f32>> {
+/// `i` to `[lo, hi]` when `clip[i]`. Columns are loaded in parallel.
+fn load_cols(names: &[String], clip: &[bool], preds_dir: &str, ds: &str, n: usize, lo: f32, hi: f32) -> Vec<Vec<f32>> {
     names
         .par_iter()
         .enumerate()
@@ -261,7 +275,7 @@ fn load_cols(names: &[String], clip: &[bool], preds_dir: &str, ds: &str, n: usiz
             let mut v = a.to_vec();
             if clip[i] {
                 for x in v.iter_mut() {
-                    *x = x.clamp(CLIP_MIN, CLIP_MAX);
+                    *x = x.clamp(lo, hi);
                 }
             }
             v
@@ -401,6 +415,8 @@ fn predict_qual_acc(
     xr: &mut [NpyF32Reader],
     fr: &mut [NpyF32Reader],
     xclip: &[bool],
+    xlo: f32,
+    xhi: f32,
     w: &[f64],
     m: usize,
     p: usize,
@@ -420,7 +436,7 @@ fn predict_qual_acc(
             r.read_block(start, bl, &mut buf[..bl]);
             if xclip[i] {
                 for v in buf[..bl].iter_mut() {
-                    *v = v.clamp(CLIP_MIN, CLIP_MAX);
+                    *v = v.clamp(xlo, xhi);
                 }
             }
         });
@@ -527,6 +543,7 @@ fn main() -> ExitCode {
     teeln!("Voting:    {} ({} context features, groups: {})", voting_src, p, voting_str);
     teeln!("Interact:  D = M·P + 1 = {}·{} + 1 = {}", m, p, d);
     teeln!("Lambda:    {}", params.lambda);
+    teeln!("In-clip:   [{}, {}] (clipped model columns)", args.in_clip.0, args.in_clip.1);
     teeln!("Seeds:     {} (2-fold split per seed)", seeds_str);
     log_columns(&model_names, &voting);
     teeln!();
@@ -537,8 +554,9 @@ fn main() -> ExitCode {
     let y_pr = load_ratings_f64(&pr);
     let n = y_pr.len();
     let no_clip = vec![false; p];
-    let xpr = load_cols(&model_names, &model_clip, &preds, &pr, n);
-    let fpr = load_cols(&voting, &no_clip, &preds, &pr, n);
+    let (xlo, xhi) = args.in_clip;
+    let xpr = load_cols(&model_names, &model_clip, &preds, &pr, n, xlo, xhi);
+    let fpr = load_cols(&voting, &no_clip, &preds, &pr, n, xlo, xhi);
 
     // Qual data: ratings + quiz mask in memory; predictions streamed per block.
     let y_ql: Array1<i8> = read_npy(format!("data/{fulltrain_pr}/ratings.npy"))
@@ -591,7 +609,7 @@ fn main() -> ExitCode {
                 yhat_pr[row] = p_te[ii];
             }
 
-            predict_qual_acc(&mut xr, &mut fr, &model_clip, &w, m, p, n_q, &mut yhat_ql);
+            predict_qual_acc(&mut xr, &mut fr, &model_clip, xlo, xhi, &w, m, p, n_q, &mut yhat_ql);
         }
 
         for v in yhat_ql.iter_mut() {

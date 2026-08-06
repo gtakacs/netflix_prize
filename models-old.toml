@@ -144,3 +144,7 @@ fwlsblend = [
 [meta]
 base   = ["integrated", "rbm", "other"]
 blends = ["gbmblend", "mlpblend"]
+# `all` is what an unqualified selection (no -g/--groups) resolves to: the
+# maintained list of *real* predictor groups. Add new real groups here;
+# selection/helper groups stay out so they never leak into a default run.
+all    = ["integrated", "rbm", "other", "gbmblend", "mlpblend", "fwlsblend"]

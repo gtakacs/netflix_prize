@@ -151,14 +151,14 @@ fn print_help() {
     println!();
     println!("  Models M (clipped prediction factors):");
     println!("    -t FILE                  models TOML (default: models-<split>.toml)");
-    println!("    -g G,G,...               model groups (default: all); a group may be sliced");
+    println!("    -g G,G,...               model groups (default: the TOML's `all`); sliceable");
     println!("                             Python-style over its expanded model list, e.g.");
     println!("                             'integrated[:5]', 'integrated[5:]', 'integrated[3:7]'");
     println!("    -m NAME                  add a single model (repeatable)");
     println!();
     println!("  Features F (unclipped context factors):");
     println!("    -T FILE                  features/voting TOML (default: voting-<split>.toml)");
-    println!("    -G G,G,...               feature groups (default: all); sliceable like -g");
+    println!("    -G G,G,...               feature groups (default: the TOML's `all`); like -g");
     println!("    -f NAME                  add a single feature (repeatable)");
     println!();
     println!("    -x NAME                  drop a model/feature by name (repeatable)");

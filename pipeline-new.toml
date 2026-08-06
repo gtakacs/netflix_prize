@@ -38,7 +38,7 @@ voting_models = "voting-new.toml"
 inputs        = ["src/bin/gbm.rs"]
 inputs_from   = ["vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-new.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
+cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
 
 # MLP cross-fit blend of base predictors + voting features. Like gbmblend but
 # with the mlp binary; one prediction per seed ({name}-s<seed>). MLP
@@ -50,7 +50,7 @@ voting_models = "voting-new.toml"
 inputs        = ["src/bin/mlp.rs"]
 inputs_from   = ["vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-new.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
+cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
 
 # FWLS (feature-weighted linear stacking) cross-fit blend: ridge on the
 # interaction features (base prediction × voting feature) with a 2-fold split,
@@ -63,7 +63,7 @@ voting_models = "voting-new.toml"
 inputs        = ["src/bin/fwls.rs"]
 inputs_from   = ["vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
+cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
 [defaults.paropt]
 inputs_from = ["ingest", "newsplit"]
@@ -874,3 +874,21 @@ groups = ["integrated"]
 voting = ["all"]
 seeds = [1]
 extra_args = ["--lambda", "50"]
+
+[jobs.fwls4]
+jobtype = "fwlsblend"
+models_manual = ["vf/vf000_constant", "tsvdx5-400__nlpp__knn3"]
+voting = ["all"]
+seeds = [1]
+extra_args = ["--lambda", "50"]
+
+# FWLS over the column-mode fwls-fs selection (fwls-fs-full.log, 168 steps):
+# 97 models × 72 context features = 6985 interaction columns. --in-clip 0,6
+# matches the in-clip fwls-fs selected under; the default [1.00, 4.95] would
+# flatten most of the picked vf/ columns to a constant.
+[jobs.fwls5]
+jobtype = "fwlsblend"
+groups = ["fwls5"]
+voting = ["fwls5"]
+seeds = [1]
+extra_args = ["--lambda", "100", "--in-clip", "0,6"]

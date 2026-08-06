@@ -38,7 +38,7 @@ models        = "models-old.toml"
 voting_models = "voting-old.toml"
 inputs        = ["src/bin/gbm.rs"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-old.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
+cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-old.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
 
 # MLP cross-fit blend for the old split. The mlp binary is split-agnostic (the
 # split comes from -p); models/voting come from the old-split TOMLs. No vfeat
@@ -48,7 +48,7 @@ models        = "models-old.toml"
 voting_models = "voting-old.toml"
 inputs        = ["src/bin/mlp.rs"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-old.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
+cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-old.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
 
 # FWLS (feature-weighted linear stacking) cross-fit blend for the old split. The
 # fwls binary is split-agnostic (the split comes from -p); models/voting come
@@ -59,7 +59,7 @@ models        = "models-old.toml"
 voting_models = "voting-old.toml"
 inputs        = ["src/bin/fwls.rs"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-old.toml -t {models} --groups {groups} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
+cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-old.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
 # --- Data preparation ---
 

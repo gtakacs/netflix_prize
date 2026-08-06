@@ -1,6 +1,6 @@
 //! Linear blending of model predictions. Computes a single shared Gram
 //! matrix over all listed models on the probe split, then solves a ridge
-//! least-squares fit per group (and across all groups) by slicing
+//! least-squares fit per group (and `all*` = every selected column) by slicing
 //! submatrices. Probe and quiz RMSE are evaluated after clipping the
 //! blended predictions to [CLIP_MIN, CLIP_MAX].
 
@@ -133,8 +133,10 @@ fn print_help() {
     println!("    -O                       -o + default -t {}", MODELS_OLD);
     println!("    -N                       -n + default -t {}", MODELS_NEW);
     println!("    -t FILE, --models FILE   models TOML (groups: list per key)");
-    println!("    -g GRP1,GRP2,..., --groups  include only these TOML groups (default: all;");
-    println!("                             e.g. -g integrated,rbm,other for base predictors only)");
+    println!("    -g GRP1,GRP2,..., --groups  include only these TOML groups (default: the");
+    println!("                             TOML's `all` group; e.g. -g integrated,rbm,other). A row");
+    println!("                             is fitted per group, plus `all*` = every selected group");
+    println!("                             and -m predictor together.");
     println!("    -m NAME, --model NAME    add a single model (repeatable; combines with -t)");
     println!("    -x NAME, --exclude NAME  drop a model by name (repeatable; applied after -t/-m)");
     println!();
@@ -998,10 +1000,13 @@ fn main() -> ExitCode {
                 let w = solve_group(&a, &b, dim, gidxs, args.lambda);
                 fits.push((gname.clone(), gidxs.clone(), w));
             }
+            // Everything in the registry: the selected groups plus any -m
+            // predictors. Named `all*` so it is not read as an `all` TOML group —
+            // a helper group left out of that meta is absent here too.
             if group_indices.len() > 1 {
                 let all_idxs: Vec<usize> = (0..m).collect();
                 let w = solve_group(&a, &b, dim, &all_idxs, args.lambda);
-                fits.push(("all".to_string(), all_idxs, w));
+                fits.push(("all*".to_string(), all_idxs, w));
             }
             (fits, None)
         };
