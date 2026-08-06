@@ -358,6 +358,41 @@ jobtype = "model"
 binary = "tsvdx4"
 extras = ["@train_preds", "@ifeat"]
 
+# Same TxModel config as tsvdx5-400, 1000 factors. run_base always writes the
+# train-set predictions too, so they are declared here (the `@train_preds`
+# shorthand only applies to `__`-chained jobs) — otherwise `run -c` would
+# list those ~800 MB as unreferenced.
+[jobs."tsvdx5-1000"]
+jobtype = "model"
+binary = "tsvdx5"
+outputs = [
+    "{preds}/{name}.{pr}.npy",
+    "{preds}/{name}.{fulltrain_pr}.npy",
+    "{preds}/{name}.out",
+    "{preds}/{name}.{tr}.npy",
+    "{preds}/{name}.{fulltrain_tr}.npy",
+]
+
+[jobs."tsvdx5-1000__nlpp_paropt"]
+jobtype = "paropt"
+binary = "tsvdx5"
+extras = ["@train_preds"]
+outputs = [
+    "{preds}/{name}.out",
+    "{preds}/tsvdx5-1000__nlpp_regs.npy",
+]
+
+[jobs."tsvdx5-1000__nlpp"]
+jobtype = "model"
+binary = "tsvdx5"
+inputs_from = ["tsvdx5-1000__nlpp_paropt"]
+extras = ["@train_preds"]
+
+[jobs."tsvdx5-1000__nlpp__knn3"]
+jobtype = "model"
+binary = "tsvdx5"
+extras = ["@train_preds"]
+
 [jobs."tsvdx5-400"]
 jobtype = "model"
 binary = "tsvdx5"

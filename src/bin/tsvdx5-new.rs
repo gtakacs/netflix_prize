@@ -27,6 +27,7 @@ fn main() {
         "tsvdx5-150"    => run_base(  150, 23, 100, 0.0015, false, 1024, false, true,  false, job_name),
         "tsvdx5-300"    => run_base(  300, 23, 100, 0.0015, false,   10, false, false, true,  job_name),
         "tsvdx5-400"    => run_base(  400, 26, 100, 0.0015, false,   10, false, false, false, job_name),
+        "tsvdx5-1000"   => run_base( 1000, 30, 100, 0.0015, false,   10, false, false, false, job_name),
         "tsvdx5-1200lm" => run_base( 1200, 23, 100, 0.0015, false, 1024, true,  true,  true,  job_name),
 
         // === Base TxModel with ordinal head ===
@@ -34,7 +35,8 @@ fn main() {
         "tsvdx5-150o" => run_ord(150, 25, 120, 1.2, job_name),
 
         // === NLPP chains (base + regs from paropt) ===
-        "tsvdx5-150__nlpp" | "tsvdx5-300__nlpp" | "tsvdx5-400__nlpp" => run_nlpp(job_name),
+        "tsvdx5-150__nlpp" | "tsvdx5-300__nlpp" | "tsvdx5-400__nlpp"
+        | "tsvdx5-1000__nlpp" => run_nlpp(job_name),
 
         // === NLPP paropt (Nelder-Mead reg search) ===
         "tsvdx5-150__nlpp_paropt" => run_paropt(
@@ -59,7 +61,9 @@ fn main() {
              (8500.04,      1451.2802)],
             job_name,
         ),
-        "tsvdx5-400__nlpp_paropt" => run_paropt(
+        // tsvdx5-1000 starts from the same simplex as tsvdx5-400 — it is only a
+        // Nelder-Mead seed, and the 400 run is the closest sibling.
+        "tsvdx5-400__nlpp_paropt" | "tsvdx5-1000__nlpp_paropt" => run_paropt(
             [(6.7, 0.9), (13.8, 15070.0), (84.4, 3e-6), (100478.9, 0.0007)],
             [(0.02, 0.68), (1.4, 27.3), (3e-7, 0.003), (14112.5, 1042.1)],
             job_name,
@@ -68,7 +72,20 @@ fn main() {
         // === Knn3 chains ===
         "tsvdx5-120o__knn3"
         | "tsvdx5-300__nlpp__knn3"
-        | "tsvdx5-400__nlpp__knn3" => run_knn3(job_name),
+        | "tsvdx5-400__nlpp__knn3" => run_knn3(job_name, Knn3Config::default()),
+
+        // Tuned for the 1000-factor NLPP base; every field differs from the
+        // default, so it is spelled out in full.
+        "tsvdx5-1000__nlpp__knn3" => run_knn3(job_name, Knn3Config {
+            threshold: 0.5786969,
+            k_min: 9,
+            k_max: 106,
+            shrinkage: 29774.094,
+            reg: 0.5322302,
+            x: 0.865259,
+            bl_reg_m: 1.0029083,
+            bl_reg_u: 5.5354156,
+        }),
 
         // === Knnf (factor cosine) — uses tsvdx5-120 factors regardless of base ===
         "tsvdx5-150__nlpp__knnf" => run_knnf(job_name),
@@ -268,10 +285,10 @@ fn run_paropt(reg_a: [(f32, f32); 4], reg_b: [(f32, f32); 4], job_name: &str) {
     }
 }
 
-fn run_knn3(job_name: &str) {
+fn run_knn3(job_name: &str, cfg: Knn3Config) {
     let base = job_name.strip_suffix("__knn3").unwrap();
     let target = format!("1.0*{}", base);
-    fit2!(Knn3Model, Knn3Config::default(), &target, job_name, SPLIT_NEW);
+    fit2!(Knn3Model, cfg, &target, job_name, SPLIT_NEW);
 }
 
 fn run_knnf(job_name: &str) {
