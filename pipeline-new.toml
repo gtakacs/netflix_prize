@@ -38,7 +38,7 @@ voting_models = "voting-new.toml"
 inputs        = ["src/bin/gbm.rs"]
 inputs_from   = ["vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
+cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
 # MLP cross-fit blend of base predictors + voting features. Like gbmblend but
 # with the mlp binary; one prediction per seed ({name}-s<seed>). MLP
@@ -50,7 +50,7 @@ voting_models = "voting-new.toml"
 inputs        = ["src/bin/mlp.rs"]
 inputs_from   = ["vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude}"
+cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
 # FWLS (feature-weighted linear stacking) cross-fit blend: ridge on the
 # interaction features (base prediction × voting feature) with a 2-fold split,

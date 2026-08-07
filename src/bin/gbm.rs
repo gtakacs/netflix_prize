@@ -19,6 +19,7 @@ mod real {
     use netflix_prize::blend::{
         build_xy, close_log, cvk_blend, flatten_groups, load_models_toml, load_quiz_mask, log_columns,
         open_log, resolve_voting, save_preds, select_groups, LgbmBlender, LgbmCfg, LgbmMode,
+        CLIP_MAX, CLIP_MIN,
     };
     use netflix_prize::teeln;
     use std::collections::HashMap;
@@ -31,6 +32,7 @@ mod real {
         groups: Vec<String>,
         model_manual: Vec<String>,
         exclude: Vec<String>,
+        in_clip: (f32, f32),
         voting_models: String,
         voting: Vec<String>,
         seeds: Vec<u64>,
@@ -112,6 +114,7 @@ mod real {
         println!("  --groups G,G,...           model groups (default: the TOML's `all`; omit with -m for manual-only)");
         println!("  -m NAME, --model NAME      add a single base predictor (repeatable; combines with --groups)");
         println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
+        println!("  --in-clip MIN,MAX          clip range for clipped model columns (default {CLIP_MIN},{CLIP_MAX})");
         println!("  --voting-models FILE       voting-feature groups TOML (required)");
         println!("  --voting G,G,...           voting-feature groups to use (required; 'all' if the TOML defines it)");
         println!("  --seeds N,N,...            fold seeds; one output NAME-s<N> per seed (data loaded once)");
@@ -135,6 +138,7 @@ mod real {
             groups: Vec::new(),
             model_manual: Vec::new(),
             exclude: Vec::new(),
+            in_clip: (CLIP_MIN, CLIP_MAX),
             voting_models: String::new(),
             voting: Vec::new(),
             seeds: Vec::new(),
@@ -154,6 +158,18 @@ mod real {
                 }
                 "-m" | "--model" => { a.model_manual.push(need(&argv, i)); i += 2; }
                 "-x" | "--exclude" => { a.exclude.push(need(&argv, i)); i += 2; }
+                "--in-clip" => {
+                    let raw = need(&argv, i);
+                    let (lo, hi) = raw.split_once(',').unwrap_or_else(|| {
+                        eprintln!("error: --in-clip expects MIN,MAX (got '{raw}')");
+                        std::process::exit(2)
+                    });
+                    a.in_clip = (
+                        lo.trim().parse().expect("bad --in-clip MIN"),
+                        hi.trim().parse().expect("bad --in-clip MAX"),
+                    );
+                    i += 2;
+                }
                 "--voting-models" => { a.voting_models = need(&argv, i); i += 2; }
                 "--voting" => {
                     for tok in need(&argv, i).split(',') {
@@ -259,6 +275,7 @@ mod real {
         teeln!("[{}]", args.name);
         teeln!("Pipeline:  {} (split = {})", args.pipeline, split_name);
         teeln!("Models:    {} ({} base predictors, groups: {})", models_src, base.len(), groups_str);
+        teeln!("In-clip:   [{}, {}] (clipped model columns)", args.in_clip.0, args.in_clip.1);
         if !args.exclude.is_empty() {
             teeln!("Excluded:  {} name(s): {}", args.exclude.len(), args.exclude.join(", "));
         }
@@ -269,9 +286,9 @@ mod real {
         teeln!();
 
         println!("Loading probe set ({})...", pr);
-        let (x_pr, y_pr) = build_xy(&base, &voting, &preds, &preds, &pr);
+        let (x_pr, y_pr) = build_xy(&base, &voting, &preds, &preds, &pr, args.in_clip);
         println!("Loading qual set ({})...", fulltrain_pr);
-        let (x_ql, y_ql) = build_xy(&base, &voting, &preds, &preds, &fulltrain_pr);
+        let (x_ql, y_ql) = build_xy(&base, &voting, &preds, &preds, &fulltrain_pr, args.in_clip);
         let qz = load_quiz_mask(&fulltrain_pr);
         println!("Probe: {} rows, Qual: {} rows", y_pr.len(), y_ql.len());
 

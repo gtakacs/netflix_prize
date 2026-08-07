@@ -449,10 +449,11 @@ pub fn pair_atoms(pairs: &[(String, String)]) -> (Vec<String>, Vec<(usize, usize
 
 /// Load one model's predictions for `dataset` from
 /// `{preds_dir}/{model}.{dataset}.npy`. A leading `>` in `spec` disables
-/// clipping; otherwise values are clamped to [CLIP_MIN, CLIP_MAX]. A missing
-/// file yields a zero vector of length `n` (matching the Python `load_preds`).
-pub fn load_preds(spec: &str, preds_dir: &str, dataset: &str, n: usize) -> Array1<f32> {
-    let clip = !spec.starts_with(NOCLIP_OP);
+/// clipping; otherwise values are clamped to `clip` (the callers' default is
+/// [CLIP_MIN, CLIP_MAX]). A missing file yields a zero vector of length `n`
+/// (matching the Python `load_preds`).
+pub fn load_preds(spec: &str, preds_dir: &str, dataset: &str, n: usize, clip: (f32, f32)) -> Array1<f32> {
+    let do_clip = !spec.starts_with(NOCLIP_OP);
     let model = spec.trim_start_matches(NOCLIP_OP);
     let path = format!("{preds_dir}/{model}.{dataset}.npy");
     let mut arr: Array1<f32> = match read_npy(&path) {
@@ -462,8 +463,8 @@ pub fn load_preds(spec: &str, preds_dir: &str, dataset: &str, n: usize) -> Array
             return Array1::zeros(n);
         }
     };
-    if clip {
-        arr.mapv_inplace(|v| v.clamp(CLIP_MIN, CLIP_MAX));
+    if do_clip {
+        arr.mapv_inplace(|v| v.clamp(clip.0, clip.1));
     }
     arr
 }
@@ -490,23 +491,25 @@ pub fn load_quiz_mask(dataset: &str) -> Array1<bool> {
 }
 
 /// Assemble the design matrix for `dataset`: one column per model prediction
-/// (from `models`, `>`-prefix to skip clipping) followed by one column per
-/// feature (from `features`). The result is row-major, so `x.as_slice()` yields
-/// the flat row-major buffer the `Blender` models expect. Columns are loaded in
-/// parallel. Also returns the f32 ratings vector for `dataset`.
+/// (from `models`, `>`-prefix to skip clipping, others clamped to `clip`)
+/// followed by one column per feature (from `features`, never clipped). The
+/// result is row-major, so `x.as_slice()` yields the flat row-major buffer the
+/// `Blender` models expect. Columns are loaded in parallel. Also returns the f32
+/// ratings vector for `dataset`.
 pub fn build_xy(
     models: &[String],
     features: &[String],
     preds_dir: &str,
     features_dir: &str,
     dataset: &str,
+    clip: (f32, f32),
 ) -> (Array2<f32>, Array1<f32>) {
     let y = load_ratings(dataset);
     let n = y.len();
 
     let model_cols: Vec<Array1<f32>> = models
         .par_iter()
-        .map(|m| load_preds(m, preds_dir, dataset, n))
+        .map(|m| load_preds(m, preds_dir, dataset, n, clip))
         .collect();
     let feat_cols: Vec<Array1<f32>> = features
         .par_iter()
