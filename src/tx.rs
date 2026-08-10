@@ -710,18 +710,35 @@ impl Regressor for TxModel {
         }
     }
 
-    fn n_factorscores(&self) -> usize { if self.has_nbr() { 4 } else { 3 } }
+    // excessive feature dump: one column per model component so a downstream
+    // blender (e.g. fwls) can reweight them. Layout (K = n_feat)
+    // terms:
+    //   11 scalars: gbias, ubias, ibias, ibias_freq, but_bin, bit_bin, alpha_dev,
+    //               bu_day, ycache_bias, bi_cu_extra, dev
+    //   10 vectors (K each): pu, qi, su, pu2, pu_day, su_day, qf, pu_eff, qi_eff, prod
+    //    3 scalars: dot, nbr, pred
+    // The first 10 scalars + dot + nbr sum to the pre-ordinal score; `prod` sums
+    // to `dot`. `nbr` is 0 when the neighborhood is disabled (stable column count).
+    fn n_factorscores(&self) -> usize { 14 + 10 * self.cfg.n_feat }
 
     fn factorscore_names(&self) -> Vec<String> {
-        if self.has_nbr() {
-            ["bias", "mf", "nsvd1", "nbr"].iter().map(|s| s.to_string()).collect()
-        } else {
-            ["bias", "mf", "nsvd1"].iter().map(|s| s.to_string()).collect()
+        let k = self.cfg.n_feat;
+        let mut names: Vec<String> = [
+            "gbias", "ubias", "ibias", "ibias_freq", "but_bin", "bit_bin",
+            "alpha_dev", "bu_day", "ycache_bias", "bi_cu_extra", "dev",
+        ].iter().map(|s| s.to_string()).collect();
+        for vec_name in ["pu", "qi", "su", "pu2", "pu_day", "su_day", "qf", "pu_eff", "qi_eff", "prod"] {
+            for j in 0..k { names.push(format!("{vec_name}_{j}")); }
         }
+        names.push("dot".to_string());
+        names.push("nbr".to_string());
+        names.push("pred".to_string());
+        names
     }
 
     fn predict_factorscores(&self, u: usize, i: usize, day: i32) -> Array1<f32> {
         let cfg = &self.cfg;
+        let k = cfg.n_feat;
         let b = self.time_bin(day);
         let dev = self.dev(u, day);
         let day16 = day as i16;
@@ -730,14 +747,12 @@ impl Regressor for TxModel {
         let ud_idx = self.ud.index(u, day16);
         let f = ud_idx.map_or(0, |idx| freq_bin(self.ud.day_cnts[idx], n_freq_bins));
 
+        // Bias components (these + dot + nbr reconstruct the pre-ordinal score)
         let bu_day = ud_idx.map_or(0.0, |idx| self.ubias_day[idx]);
+        let alpha_dev = self.alpha_u[u] * dev;
         let bi_t = self.ibias[i] + self.bit_bin[[i, b]] + self.ibias_freq[[i, f]];
         let cu_t = self.cu[u] + ud_idx.map_or(0.0, |idx| self.cut[idx]);
-
-        let bias = self.gbias + self.ubias[u] + self.ibias[i] + self.ibias_freq[[i, f]]
-            + self.but_bin[[u, b]] + self.alpha_u[u] * dev + bu_day
-            + self.bit_bin[[i, b]] + bi_t * (cu_t - 1.0)
-            + self.ycache_bias[u];
+        let bi_cu_extra = bi_t * (cu_t - 1.0);
 
         let pu = self.ufeat.row(u);
         let pu2 = self.ufeat2.row(u);
@@ -745,29 +760,71 @@ impl Regressor for TxModel {
         let qi = self.ifeat.row(i);
         let qf = self.ifeat_freq.row(i * n_freq_bins + f);
 
-        let mut mf = 0.0_f32;
-        let mut nsvd1 = 0.0_f32;
+        // Per-(user, day) factor lookups (zero when low_memory or no such day)
+        let pu_day = |j: usize| -> f32 {
+            if !cfg.low_memory { if let Some(idx) = ud_idx { return self.ufeat_day[[idx, j]]; } }
+            0.0
+        };
+        let su_day = |j: usize| -> f32 {
+            if !cfg.low_memory { if let Some(idx) = ud_idx { return self.ycache_day[[idx, j]]; } }
+            0.0
+        };
 
-        for k in 0..cfg.n_feat {
-            let qi_eff = qi[k] + qf[k];
-            let mut pu_eff = pu[k] + dev * pu2[k];
-            if !cfg.low_memory {
-                if let Some(idx) = ud_idx { pu_eff += self.ufeat_day[[idx, k]]; }
-            }
-            mf += pu_eff * qi_eff;
-            let mut su_eff = su[k];
-            if !cfg.low_memory {
-                if let Some(idx) = ud_idx { su_eff += self.ycache_day[[idx, k]]; }
-            }
-            nsvd1 += su_eff * qi_eff;
+        let mut out = Array1::<f32>::zeros(self.n_factorscores());
+        let mut col = 0;
+
+        // 11 scalar components
+        out[col] = self.gbias; col += 1;
+        out[col] = self.ubias[u]; col += 1;
+        out[col] = self.ibias[i]; col += 1;
+        out[col] = self.ibias_freq[[i, f]]; col += 1;
+        out[col] = self.but_bin[[u, b]]; col += 1;
+        out[col] = self.bit_bin[[i, b]]; col += 1;
+        out[col] = alpha_dev; col += 1;
+        out[col] = bu_day; col += 1;
+        out[col] = self.ycache_bias[u]; col += 1;
+        out[col] = bi_cu_extra; col += 1;
+        out[col] = dev; col += 1;
+
+        for j in 0..k { out[col] = pu[j]; col += 1; }
+        for j in 0..k { out[col] = qi[j]; col += 1; }
+        for j in 0..k { out[col] = su[j]; col += 1; }
+        for j in 0..k { out[col] = pu2[j]; col += 1; }
+        for j in 0..k { out[col] = pu_day(j); col += 1; }
+        for j in 0..k { out[col] = su_day(j); col += 1; }
+        for j in 0..k { out[col] = qf[j]; col += 1; }
+        for j in 0..k {
+            out[col] = pu[j] + su[j] + dev * pu2[j] + pu_day(j) + su_day(j);
+            col += 1;
+        }
+        for j in 0..k { out[col] = qi[j] + qf[j]; col += 1; }
+
+        let mut dot = 0.0_f32;
+        for j in 0..k {
+            let pu_eff = pu[j] + su[j] + dev * pu2[j] + pu_day(j) + su_day(j);
+            let prod = pu_eff * (qi[j] + qf[j]);
+            out[col] = prod; col += 1;
+            dot += prod;
         }
 
-        if self.has_nbr() {
-            let nbr = self.nbr_score(u, i, day16);
-            Array1::from_vec(vec![bias, mf, nsvd1, nbr])
-        } else {
-            Array1::from_vec(vec![bias, mf, nsvd1])
-        }
+        let nbr = if self.has_nbr() { self.nbr_score(u, i, day16) } else { 0.0 };
+        let bias_sum = self.gbias + self.ubias[u] + self.ibias[i] + self.ibias_freq[[i, f]]
+            + self.but_bin[[u, b]] + alpha_dev + bu_day + self.bit_bin[[i, b]]
+            + bi_cu_extra + self.ycache_bias[u];
+        let score = bias_sum + dot + nbr;
+        let pred = match &self.ordinal_head {
+            Some(ordinal) => {
+                let probs = ordinal.predict_probs(score);
+                1.0 * probs[0] + 2.0 * probs[1] + 3.0 * probs[2] + 4.0 * probs[3] + 5.0 * probs[4]
+            }
+            None => score,
+        };
+
+        out[col] = dot; col += 1;
+        out[col] = nbr; col += 1;
+        out[col] = pred;
+
+        out
     }
 
     fn predict(&self, u: usize, i: usize, day: i32) -> f32 {

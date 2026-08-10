@@ -747,6 +747,20 @@ pub fn calc_factorscores<M: Regressor>(model: &M, ds: &Dataset) -> Array2::<f32>
     factorscores
 }
 
+/// Save each factorscore column for `ds` to its own `{model_name}-{name}.{set}.npy`
+/// (same convention as subscores). No-op if the model emits none.
+fn save_factorscores_npy<M: Regressor>(
+    model: &M, ds: &Dataset, preds_dir: &str, model_name: &str, set: &str,
+) {
+    if model.n_factorscores() == 0 { return; }
+    let factorscores = calc_factorscores(model, ds);
+    let names = model.factorscore_names();
+    for (j, name) in names.iter().enumerate() {
+        let path = format!("{preds_dir}/{model_name}-{name}.{set}.npy");
+        write_npy(path, &factorscores.column(j)).unwrap();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Low-level training entry point
 // ---------------------------------------------------------------------------
@@ -800,13 +814,7 @@ pub fn fit<M: Regressor + Sync>(
     }
 
     if save_factorscores {
-        let factorscores = calc_factorscores(&model, &pr);
-        let names = model.factorscore_names();
-        for (j, name) in names.iter().enumerate() {
-            let path = format!("{}/{model_name}-{name}.{pr_set}.npy", preds_dir);
-            let col = factorscores.column(j);
-            write_npy(path, &col).unwrap();
-        }
+        save_factorscores_npy(&model, &pr, preds_dir, model_name, pr_set);
     }
 
     if save_train {
@@ -953,14 +961,8 @@ pub fn fit2_inner<M: Regressor + Sync>(
             }
         }
 
-        if save_factorscores && model.n_factorscores() > 0 {
-            let factorscores = calc_factorscores(&model, &pr);
-            let names = model.factorscore_names();
-            for (j, name) in names.iter().enumerate() {
-                let path = format!("{}/{model_name}-{name}.{}.npy", preds_dir, split.pr);
-                let col = factorscores.column(j);
-                write_npy(&path, &col).unwrap();
-            }
+        if save_factorscores {
+            save_factorscores_npy(&model, &pr, preds_dir, model_name, split.pr);
         }
 
         if save_train {
@@ -985,14 +987,8 @@ pub fn fit2_inner<M: Regressor + Sync>(
                     write_npy(&path, &col).unwrap();
                 }
             }
-            if save_factorscores && model.n_factorscores() > 0 {
-                let factorscores = calc_factorscores(&model, qual);
-                let names = model.factorscore_names();
-                for (j, name) in names.iter().enumerate() {
-                    let path = format!("{}/{model_name}-{name}.{}.npy", preds_dir, split.fulltrain_pr);
-                    let col = factorscores.column(j);
-                    write_npy(&path, &col).unwrap();
-                }
+            if save_factorscores {
+                save_factorscores_npy(&model, qual, preds_dir, model_name, split.fulltrain_pr);
             }
         }
     } // model, tr, pr freed here

@@ -787,6 +787,14 @@ impl Regressor for Tsvdx4pModel {
         self.inner.predict_subscores(u, i, day)
     }
 
+    fn n_factorscores(&self) -> usize { self.inner.n_factorscores() }
+
+    fn factorscore_names(&self) -> Vec<String> { self.inner.factorscore_names() }
+
+    fn predict_factorscores(&self, u: usize, i: usize, day: i32) -> Array1<f32> {
+        self.inner.predict_factorscores(u, i, day)
+    }
+
     fn predict(&self, u: usize, i: usize, day: i32) -> f32 {
         self.inner.predict(u, i, day)
     }

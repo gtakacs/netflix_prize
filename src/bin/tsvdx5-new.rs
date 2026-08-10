@@ -20,15 +20,17 @@ fn main() {
 
     match job_name {
         // === Base TxModel (no ordinal head) ===
-        "tsvdx5-20"     => run_base(   20, 20, 25,  0.002,  false, 1024, false, true,  false, job_name),
-        "tsvdx5-40"     => run_base(   40, 25, 25,  0.002,  false, 1024, false, true,  false, job_name),
-        "tsvdx5-60"     => run_base(   60, 23, 50,  0.002,  false, 1024, false, false, false, job_name),
-        "tsvdx5-120"    => run_base(  120, 23, 100, 0.0015, true,  1024, false, false, false, job_name),
-        "tsvdx5-150"    => run_base(  150, 23, 100, 0.0015, false, 1024, false, true,  false, job_name),
-        "tsvdx5-300"    => run_base(  300, 23, 100, 0.0015, false,   10, false, false, true,  job_name),
-        "tsvdx5-400"    => run_base(  400, 26, 100, 0.0015, false,   10, false, false, false, job_name),
-        "tsvdx5-1000"   => run_base( 1000, 30, 100, 0.0015, false,   10, false, false, false, job_name),
-        "tsvdx5-1200lm" => run_base( 1200, 23, 100, 0.0015, false, 1024, true,  true,  true,  job_name),
+        "tsvdx5-20"     => run_base(   20, 20, 25,  0.002,  false, 1024, false, true,  false, false, job_name),
+        "tsvdx5-40"     => run_base(   40, 25, 25,  0.002,  false, 1024, false, true,  false, false, job_name),
+        "tsvdx5-60"     => run_base(   60, 23, 50,  0.002,  false, 1024, false, false, false, false, job_name),
+        "tsvdx5-120"    => run_base(  120, 23, 100, 0.0015, true,  1024, false, false, false, false, job_name),
+        "tsvdx5-150"    => run_base(  150, 23, 100, 0.0015, false, 1024, false, true,  false, false, job_name),
+        "tsvdx5-300"    => run_base(  300, 23, 100, 0.0015, false,   10, false, false, true,  false, job_name),
+        "tsvdx5-400"    => run_base(  400, 26, 100, 0.0015, false,   10, false, false, false, false, job_name),
+        "tsvdx5-1000"   => run_base( 1000, 30, 100, 0.0015, false,   10, false, false, false, false, job_name),
+        "tsvdx5-1200lm" => run_base( 1200, 23, 100, 0.0015, false, 1024, true,  true,  true,  false, job_name),
+        "tsvdx5-10fs"   => run_base(   10,  3, 25,  0.002,  false, 1024, false, false, false, true,  job_name),
+        "tsvdx5-40fs"   => run_base(   40, 25, 25,  0.002,  false, 1024, false, false, false, true,  job_name),
 
         // === Base TxModel with ordinal head ===
         "tsvdx5-120o" => run_ord(120, 28, 100, 0.8, job_name),
@@ -132,6 +134,7 @@ fn run_base(
     low_memory: bool,
     save_subscores: bool,
     save_probe_each_epoch: bool,
+    save_factorscores: bool,
     job_name: &str,
 ) {
     let cfg = TxConfig {
@@ -164,19 +167,19 @@ fn run_base(
     match (save_subscores, save_probe_each_epoch) {
         (false, false) => fit2!(
             TxModel, cfg, "rtg", job_name, SPLIT_NEW,
-            save_train: true
+            save_train: true, save_factorscores: save_factorscores
         ),
         (true, false) => fit2!(
             TxModel, cfg, "rtg", job_name, SPLIT_NEW,
-            save_train: true, save_subscores: true
+            save_train: true, save_subscores: true, save_factorscores: save_factorscores
         ),
         (false, true) => fit2!(
             TxModel, cfg, "rtg", job_name, SPLIT_NEW,
-            save_train: true, save_probe_each_epoch: true
+            save_train: true, save_probe_each_epoch: true, save_factorscores: save_factorscores
         ),
         (true, true) => fit2!(
             TxModel, cfg, "rtg", job_name, SPLIT_NEW,
-            save_train: true, save_subscores: true, save_probe_each_epoch: true
+            save_train: true, save_subscores: true, save_probe_each_epoch: true, save_factorscores: save_factorscores
         ),
     }
 }
