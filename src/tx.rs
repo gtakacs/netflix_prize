@@ -710,6 +710,66 @@ impl Regressor for TxModel {
         }
     }
 
+    fn n_factorscores(&self) -> usize { if self.has_nbr() { 4 } else { 3 } }
+
+    fn factorscore_names(&self) -> Vec<String> {
+        if self.has_nbr() {
+            ["bias", "mf", "nsvd1", "nbr"].iter().map(|s| s.to_string()).collect()
+        } else {
+            ["bias", "mf", "nsvd1"].iter().map(|s| s.to_string()).collect()
+        }
+    }
+
+    fn predict_factorscores(&self, u: usize, i: usize, day: i32) -> Array1<f32> {
+        let cfg = &self.cfg;
+        let b = self.time_bin(day);
+        let dev = self.dev(u, day);
+        let day16 = day as i16;
+        let n_freq_bins = cfg.n_freq_bins;
+
+        let ud_idx = self.ud.index(u, day16);
+        let f = ud_idx.map_or(0, |idx| freq_bin(self.ud.day_cnts[idx], n_freq_bins));
+
+        let bu_day = ud_idx.map_or(0.0, |idx| self.ubias_day[idx]);
+        let bi_t = self.ibias[i] + self.bit_bin[[i, b]] + self.ibias_freq[[i, f]];
+        let cu_t = self.cu[u] + ud_idx.map_or(0.0, |idx| self.cut[idx]);
+
+        let bias = self.gbias + self.ubias[u] + self.ibias[i] + self.ibias_freq[[i, f]]
+            + self.but_bin[[u, b]] + self.alpha_u[u] * dev + bu_day
+            + self.bit_bin[[i, b]] + bi_t * (cu_t - 1.0)
+            + self.ycache_bias[u];
+
+        let pu = self.ufeat.row(u);
+        let pu2 = self.ufeat2.row(u);
+        let su = self.ycache.row(u);
+        let qi = self.ifeat.row(i);
+        let qf = self.ifeat_freq.row(i * n_freq_bins + f);
+
+        let mut mf = 0.0_f32;
+        let mut nsvd1 = 0.0_f32;
+
+        for k in 0..cfg.n_feat {
+            let qi_eff = qi[k] + qf[k];
+            let mut pu_eff = pu[k] + dev * pu2[k];
+            if !cfg.low_memory {
+                if let Some(idx) = ud_idx { pu_eff += self.ufeat_day[[idx, k]]; }
+            }
+            mf += pu_eff * qi_eff;
+            let mut su_eff = su[k];
+            if !cfg.low_memory {
+                if let Some(idx) = ud_idx { su_eff += self.ycache_day[[idx, k]]; }
+            }
+            nsvd1 += su_eff * qi_eff;
+        }
+
+        if self.has_nbr() {
+            let nbr = self.nbr_score(u, i, day16);
+            Array1::from_vec(vec![bias, mf, nsvd1, nbr])
+        } else {
+            Array1::from_vec(vec![bias, mf, nsvd1])
+        }
+    }
+
     fn predict(&self, u: usize, i: usize, day: i32) -> f32 {
         let (bias_part, dot_part) = self.factor_parts(u, i, day);
         let nbr_part = if self.has_nbr() { self.nbr_score(u, i, day as i16) } else { 0.0 };

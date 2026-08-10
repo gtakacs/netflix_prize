@@ -609,6 +609,20 @@ pub trait Regressor {
         Array1::zeros(0)
     }
 
+    /// Return number of factor-scores this model generates (typically ~n_feat)
+    fn n_factorscores(&self) -> usize { 0 }
+
+    /// Return names/suffixes for each factor-score.
+    /// Default returns ["1", "2", ...] for backward compatibility.
+    fn factorscore_names(&self) -> Vec<String> {
+        (1..=self.n_factorscores()).map(|j| j.to_string()).collect()
+    }
+
+    /// Predict per-factor scores (finer-grained than subscores; length ~= n_feat)
+    fn predict_factorscores(&self, _u: usize, _i: usize, _day: i32) -> Array1::<f32> {
+        Array1::zeros(0)
+    }
+
     /// Save model-specific artifacts after training (e.g. item factors to preds_dir)
     fn save_artifacts(&self, _model_name: &str, _tr_set: &str, _preds_dir: &str) {}
 }
@@ -718,6 +732,21 @@ pub fn calc_subscores<M: Regressor>(model: &M, ds: &Dataset) -> Array2::<f32> {
     subscores
 }
 
+/// Compute all factor-scores for each rating (finer-grained than subscores)
+pub fn calc_factorscores<M: Regressor>(model: &M, ds: &Dataset) -> Array2::<f32> {
+    let d = model.n_factorscores();
+    let mut factorscores = Array2::<f32>::zeros((ds.n_ratings, d));
+    for idx in 0..ds.n_ratings {
+        let u = ds.user_idxs[idx] as usize;
+        let i = ds.item_idxs[idx] as usize;
+        let day = ds.dates[idx] as i32;
+
+        let yhat = model.predict_factorscores(u, i, day);
+        factorscores.row_mut(idx).assign(&yhat);
+    }
+    factorscores
+}
+
 // ---------------------------------------------------------------------------
 // Low-level training entry point
 // ---------------------------------------------------------------------------
@@ -731,6 +760,7 @@ pub fn fit<M: Regressor + Sync>(
     pr_set: &str,
     model_name: &str,
     save_subscores: bool,
+    save_factorscores: bool,
     save_train: bool,
     save_probe_each_epoch: bool,
     preds_dir: &str,
@@ -765,6 +795,16 @@ pub fn fit<M: Regressor + Sync>(
         for (j, name) in names.iter().enumerate() {
             let path = format!("{}/{model_name}-{name}.{pr_set}.npy", preds_dir);
             let col = subscores.column(j);
+            write_npy(path, &col).unwrap();
+        }
+    }
+
+    if save_factorscores {
+        let factorscores = calc_factorscores(&model, &pr);
+        let names = model.factorscore_names();
+        for (j, name) in names.iter().enumerate() {
+            let path = format!("{}/{model_name}-{name}.{pr_set}.npy", preds_dir);
+            let col = factorscores.column(j);
             write_npy(path, &col).unwrap();
         }
     }
@@ -818,6 +858,7 @@ pub struct Fit2Opts {
     pub save_train: bool,
     pub save_probe_each_epoch: bool,
     pub save_subscores: bool,
+    pub save_factorscores: bool,
     /// Skip the fulltrain → fulltrain_pr phase; instead, predict fulltrain_pr
     /// using the phase-1 model.
     pub no_fulltrain: bool,
@@ -848,7 +889,7 @@ pub fn fit2_inner<M: Regressor + Sync>(
     split: Split,
     opts: Fit2Opts,
 ) {
-    let Fit2Opts { save_train, save_probe_each_epoch, save_subscores, no_fulltrain, transpose } = opts;
+    let Fit2Opts { save_train, save_probe_each_epoch, save_subscores, save_factorscores, no_fulltrain, transpose } = opts;
     let preds_dir = split.preds_dir;
 
     std::fs::create_dir_all(preds_dir).unwrap();
@@ -912,6 +953,16 @@ pub fn fit2_inner<M: Regressor + Sync>(
             }
         }
 
+        if save_factorscores && model.n_factorscores() > 0 {
+            let factorscores = calc_factorscores(&model, &pr);
+            let names = model.factorscore_names();
+            for (j, name) in names.iter().enumerate() {
+                let path = format!("{}/{model_name}-{name}.{}.npy", preds_dir, split.pr);
+                let col = factorscores.column(j);
+                write_npy(&path, &col).unwrap();
+            }
+        }
+
         if save_train {
             let path = format!("{}/{}.{}.npy", preds_dir, model_name, split.tr);
             save_preds_parallel(&model, &tr, &path);
@@ -934,6 +985,15 @@ pub fn fit2_inner<M: Regressor + Sync>(
                     write_npy(&path, &col).unwrap();
                 }
             }
+            if save_factorscores && model.n_factorscores() > 0 {
+                let factorscores = calc_factorscores(&model, qual);
+                let names = model.factorscore_names();
+                for (j, name) in names.iter().enumerate() {
+                    let path = format!("{}/{model_name}-{name}.{}.npy", preds_dir, split.fulltrain_pr);
+                    let col = factorscores.column(j);
+                    write_npy(&path, &col).unwrap();
+                }
+            }
         }
     } // model, tr, pr freed here
 
@@ -946,7 +1006,7 @@ pub fn fit2_inner<M: Regressor + Sync>(
     // Phase 2: split.fulltrain_tr → split.fulltrain_pr
     if !no_fulltrain {
         fit::<M>(cfg, target, split.fulltrain_tr, split.fulltrain_pr, model_name,
-                 save_subscores, save_train, save_probe_each_epoch, preds_dir, transpose);
+                 save_subscores, save_factorscores, save_train, save_probe_each_epoch, preds_dir, transpose);
     }
 
     teeln!();
@@ -1210,6 +1270,7 @@ pub struct Fit3Opts {
     pub keep_epoch_preds: bool,
     pub keep_train_preds: bool,
     pub save_subscores: bool,
+    pub save_factorscores: bool,
     pub no_fulltrain: bool,
     pub transpose: bool,
 }
@@ -1236,7 +1297,7 @@ pub fn fit3_inner<M: Regressor + Sync>(
     split: Split,
     opts: Fit3Opts,
 ) {
-    let Fit3Opts { keep_epoch_preds, keep_train_preds, save_subscores, no_fulltrain, transpose } = opts;
+    let Fit3Opts { keep_epoch_preds, keep_train_preds, save_subscores, save_factorscores, no_fulltrain, transpose } = opts;
     let preds_dir = split.preds_dir;
 
     // Open single log file for the entire fit3 run
@@ -1249,6 +1310,7 @@ pub fn fit3_inner<M: Regressor + Sync>(
         save_train: true,
         save_probe_each_epoch: true,
         save_subscores,
+        save_factorscores,
         no_fulltrain,
         transpose,
     });
