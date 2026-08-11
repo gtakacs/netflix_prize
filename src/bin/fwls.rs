@@ -12,7 +12,7 @@ use nalgebra::{DMatrix, DVector};
 use ndarray::Array1;
 use ndarray_npy::read_npy;
 use netflix_prize::blend::{
-    close_log, flatten_groups, load_models_toml, log_columns, open_log, resolve_voting, save_preds,
+    close_log, expand_globs, flatten_groups, load_models_toml, log_columns, open_log, resolve_voting, save_preds,
     select_groups, CLIP_MAX, CLIP_MIN,
 };
 use netflix_prize::teeln;
@@ -506,7 +506,7 @@ fn main() -> ExitCode {
         select_groups(&load_models_toml(&args.models), &args.groups)
     };
     if !args.model_manual.is_empty() {
-        groups.insert("manual".to_string(), args.model_manual.clone());
+        groups.insert("manual".to_string(), expand_globs(&args.model_manual, &preds, &pr));
     }
     let flat = flatten_groups(&groups, &args.exclude);
     let (model_names, model_clip) = (flat.names, flat.clip);

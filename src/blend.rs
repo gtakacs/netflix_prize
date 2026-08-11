@@ -405,6 +405,78 @@ pub fn resolve_voting(voting_toml: &str, groups: &[String]) -> Vec<String> {
     flatten_groups(&selected, &[]).names
 }
 
+/// Match `text` against a `*`-wildcard `pattern` (glob-style; `*` matches any run
+/// of characters, including empty; other characters are literal). No `?` support.
+fn wildcard_match(pattern: &str, text: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.len() == 1 {
+        return pattern == text; // no wildcard: exact match
+    }
+    let first = parts[0];
+    let last = parts[parts.len() - 1];
+    if !text.starts_with(first) || !text.ends_with(last) { return false; }
+    if text.len() < first.len() + last.len() { return false; } // no prefix/suffix overlap
+    let mut pos = first.len();
+    for part in &parts[1..parts.len() - 1] {
+        if part.is_empty() { continue; }
+        match text[pos..].find(part) {
+            Some(off) => pos += off + part.len(),
+            None => return false,
+        }
+    }
+    pos <= text.len() - last.len()
+}
+
+/// Expand any spec containing `*` by globbing existing prediction files
+/// `{preds_dir}/{pattern}.{dataset}.npy`; the matched model names (sorted, with a
+/// `>` no-clip prefix preserved) replace the pattern. Specs without `*` pass
+/// through unchanged, so this composes with the brace/range forms handled later
+/// by [`expand_specs`]. A pattern that matches nothing warns and contributes no
+/// models. The glob applies only to the last path component, so a `vf/` (or
+/// other) subdir prefix is kept literal.
+pub fn expand_globs(specs: &[String], preds_dir: &str, dataset: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for spec in specs {
+        let (prefix, pattern) = match spec.strip_prefix(NOCLIP_OP) {
+            Some(rest) => (">", rest),
+            None => ("", spec.as_str()),
+        };
+        if !pattern.contains('*') {
+            out.push(spec.clone());
+            continue;
+        }
+        // Glob only the final path component; keep any leading subdir literal.
+        let (subdir, name_glob) = match pattern.rfind('/') {
+            Some(p) => (&pattern[..=p], &pattern[p + 1..]), // subdir keeps trailing '/'
+            None => ("", pattern),
+        };
+        let dir = if subdir.is_empty() {
+            preds_dir.to_string()
+        } else {
+            format!("{preds_dir}/{}", subdir.trim_end_matches('/'))
+        };
+        let suffix = format!(".{dataset}.npy");
+        let mut matched: Vec<String> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for e in entries.flatten() {
+                let fname = e.file_name();
+                let Some(fname) = fname.to_str() else { continue };
+                let Some(tail) = fname.strip_suffix(&suffix) else { continue };
+                if wildcard_match(name_glob, tail) {
+                    matched.push(format!("{prefix}{subdir}{tail}"));
+                }
+            }
+        }
+        if matched.is_empty() {
+            eprintln!("warning: '{spec}': no files match {dir}/{name_glob}{suffix}");
+            continue;
+        }
+        matched.sort();
+        out.extend(matched);
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Pair (product) features — shared across blenders
 // ---------------------------------------------------------------------------

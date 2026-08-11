@@ -9,7 +9,7 @@ extern crate blas_src;
 
 use blas::dsyrk;
 use indexmap::IndexMap;
-use netflix_prize::blend::{flatten_groups, load_models_toml, select_groups};
+use netflix_prize::blend::{expand_globs, flatten_groups, load_models_toml, select_groups};
 use nalgebra::{DMatrix, DVector};
 use ndarray::Array1;
 use ndarray_npy::read_npy;
@@ -397,7 +397,8 @@ fn build_registry(
     let mut group_indices: IndexMap<String, Vec<usize>> = IndexMap::new();
 
     for src in &args.sources {
-        let preds_dir = load_pipeline_split(&src.pipeline)
+        let split = load_pipeline_split(&src.pipeline);
+        let preds_dir = split
             .get("preds")
             .unwrap_or_else(|| panic!("{}: [split].preds missing", src.pipeline))
             .clone();
@@ -421,7 +422,9 @@ fn build_registry(
             IndexMap::new()
         };
         if !src.models_manual.is_empty() {
-            groups.insert("manual".to_string(), src.models_manual.clone());
+            let glob_ds = split.get("pr").or_else(|| split.get("fulltrain_pr"))
+                .unwrap_or_else(|| panic!("{}: [split].pr missing", src.pipeline));
+            groups.insert("manual".to_string(), expand_globs(&src.models_manual, &preds_dir, glob_ds));
         }
 
         // Flatten groups → (name, clip, group→indices), applying --exclude. Each
