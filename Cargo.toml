@@ -41,6 +41,10 @@ name = "fwls"
 required-features = ["blas"]
 
 [[bin]]
+name = "fwls-diskbased"
+required-features = ["blas"]
+
+[[bin]]
 name = "fwls-fs"
 required-features = ["blas"]
 
