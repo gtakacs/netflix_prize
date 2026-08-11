@@ -103,6 +103,7 @@ struct Args {
     feature_manual: Vec<String>,
     lambda: Option<f64>,
     in_clip: (f32, f32),
+    folds: usize,
     seeds: Vec<u64>,
 }
 
@@ -137,6 +138,8 @@ fn print_help() {
     println!("  --lambda VALUE             ridge λ; overrides the preset, required for an ad-hoc name");
     println!("  --in-clip MIN,MAX          clip range for clipped model columns (default {CLIP_MIN},{CLIP_MAX});");
     println!("                             use 0,6 to match an fwls-fs selection run");
+    println!("  --folds K                  K-fold cross-fit per seed (default 2); out-of-fold probe preds,");
+    println!("                             qual predicted by every fold's weights and averaged");
     println!("  --seeds N,N,...            fold seeds; one output NAME-s<N> per seed (data loaded once)");
     println!("  --seed N                   add a single fold seed (repeatable)");
     println!("  -h, --help                 show this help");
@@ -166,6 +169,7 @@ fn parse_args() -> Args {
         feature_manual: Vec::new(),
         lambda: None,
         in_clip: (CLIP_MIN, CLIP_MAX),
+        folds: 2,
         seeds: Vec::new(),
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -201,6 +205,11 @@ fn parse_args() -> Args {
                 for tok in need(&argv, i).split(',') {
                     a.voting.push(tok.trim().to_string());
                 }
+                i += 2;
+            }
+            "--folds" => {
+                a.folds = need(&argv, i).parse().expect("bad --folds value");
+                if a.folds < 2 { eprintln!("error: --folds must be >= 2"); std::process::exit(2); }
                 i += 2;
             }
             "--seed" => { a.seeds.push(need(&argv, i).parse().expect("bad --seed")); i += 2; }
@@ -544,7 +553,7 @@ fn main() -> ExitCode {
     teeln!("Interact:  D = M·P + 1 = {}·{} + 1 = {}", m, p, d);
     teeln!("Lambda:    {}", params.lambda);
     teeln!("In-clip:   [{}, {}] (clipped model columns)", args.in_clip.0, args.in_clip.1);
-    teeln!("Seeds:     {} (2-fold split per seed)", seeds_str);
+    teeln!("Seeds:     {} ({}-fold split per seed)", seeds_str, args.folds);
     log_columns(&model_names, &voting);
     teeln!();
 
@@ -583,10 +592,14 @@ fn main() -> ExitCode {
         teeln!();
         teeln!("=== seed {} ===", seed);
 
+        let k_folds = args.folds;
         let mut idxs: Vec<usize> = (0..n).collect();
         idxs.shuffle(&mut StdRng::seed_from_u64(seed));
-        let half = n / 2;
-        let folds = [idxs[..half].to_vec(), idxs[half..].to_vec()];
+        // Partition the shuffled indices into k contiguous folds (as even as possible).
+        let bounds: Vec<usize> = (0..=k_folds).map(|f| f * n / k_folds).collect();
+        let folds: Vec<Vec<usize>> = (0..k_folds)
+            .map(|f| idxs[bounds[f]..bounds[f + 1]].to_vec())
+            .collect();
 
         let mut yhat_pr = vec![0.0f64; n];
         let mut yhat_ql = vec![0.0f64; n_q];
@@ -595,12 +608,17 @@ fn main() -> ExitCode {
         let mut xr = open_readers(&model_names, &preds);
         let mut fr = open_readers(&voting, &preds);
 
-        for (k, &(tr, te)) in [(0usize, 1usize), (1, 0)].iter().enumerate() {
-            let train = &folds[tr];
+        // Each fold in turn is the held-out test set; fit on the other k-1 folds,
+        // predict the held-out probe rows (out-of-fold) and the full qual set.
+        for te in 0..k_folds {
             let test = &folds[te];
-            teeln!("  fold {}/2: train {} predict {}", k + 1, train.len(), test.len());
+            let train: Vec<usize> = (0..k_folds)
+                .filter(|&f| f != te)
+                .flat_map(|f| folds[f].iter().copied())
+                .collect();
+            teeln!("  fold {}/{}: train {} predict {}", te + 1, k_folds, train.len(), test.len());
 
-            let (amat, b) = build_gram_fold(train, &xpr, &fpr, &y_pr, m, p, params.lambda);
+            let (amat, b) = build_gram_fold(&train, &xpr, &fpr, &y_pr, m, p, params.lambda);
             let w = solve_fold(amat, b);
 
             let p_te = predict_rows(test, &xpr, &fpr, &w, m, p, true);
@@ -613,7 +631,7 @@ fn main() -> ExitCode {
         }
 
         for v in yhat_ql.iter_mut() {
-            *v *= 0.5;
+            *v /= k_folds as f64;
         }
 
         // Metrics
