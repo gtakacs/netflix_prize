@@ -103,7 +103,7 @@ outputs = ["data/raw/nf_prize_dataset.tar.gz"]
 cmd = "./target/release/download"
 
 # Parse the downloaded archive straight into the four numpy datasets. Reads
-# nf_prize_dataset.tar.gz directly — no intermediate files on disk.
+# nf_prize_dataset.tar.gz directly, with no intermediate files on disk.
 [jobs.ingest]
 inputs_from = ["download"]
 inputs  = ["data/qual_ratings/qual_ratings.csv.gz", "src/bin/ingest.rs"]
@@ -360,7 +360,7 @@ extras = ["@train_preds", "@ifeat"]
 
 # Same TxModel config as tsvdx5-400, 1000 factors. run_base always writes the
 # train-set predictions too, so they are declared here (the `@train_preds`
-# shorthand only applies to `__`-chained jobs) — otherwise `run -c` would
+# shorthand only applies to `__`-chained jobs), since otherwise `run -c` would
 # list those ~800 MB as unreferenced.
 [jobs."tsvdx5-1000"]
 jobtype = "model"
@@ -819,6 +819,110 @@ jobtype = "model"
 binary = "als8"
 extras = ["@train_preds"]
 
+# --- Deep neural predictors ---
+
+[jobs."dnn-16"]
+jobtype = "model"
+binary = "dnn"
+
+[jobs."dnn-64"]
+jobtype = "model"
+binary = "dnn"
+
+[jobs."dnn-24"]
+jobtype = "model"
+binary = "dnn"
+
+[jobs."dnn-24__knn3"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16__knn3"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50__knn3"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__asym-16p75"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__asym-16p75__knn3"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50__asym-16p50"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50__asym-16p75"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50__asym-16p75__knn3b"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50__asym-16p75__knn3c"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-24p50"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."tsvdx5-120o__dnn-16p50"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__attn-32"]
+jobtype = "model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+# --- Attentive neighborhood models ---
+
+[jobs."attn-32"]
+jobtype = "model"
+binary = "attn"
+
+[jobs."attn-32__nlpp"]
+jobtype = "model"
+binary = "attn"
+extras = ["@train_preds"]
+
+[jobs."attn-32__nlpp__knn3"]
+jobtype = "model"
+binary = "attn"
+extras = ["@train_preds"]
+
+[jobs."attn-32-t"]
+jobtype = "model"
+binary = "attn"
+
 # --- Voting features ---
 
 [jobs.vfeat1]
@@ -827,11 +931,11 @@ voting = ["all"]
 
 # --- LightGBM blends ---
 
-[jobs.gbr1]
-jobtype = "gbmblend"
-groups = ["integrated", "rbm", "other"]
-voting = ["all"]
-seeds = [1, 2, 3, 4, 5, 6, 7]
+# [jobs.gbr1]
+# jobtype = "gbmblend"
+# groups = ["integrated", "rbm", "other"]
+# voting = ["all"]
+# seeds = [1, 2, 3, 4, 5, 6, 7]
 
 [jobs.gbr2]
 jobtype = "gbmblend"
@@ -846,11 +950,11 @@ groups = ["integrated", "rbm", "other"]
 voting = ["all"]
 seeds = [1]
 
-[jobs.gbr4o]
-jobtype = "gbmblend"
-groups = ["integrated", "rbm", "other"]
-voting = ["all"]
-seeds = [1, 2, 3]
+# [jobs.gbr4o]
+# jobtype = "gbmblend"
+# groups = ["integrated", "rbm", "other"]
+# voting = ["all"]
+# seeds = [1, 2, 3]
 
 [jobs.gbc1]
 jobtype = "gbmblend"
@@ -884,17 +988,60 @@ groups = ["integrated", "rbm", "other"]
 voting = ["all"]
 seeds = [1]
 
-# --- FWLS blends ---
+# --- Blends over the base set plus the x14 group ---
 
-[jobs.fwls1]
-jobtype = "fwlsblend"
-groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend"]
+[jobs.gbr1x]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other", "x14"]
 voting = ["all"]
 seeds = [1]
 
-# Narrow FWLS: base + blend predictors against a hand-picked 20-feature context
-# set (voting group `fwls2`), plus vf090 pulled in as a model factor. An ad-hoc
-# blend name, so λ comes from --lambda rather than blend_config.
+[jobs.gbr1y]
+jobtype = "gbmblend"
+groups = ["integrated2", "rbm2", "other2"]
+voting = ["all"]
+seeds = [1, 2]
+
+[jobs.gbr4ox]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other", "x14"]
+voting = ["all"]
+seeds = [1, 2, 3]
+
+[jobs.gbc1x]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other", "x14"]
+voting = ["all"]
+seeds = [1, 2, 3]
+
+[jobs.mlpr2ox]
+jobtype = "mlpblend"
+groups = ["integrated", "rbm", "other", "x14"]
+voting = ["all"]
+seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+# --- FWLS blends ---
+
+# [jobs.fwls1]
+# jobtype = "fwlsblend"
+# groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend"]
+# voting = ["all"]
+# seeds = [1]
+
+[jobs.fwls1x]
+jobtype = "fwlsblend"
+groups = ["integrated", "rbm", "other", "x14"]
+voting = ["all"]
+seeds = [1]
+extra_args = [
+    "--lambda", "10000",
+    "-m", "gbr1x-s1",
+    "-m", "gbr4ox-s1", "-m", "gbr4ox-s2",
+    "-m", "mlpr2ox-s1", "-m", "mlpr2ox-s2",
+    "-m", "gbr2-s1", "-m", "gbr2-s2", "-m", "gbr2-s3",
+    "-m", "gbr3-s1",
+    "-m", "gbc1-s1", "-m", "gbc1-s2", "-m", "gbc1-s3"
+]
 
 [jobs.fwls2]
 jobtype = "fwlsblend"
@@ -917,10 +1064,7 @@ voting = ["all"]
 seeds = [1]
 extra_args = ["--lambda", "50"]
 
-# FWLS over the column-mode fwls-fs selection (fwls-fs-full.log, 168 steps):
-# 97 models × 72 context features = 6985 interaction columns. --in-clip 0,6
-# matches the in-clip fwls-fs selected under; the default [1.00, 4.95] would
-# flatten most of the picked vf/ columns to a constant.
+# FWLS over the column-mode fwls-fs selection (fwls-fs-full.log, 168 steps)
 [jobs.fwls5]
 jobtype = "fwlsblend"
 groups = ["fwls5"]
