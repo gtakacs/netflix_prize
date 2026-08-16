@@ -134,3 +134,17 @@ jobtype = "fwlsblend"
 groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend"]
 voting = ["all"]
 seeds = [1]
+
+[jobs.fwls3]
+jobtype = "fwlsblend"
+groups = ["integrated"]
+voting = ["all"]
+seeds = [1]
+extra_args = ["--lambda", "50"]
+
+[jobs.fwls4]
+jobtype = "fwlsblend"
+models_manual = ["fwls/A1", "tsvdx5-400__nlpp__knn3x"]
+voting = ["all"]
+seeds = [1]
+extra_args = ["--lambda", "50"]

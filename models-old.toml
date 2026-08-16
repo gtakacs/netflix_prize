@@ -139,6 +139,8 @@ mlpblend = [
 
 fwlsblend = [
     "fwls1-s1",
+    "fwls3-s1",
+    "fwls4-s1",
 ]
 
 [meta]
