@@ -38,8 +38,8 @@ pub struct Bk1Config {
     pub dev_mean:    bool,   // subtract per-user mean of dev̂
 
     // k-NN
-    pub k_neighbors: usize,  // 0 = no neighbourhood term
-    pub alpha_rho:   f32,    // shrinkage for neighbour selection (100)
+    pub k_neighbors: usize,  // 0 = no neighborhood term
+    pub alpha_rho:   f32,    // shrinkage for neighbor selection (100)
 
     // Baseline₁ shrinkage (for r − bl₁ in the w-term)
     pub lambda1: f32,        // item damping (25)
@@ -60,7 +60,7 @@ pub struct Bk1Config {
 }
 
 // ---------------------------------------------------------------------------
-// k-NN neighbour precomputation from sim matrices
+// k-NN neighbor precomputation from sim matrices
 // ---------------------------------------------------------------------------
 //
 // Score(m, j) = cos(m,j) · n_mj / (n_mj + α_ρ)
@@ -74,7 +74,7 @@ pub(crate) fn precompute_neighbors(
     alpha: f32,
     n_items: usize,
 ) -> Vec<Vec<u16>> {
-    println!("Loading sim matrices for neighbour precomputation…");
+    println!("Loading sim matrices for neighbor precomputation…");
     let prod: Array2<f32> = read_npy(format!("sim/rtg_prod.{}.npy", dataset)).unwrap();
     let supp: Array2<f32> = read_npy(format!("sim/rtg_supp.{}.npy", dataset)).unwrap();
 
@@ -85,7 +85,7 @@ pub(crate) fn precompute_neighbors(
     // Reuse a single buffer per item row to avoid repeated allocations.
     let mut buf: Vec<(f32, u16)> = vec![(0.0, 0); n_items];
 
-    println!("Computing top-{k} neighbours per item…");
+    println!("Computing top-{k} neighbors per item…");
     for m in 0..n_items {
         let nm = norms[m];
         if nm == 0.0 { continue; }
@@ -144,7 +144,7 @@ pub struct Bk1Model {
     ycache: Array2<f32>,     // [n_users, n_feat] — Σ_j y[j] / √|N(u)|
 
     // k-NN  (sizes n_items × k_neighbors, zero-init)
-    neighbors: Vec<Vec<u16>>,  // [n_items][≤k] — top-k neighbour indices
+    neighbors: Vec<Vec<u16>>,  // [n_items][≤k] — top-k neighbor indices
     w:  Vec<f32>,              // [n_items * k] — explicit weights
     c:  Vec<f32>,              // [n_items * k] — implicit weights
 
@@ -205,7 +205,7 @@ impl Bk1Model {
         }
     }
 
-    /// Neighbourhood score for prediction (no heap alloc).
+    /// Neighborhood score for prediction (no heap alloc).
     #[inline]
     fn nbr_score(&self, u: usize, i: usize) -> f32 {
         let nbrs = &self.neighbors[i];
@@ -283,7 +283,7 @@ impl Regressor for Bk1Model {
             Array1::zeros(n_users)
         };
 
-        // ── Baseline₁ (3-iter ALS) for r − bl₁ in neighbourhood w-term ─────
+        // ── Baseline₁ (3-iter ALS) for r − bl₁ in neighborhood w-term ─────
         // bl₁(u,m) = μ + btilde_m[m] + btilde_u[u]
         let mu = gbias;
         let mut btilde_m = vec![0.0f32; n_items];
@@ -356,7 +356,7 @@ impl Regressor for Bk1Model {
             user_nu[u] = nu;
         }
 
-        // ── k-NN neighbour precomputation ────────────────────────────────────
+        // ── k-NN neighbor precomputation ────────────────────────────────────
         let k = cfg.k_neighbors;
         let neighbors = if k > 0 {
             precompute_neighbors(&tr.name, k, cfg.alpha_rho, n_items)
@@ -443,8 +443,8 @@ impl Regressor for Bk1Model {
         let users = get_users(tr.n_users, cfg.shuffle_users, cfg.seed, epoch);
 
         // Scratch buffers for k-NN lookup — reused across ratings of the same user.
-        // `nbr_rmb[rank]` = Some(r−bl₁) if neighbour rank ∈ R(u), else None.
-        // `nbr_in_n[rank]` = true if neighbour rank ∈ N(u).
+        // `nbr_rmb[rank]` = Some(r−bl₁) if neighbor rank ∈ R(u), else None.
+        // `nbr_in_n[rank]` = true if neighbor rank ∈ N(u).
         let mut nbr_rmb: Vec<Option<f32>> = vec![None; k];
         let mut nbr_in_n: Vec<bool>       = vec![false; k];
 
@@ -495,7 +495,7 @@ impl Regressor for Bk1Model {
                     score += self.q[[i, f]] * pu;
                 }
 
-                // ── Forward: k-NN neighbourhood ───────────────────────────────
+                // ── Forward: k-NN neighborhood ───────────────────────────────
                 let mut w_sum = 0.0f32;
                 let mut c_sum = 0.0f32;
                 let mut n_rk  = 0usize;

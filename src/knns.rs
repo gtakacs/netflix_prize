@@ -22,7 +22,7 @@ pub struct KnnsConfig {
     /// Number of nearest neighbors retained per prediction (top-k by similarity).
     pub k: usize,
     /// Support shrinkage: low-co-occurrence pairs are pulled toward 0
-    /// via `phi * n / (n + shrinkage)` (Bell-Koren style).
+    /// via `phi * n / (n + shrinkage)` (BellKor style).
     pub shrinkage: f32,
     /// Exponent applied to the (already shrunken) similarity. >1 sharpens the weights.
     pub scaling: f32,
@@ -62,7 +62,7 @@ impl KnnsModel {
     ///
     /// phi  = lift over independence: P(co-rated) / [P(rated i) * P(rated j)],
     ///        with N=N_USERS (Netflix Prize user count) plugged in.
-    /// sim  = phi shrunk toward 0 for low-support pairs (Bell-Koren).
+    /// sim  = phi shrunk toward 0 for low-support pairs (BellKor).
     fn sim(&self, i: usize, j: usize) -> f32 {
         let n = self.supp[[i, j]];
         let den = self.supp[[i, i]] * self.supp[[j, j]];

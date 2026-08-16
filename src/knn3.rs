@@ -199,7 +199,7 @@ fn compute_item_neighbors(ctx: &BuildCtx, m: usize, item_users_m: &[u32])
     // Compute proximity and select candidates.
     // phi  = lift over independence: P(co-rated) / [P(rated m) * P(rated j)],
     //        with N=N_USERS (Netflix Prize user count) plugged in.
-    // prox = phi shrunk toward 0 for low-support pairs, à la Bell-Koren.
+    // prox = phi shrunk toward 0 for low-support pairs, à la BellKor.
     let mut candidates: Vec<(usize, f32)> = Vec::new();
     for j in 0..ctx.n_items {
         if counts[j] == 0 { continue; }

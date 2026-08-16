@@ -1,6 +1,6 @@
-// Bell-Koren "kNN on the residual" solve with the interaction matrices precomputed
+// BellKor "kNN on the residual" solve with the interaction matrices precomputed
 // offline: reads sim/{target}_prod and sim/{baseline}_prod and mixes them as
-// x*err + (1-x)*bias. Adaptive neighbourhood size, then either a hand-written
+// x*err + (1-x)*bias. Adaptive neighborhood size, then either a hand-written
 // row-major Cholesky or an active-set NNLS for non-negative weights.
 // Produced: every `<base>__knn3x` predictor in preds_old/.
 // Frozen archive — see README.md; src/knn3.rs builds the same system on the fly.

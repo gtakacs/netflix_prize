@@ -1,7 +1,7 @@
 // Item-item kNN over precomputed sim/*.npy stat matrices, with seven similarity
 // types behind one SimType enum (support/cosine/MSE, plus four over externally
 // supplied factor vectors). Optional temporal decay, similarity threshold, power
-// scaling, and a ridge-regularised Cholesky regression over the k neighbours that
+// scaling, and a ridge-regularised Cholesky regression over the k neighbors that
 // falls back to a weighted average.
 // Produced: knn-25w and every `<base>__knn-*` predictor in preds_old/ (30 in all,
 // listed in README.md).  Frozen archive; the current version is src/knn.rs.

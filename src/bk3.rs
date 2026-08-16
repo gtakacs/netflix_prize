@@ -339,7 +339,7 @@ impl Regressor for Bk3Model {
             Array1::zeros(n_users)
         };
 
-        // ── Baseline₁ (3-iter ALS) for r − bl₁ in neighbourhood w-term ─────
+        // ── Baseline₁ (3-iter ALS) for r − bl₁ in neighborhood w-term ─────
         let mu = gbias;
         let mut btilde_m = vec![0.0f32; n_items];
         let mut btilde_u = vec![0.0f32; n_users];
@@ -410,7 +410,7 @@ impl Regressor for Bk3Model {
             user_nu[u] = nu;
         }
 
-        // ── k-NN neighbour precomputation ────────────────────────────────────
+        // ── k-NN neighbor precomputation ────────────────────────────────────
         let k = cfg.k_neighbors;
         let neighbors = if k > 0 {
             precompute_neighbors(&tr.name, k, cfg.alpha_rho, n_items)
@@ -563,7 +563,7 @@ impl Regressor for Bk3Model {
                     sum_q_eff += q_eff;
                 }
 
-                // ── Forward: k-NN neighbourhood ───────────────────────────────
+                // ── Forward: k-NN neighborhood ───────────────────────────────
                 let mut w_sum = 0.0f32;
                 let mut c_sum = 0.0f32;
                 let mut n_rk  = 0usize;

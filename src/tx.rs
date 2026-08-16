@@ -133,7 +133,7 @@ pub struct TxConfig {
     pub shuffle_users: bool,  // randomize user order each epoch
 
     pub n_time_bins: usize,   // # bins for but_bin / bit_bin
-    pub beta: f32,            // exponent in Koren's |Δt|^β time deviation
+    pub beta: f32,            // exponent in BellKor's |Δt|^β time deviation
     pub n_freq_bins: usize,   // # bins for ibias_freq / ifeat_freq
 
     // Learning rates
