@@ -14,6 +14,41 @@ pub fn suppress_progress() { NO_PROGRESS.store(true, Ordering::Relaxed); }
 /// Total number of users in the Netflix Prize dataset.
 pub const N_USERS: usize = 480_189;
 
+/// Number of distinct rating dates: day 0 is 1999-11-11 and day 2242 is
+/// 2005-12-31, the last day in the data. Every dataset (train, probe, trainx,
+/// probex, fulltrain and qual alike) has 2242 as its largest date.
+pub const N_DAYS: usize = 2243;
+
+// ---------------------------------------------------------------------------
+// Temporal conventions shared by the dnn and attn models
+// ---------------------------------------------------------------------------
+
+/// Denominator of the item-bias time bins in `dnn` and `attn`. For ad hoc
+/// reasons, one larger than the actual time span. The fitted models were all
+/// trained this way, and the +1 is kept because dropping it moves bin
+/// boundaries. Note that `tx::TxModel` bins on its own `day_range`, which it
+/// derives from the data and which therefore lacks this +1. The two must not be
+/// merged.
+const BIAS_BIN_SPAN: usize = N_DAYS + 1;
+
+/// Time bin of a rating for the per-item bias table, in `0..n_bins`.
+#[inline]
+pub fn bias_time_bin(day: i32, n_bins: usize) -> usize {
+    (day as usize * n_bins / BIAS_BIN_SPAN).min(n_bins - 1)
+}
+
+/// BellKor's user drift term `dev_u(t)`: signed, compressed distance from the
+/// user's mean rating date, with `beta` the exponent on `|dt|`. Feeds the
+/// `alpha_u` slope of a temporal baseline. The `tx` and `bk` families compute
+/// the same quantity from their own `cfg.beta`, but through the std `powf`
+/// rather than the `det-math` aware one, so they cannot share this function
+/// without changing their fitted output.
+#[inline]
+pub fn user_time_dev(day: i32, mean_day: f32, beta: f32) -> f32 {
+    let d = day as f32 - mean_day;
+    d.signum() * crate::cfnade::fmath::powf(d.abs(), beta)
+}
+
 // ---------------------------------------------------------------------------
 // Numeric utilities
 // ---------------------------------------------------------------------------
@@ -148,11 +183,13 @@ macro_rules! read_npy {
 pub mod aex;
 pub mod als8;
 pub mod asym;
+pub mod attn;
 pub mod bk1;
 pub mod bk3;
 pub mod bknbrx;
 pub mod blend;
 pub mod cfnade;
+pub mod dnn;
 pub mod knn;
 pub mod knn3;
 pub mod knnf;

@@ -15,7 +15,7 @@ use std::collections::HashMap;
 /// the f64 intermediate makes cross-OS differences vanishingly unlikely).
 /// `sqrt`/`powi` are intentionally NOT wrapped: correctly-rounded / integer
 /// power, already deterministic.
-mod fmath {
+pub mod fmath {
     #[cfg(feature = "det-math")]
     #[inline]
     pub fn exp(x: f32) -> f32 {

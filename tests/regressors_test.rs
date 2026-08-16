@@ -15,6 +15,7 @@ use netflix_prize::aex::{AexModel, AexConfig};
 use netflix_prize::als8::{Als8Model, Als8Config};
 use netflix_prize::bk1::{Bk1Model, Bk1Config};
 use netflix_prize::cfnade::{CfNadeModel, CfNadeConfig};
+use netflix_prize::dnn::{DnnModel, DnnConfig};
 use netflix_prize::mf::{MfModel, MfConfig};
 use netflix_prize::mfrbmx::{
     MfRbmxModel, MfRbmxConfig,
@@ -648,7 +649,7 @@ fn cfnade_full_probe_rmse_regression() {
 
 #[test]
 fn bk1_probe_rmse_regression() {
-    // k_neighbors = 0 disables the neighbourhood term so this test
+    // k_neighbors = 0 disables the neighborhood term so this test
     // doesn't depend on `sim/rtg_{prod,supp}.tiny_train.npy`.
     let cfg = Bk1Config {
         n_feat: 4,
@@ -684,4 +685,85 @@ fn bk1_probe_rmse_regression() {
     let rmse = calc_rmse(&mut model, &pr);
     println!("probe RMSE {}", rmse);
     assert!(rmse == 1.018273739458307);
+}
+
+#[test]
+fn dnn_probe_rmse_regression() {
+    // `n_threads: 1` is what makes the fit reproducible at all: the MLP update
+    // is single-threaded either way, but the user blocks are not.
+    //
+    // Verified to bite: a 0.5% change to `lr_emb` breaks both dnn RMSE asserts.
+    // Not covered by the fixture: the bounded output head, which stays in its
+    // linear regime because 56 ratings over 3 epochs never drive it to saturate,
+    // so `out_scale` has no effect here.
+    let cfg = DnnConfig {
+        n_feat: 4, h1: 8, h2: 4, n_mf: 0, n_bins: 4,
+        n_epochs: 3, seed: 42, n_threads: 1, block_users: 8,
+        ..DnnConfig::default()
+    };
+    let tr = make_tiny_train();
+    let pr = make_tiny_probe();
+    let pr_masked = MaskedDataset::from(&pr);
+    let mut model = DnnModel::new(&tr, &pr_masked, cfg);
+    for epoch in 1..=model.n_epochs() {
+        model.fit_epoch(&tr, &pr_masked, epoch);
+    }
+    let rmse = calc_rmse(&mut model, &pr);
+    println!("probe RMSE {}", rmse);
+    assert!(rmse == 1.0484216878929749);
+}
+
+#[test]
+fn dnn_with_mf_probe_rmse_regression() {
+    // The wide bilinear term is a separate code path — plain SGD beside the
+    // network — and the two are only ever exercised together by accident.
+    //
+    // `n_bins` is large on purpose. Bins are cut over the *whole* 2244-day span
+    // while the fixture's dates only run 9..39, so anything under ~250 collapses
+    // every rating into bin 0 and the per-bin item biases never differ. At 512
+    // the ratings land in bins 2..8, which does exercise them — but note that a
+    // one-day change to the span still moves no boundary over a range this
+    // narrow, so these tests do not pin the span itself.
+    let cfg = DnnConfig {
+        n_feat: 4, h1: 8, h2: 4, n_mf: 6, n_bins: 512,
+        n_epochs: 3, seed: 42, n_threads: 1, block_users: 8,
+        ..DnnConfig::default()
+    };
+    let tr = make_tiny_train();
+    let pr = make_tiny_probe();
+    let pr_masked = MaskedDataset::from(&pr);
+    let mut model = DnnModel::new(&tr, &pr_masked, cfg);
+    for epoch in 1..=model.n_epochs() {
+        model.fit_epoch(&tr, &pr_masked, epoch);
+    }
+    let rmse = calc_rmse(&mut model, &pr);
+    println!("probe RMSE {}", rmse);
+    assert!(rmse == 1.0443630034640592);
+}
+
+#[test]
+fn dnn_subscores_sum_to_the_prediction() {
+    // `predict_subscores` splits the output into baseline and network; the two
+    // must reconstruct `predict` exactly, since the blender consumes them as
+    // separate columns.
+    let cfg = DnnConfig {
+        n_feat: 4, h1: 8, h2: 4, n_mf: 6, n_bins: 4,
+        n_epochs: 2, seed: 7, n_threads: 1, block_users: 8,
+        ..DnnConfig::default()
+    };
+    let tr = make_tiny_train();
+    let pr = make_tiny_probe();
+    let pr_masked = MaskedDataset::from(&pr);
+    let mut model = DnnModel::new(&tr, &pr_masked, cfg);
+    for epoch in 1..=model.n_epochs() {
+        model.fit_epoch(&tr, &pr_masked, epoch);
+    }
+    assert_eq!(model.n_subscores(), 2);
+    for idx in 0..pr.n_ratings {
+        let (u, i) = (pr.user_idxs[idx] as usize, pr.item_idxs[idx] as usize);
+        let day = pr.dates[idx] as i32;
+        let parts = model.predict_subscores(u, i, day);
+        let diff = (parts[0] + parts[1] - model.predict(u, i, day)).abs();
+        assert!(diff < 1e-5, "subscores drift by {diff} at rating {idx}");
+    }
 }
