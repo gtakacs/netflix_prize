@@ -9,7 +9,7 @@ extern crate blas_src;
 
 use blas::dsyrk;
 use indexmap::IndexMap;
-use netflix_prize::blend::{flatten_groups, load_models_toml, select_groups};
+use netflix_prize::blend::{flatten_groups, load_models_toml, permuted_folds, select_groups};
 use nalgebra::{DMatrix, DVector};
 use ndarray::Array1;
 use ndarray_npy::read_npy;
@@ -26,6 +26,7 @@ const IN_CLIP_MAX: f64 = 6.0;
 const OUT_CLIP_MIN: f64 = 1.05;
 const OUT_CLIP_MAX: f64 = 4.95;
 const ROW_BLOCK: usize = 100_000;
+const CV_SEED: u64 = 42;
 const PIPELINE_OLD: &str = "pipeline-old.toml";
 const PIPELINE_NEW: &str = "pipeline-new.toml";
 const MODELS_OLD: &str = "models-old.toml";
@@ -113,6 +114,9 @@ struct Args {
     forward: bool,
     max_features: Option<usize>,
     fixed_group: Option<String>,
+    cv_folds: usize,
+    cv_seed: u64,
+    cv_patience: Option<usize>,
     in_clip_min: f64,
     in_clip_max: f64,
     out_clip_min: f64,
@@ -148,6 +152,10 @@ fn print_help() {
     println!("    --forward                greedily add models by in-sample (Gram) probe RMSE");
     println!("    --max-features K         stop after K total selected features (incl. --fixed)");
     println!("    --fixed GROUP            pre-select all models in GROUP, search over the rest");
+    println!("    --cv-folds K             select by K-fold CV RMSE instead, recovered from K");
+    println!("                             per-fold Grams built in the same streaming pass");
+    println!("    --cv-seed S              RNG seed for the fold assignment (default {CV_SEED})");
+    println!("    --cv-patience P          stop after P steps without a CV improvement");
     println!();
     println!("  Quiz blending (fit on the qual labels recovered from RMSE probing):");
     println!("    --quiz-blend             build the Gram over the full qual set and recover");
@@ -191,6 +199,9 @@ fn parse_args() -> Args {
     let mut forward = false;
     let mut max_features: Option<usize> = None;
     let mut fixed_group: Option<String> = None;
+    let mut cv_folds = 1usize;
+    let mut cv_seed = CV_SEED;
+    let mut cv_patience: Option<usize> = None;
     let (mut in_clip_min, mut in_clip_max) = (IN_CLIP_MIN, IN_CLIP_MAX);
     let (mut out_clip_min, mut out_clip_max) = (OUT_CLIP_MIN, OUT_CLIP_MAX);
     let mut quiz_blend = false;
@@ -286,6 +297,12 @@ fn parse_args() -> Args {
                 i += 2;
             }
             "--fixed" => { fixed_group = Some(need(&argv, i)); i += 2; }
+            "--cv-folds" => { cv_folds = need(&argv, i).parse().expect("bad --cv-folds value"); i += 2; }
+            "--cv-seed" => { cv_seed = need(&argv, i).parse().expect("bad --cv-seed value"); i += 2; }
+            "--cv-patience" => {
+                cv_patience = Some(need(&argv, i).parse().expect("bad --cv-patience value"));
+                i += 2;
+            }
             "--quiz-blend" => { quiz_blend = true; i += 1; }
             "--decimals" => { decimals = need(&argv, i).parse().expect("bad --decimals value"); i += 2; }
             "--in-clip" => {
@@ -300,8 +317,18 @@ fn parse_args() -> Args {
         }
     }
 
-    if !forward && (max_features.is_some() || fixed_group.is_some()) {
-        eprintln!("warning: --max-features/--fixed have no effect without --forward");
+    if !forward && (max_features.is_some() || fixed_group.is_some() || cv_folds > 1) {
+        eprintln!("warning: --max-features/--fixed/--cv-folds have no effect without --forward");
+    }
+    if cv_folds < 1 {
+        eprintln!("error: --cv-folds must be at least 1 (got {})", cv_folds);
+        std::process::exit(2);
+    }
+    // The in-sample RMSE falls monotonically as columns are added, so there is
+    // nothing for patience to wait for without a held-out criterion.
+    if cv_patience.is_some() && cv_folds < 2 {
+        eprintln!("error: --cv-patience needs --cv-folds >= 2");
+        std::process::exit(2);
     }
 
     let sources = if using_from {
@@ -335,6 +362,9 @@ fn parse_args() -> Args {
         forward,
         max_features,
         fixed_group,
+        cv_folds,
+        cv_seed,
+        cv_patience,
         in_clip_min,
         in_clip_max,
         out_clip_min,
@@ -484,22 +514,78 @@ fn load_block_parallel(
     }
 }
 
-/// Returns (A, b) where:
+/// Fold index per probe row, from a seeded random permutation. `k == 1` skips
+/// the shuffle: every row is in the single fold anyway, and the shuffle would
+/// only cost an allocation the size of the probe set.
+fn assign_folds(n: usize, k: usize, seed: u64) -> Vec<u32> {
+    let mut fold_of = vec![0u32; n];
+    if k > 1 {
+        for (f, rows) in permuted_folds(n, k, seed).iter().enumerate() {
+            for &r in rows {
+                fold_of[r] = f as u32;
+            }
+        }
+    }
+    fold_of
+}
+
+/// One fold's normal-equation system, restricted to that fold's rows:
 ///   A = Zᵀ Z   ((m+1)×(m+1), row-major, last col/row is bias)
 ///   b = Zᵀ y   (m+1)
 /// Z has shape (n × (m+1)) with the last column all-ones for the bias.
-fn build_gram(
+/// A single-fold run holds the whole probe set, which is the non-CV case.
+struct GramFold {
+    a: Vec<f64>,
+    b: Vec<f64>,
+    yty: f64,
+    n: usize,
+}
+
+impl GramFold {
+    fn zeros(dim: usize) -> Self {
+        GramFold { a: vec![0.0; dim * dim], b: vec![0.0; dim], yty: 0.0, n: 0 }
+    }
+
+    /// Element-wise sum, i.e. the system over the union of the folds' rows.
+    fn sum(folds: &[GramFold], dim: usize) -> GramFold {
+        let mut t = GramFold::zeros(dim);
+        for f in folds {
+            for i in 0..dim * dim { t.a[i] += f.a[i]; }
+            for i in 0..dim { t.b[i] += f.b[i]; }
+            t.yty += f.yty;
+            t.n += f.n;
+        }
+        t
+    }
+}
+
+/// Build one Gram system per CV fold in a single streaming pass, with row `i`
+/// contributing to fold `fold_of[i]`. Inside a row block the rows of one fold
+/// are gathered into the scratch buffer before its `dsyrk`, so the flop count is
+/// the same as for a single Gram and the extra cost is one pass of index checks
+/// per fold. With `k_folds == 1` the gather is the identity and this reduces to
+/// the plain single-Gram build, bit for bit.
+fn build_grams(
     y: &[f64],
     readers: &mut [NpyF32Reader],
     clip: &[bool],
     in_clip_min: f32,
     in_clip_max: f32,
-) -> (Vec<f64>, Vec<f64>) {
+    fold_of: &[u32],
+    k_folds: usize,
+) -> Vec<GramFold> {
     let m = readers.len();
     let dim = m + 1;
     let n = y.len();
-    let mut a = vec![0.0f64; dim * dim];
-    let mut b = vec![0.0f64; dim];
+    let mut folds: Vec<GramFold> = (0..k_folds).map(|_| GramFold::zeros(dim)).collect();
+
+    // yᵀy and the row count come from a separate pass in row order, so that a
+    // single-fold run reproduces the plain `y.iter().map(v*v).sum()` exactly.
+    for (i, &yi) in y.iter().enumerate() {
+        let f = &mut folds[fold_of[i] as usize];
+        f.yty += yi * yi;
+        f.n += 1;
+    }
 
     // Persistent f32 block buffer: column-major (dim × blen, leading dim = dim).
     // Cell (i + k*dim) holds model i's prediction at row k; the bias row is at
@@ -523,36 +609,47 @@ fn build_gram(
 
         load_block_parallel(readers, clip, in_clip_min, in_clip_max, &mut col_bufs, &mut zt_f32, start, blen, dim);
 
-        // Cast the active part of the block to f64 for BLAS.
-        let len = blen * dim;
-        for k in 0..len {
-            zt_f64[k] = zt_f32[k] as f64;
-        }
-
-        // dsyrk uplo='L' fills the column-major lower triangle, which is the
-        // row-major upper triangle in our linear buffer; the post-loop mirror
-        // copies that into the row-major lower half.
-        unsafe {
-            dsyrk(
-                b'L',
-                b'N',
-                dim as i32,
-                blen as i32,
-                1.0,
-                &zt_f64,
-                dim as i32,
-                1.0,
-                &mut a,
-                dim as i32,
-            );
-        }
-
-        // b += Zᵀ y  (column-major (dim × blen) · blen-vector → dim-vector)
-        for k in 0..blen {
-            let y_k = y[start + k];
-            let col = &zt_f64[k * dim..(k + 1) * dim];
-            for i in 0..dim {
-                b[i] += col[i] * y_k;
+        // One pass per fold: gather that fold's rows of the block into the front
+        // of the f64 scratch (casting on the way), then one dsyrk over just
+        // those columns. `zt_f64` is reused across folds, so the block memory is
+        // the same as for a single Gram.
+        for (f, fold) in folds.iter_mut().enumerate() {
+            let mut cnt = 0usize;
+            for k in 0..blen {
+                if k_folds > 1 && fold_of[start + k] as usize != f {
+                    continue;
+                }
+                let src = &zt_f32[k * dim..(k + 1) * dim];
+                let dst = &mut zt_f64[cnt * dim..(cnt + 1) * dim];
+                for i in 0..dim {
+                    dst[i] = src[i] as f64;
+                }
+                // b += Zᵀ y, one row at a time while the row is at hand.
+                let y_k = y[start + k];
+                for i in 0..dim {
+                    fold.b[i] += dst[i] * y_k;
+                }
+                cnt += 1;
+            }
+            if cnt == 0 {
+                continue;
+            }
+            // dsyrk uplo='L' fills the column-major lower triangle, which is the
+            // row-major upper triangle in our linear buffer; the post-loop mirror
+            // copies that into the row-major lower half.
+            unsafe {
+                dsyrk(
+                    b'L',
+                    b'N',
+                    dim as i32,
+                    cnt as i32,
+                    1.0,
+                    &zt_f64,
+                    dim as i32,
+                    1.0,
+                    &mut fold.a,
+                    dim as i32,
+                );
             }
         }
 
@@ -564,12 +661,14 @@ fn build_gram(
 
     // Mirror row-major upper → row-major lower so downstream row-major
     // submatrix slicing reads a fully symmetric matrix.
-    for i in 0..dim {
-        for j in (i + 1)..dim {
-            a[j * dim + i] = a[i * dim + j];
+    for fold in folds.iter_mut() {
+        for i in 0..dim {
+            for j in (i + 1)..dim {
+                fold.a[j * dim + i] = fold.a[i * dim + j];
+            }
         }
     }
-    (a, b)
+    folds
 }
 
 // ---------------------------------------------------------------------------
@@ -601,19 +700,29 @@ fn build_subsystem(
 }
 
 /// Ridge-solve the subsystem: add `lambda` to the first `n_feat` diagonal
-/// entries (the bias term stays unregularized) and Cholesky-solve.
+/// entries (the bias term stays unregularized) and Cholesky-solve. `None` when
+/// the regularized system is not positive definite.
+fn try_solve_subsystem(
+    a_sub: &DMatrix<f64>,
+    b_sub: &DVector<f64>,
+    n_feat: usize,
+    lambda: f64,
+) -> Option<DVector<f64>> {
+    let mut a_reg = a_sub.clone();
+    for i in 0..n_feat {
+        a_reg[(i, i)] += lambda;
+    }
+    Some(a_reg.cholesky()?.solve(b_sub))
+}
+
 fn solve_subsystem(
     a_sub: &DMatrix<f64>,
     b_sub: &DVector<f64>,
     n_feat: usize,
     lambda: f64,
 ) -> DVector<f64> {
-    let mut a_reg = a_sub.clone();
-    for i in 0..n_feat {
-        a_reg[(i, i)] += lambda;
-    }
-    let chol = a_reg.cholesky().expect("Gram matrix is not positive definite");
-    chol.solve(b_sub)
+    try_solve_subsystem(a_sub, b_sub, n_feat, lambda)
+        .expect("Gram matrix is not positive definite")
 }
 
 fn solve_group(
@@ -631,16 +740,30 @@ fn solve_group(
 // Forward feature selection (Gram-only criterion)
 // ---------------------------------------------------------------------------
 
-/// One forward-selection step: the model added and the in-sample (probe) RMSE
-/// of the resulting prefix, recovered purely from the Gram matrix.
+/// One forward-selection step: the model added, and the in-sample and K-fold CV
+/// probe RMSE of the resulting prefix, both recovered purely from the Grams.
+/// Without CV the two values are the same number.
 struct ForwardStep {
     added: String,
     in_sample_rmse: f64,
+    cv_rmse: f64,
 }
 
-/// Solve the ridge subsystem for `indices` and return `(w, in_sample_rmse)`.
-/// The RMSE is the unclipped probe RMSE recovered from the Gram alone:
-///   SSE = yᵀy − 2·wᵀ·b_sub + wᵀ·A_sub·w   (A_sub WITHOUT the λ ridge term).
+/// SSE of the fit `w` against an unregularized Gram system:
+///   SSE = yᵀy − 2·wᵀ·b + wᵀ·A·w
+fn sse_of(w: &DVector<f64>, a: &DMatrix<f64>, b: &DVector<f64>, yty: f64) -> f64 {
+    yty - 2.0 * w.dot(b) + w.dot(&(a * w))
+}
+
+/// Solve the ridge subsystem for `indices` over the pooled system and return
+/// `(w, in_sample_rmse, cv_rmse)`. Both RMSEs are the unclipped probe RMSE
+/// recovered from the Grams alone, with `A_sub` taken WITHOUT the λ ridge term.
+///
+/// Fold k is fitted on `A − A_k` and scored on its own held-out `A_k`. The
+/// subtraction is exact arithmetic on the accumulated systems and is safe
+/// because the folds are a random row split, so `A_k ≈ A/K` and no cancellation
+/// occurs. A singular fold complement scores the whole candidate as `+∞`, which
+/// simply drops it from the greedy step.
 fn eval_subset(
     a: &[f64],
     b: &[f64],
@@ -649,18 +772,38 @@ fn eval_subset(
     indices: &[usize],
     lambda: f64,
     n: usize,
-) -> (DVector<f64>, f64) {
+    folds: &[GramFold],
+) -> (DVector<f64>, f64, f64) {
     let (a_sub, b_sub) = build_subsystem(a, b, dim, indices);
     let w = solve_subsystem(&a_sub, &b_sub, indices.len(), lambda);
-    let aw = &a_sub * &w;
-    let sse = yty - 2.0 * w.dot(&b_sub) + w.dot(&aw);
-    (w, (sse / n as f64).sqrt())
+    let in_rmse = (sse_of(&w, &a_sub, &b_sub, yty) / n as f64).sqrt();
+    if folds.len() < 2 {
+        return (w, in_rmse, in_rmse);
+    }
+    let mut sse_cv = 0.0f64;
+    for f in folds {
+        let (ak, bk) = build_subsystem(&f.a, &f.b, dim, indices);
+        let Some(wk) =
+            try_solve_subsystem(&(&a_sub - &ak), &(&b_sub - &bk), indices.len(), lambda)
+        else {
+            return (w, in_rmse, f64::INFINITY);
+        };
+        sse_cv += sse_of(&wk, &ak, &bk, f.yty);
+    }
+    (w, in_rmse, (sse_cv / n as f64).sqrt())
 }
 
-/// Greedy forward selection driven by the Gram-only in-sample probe RMSE.
+/// Greedy forward selection over the Gram. The criterion is the K-fold CV probe
+/// RMSE when `folds` holds more than one fold, and the in-sample probe RMSE
+/// otherwise; the two coincide at K = 1, so the single-fold path is exactly the
+/// pre-CV behaviour. The weights returned per step are always the fit over all
+/// the rows: cross-validation decides *which* columns to take, never the
+/// coefficients that are finally used.
+///
 /// `fixed` is pre-selected and never dropped. Returns one prefix fit per step
 /// (for downstream clipped probe/quiz evaluation) plus per-step metadata.
 /// Candidate evaluation within each step runs in parallel over Rayon.
+#[allow(clippy::too_many_arguments)]
 fn forward_select(
     a: &[f64],
     b: &[f64],
@@ -672,7 +815,10 @@ fn forward_select(
     fixed: &[usize],
     max_features: Option<usize>,
     lambda: f64,
+    folds: &[GramFold],
+    cv_patience: Option<usize>,
 ) -> (Vec<(String, Vec<usize>, DVector<f64>)>, Vec<ForwardStep>) {
+    let cv = folds.len() > 1;
     let mut in_fixed = vec![false; m];
     for &i in fixed {
         in_fixed[i] = true;
@@ -685,38 +831,81 @@ fn forward_select(
 
     let target = max_features.unwrap_or(m).min(m);
 
+    // The score a step is judged by, and how long it has been since the best.
+    let mut best_cv = f64::INFINITY;
+    let mut since_best = 0usize;
+    let mut note_step = |cv_rmse: f64| {
+        if cv_rmse < best_cv {
+            best_cv = cv_rmse;
+            since_best = 0;
+        } else {
+            since_best += 1;
+        }
+        matches!(cv_patience, Some(p) if since_best >= p)
+    };
+
     // Baseline row for the pre-selected (fixed) set, if any.
     if !selected.is_empty() {
-        let (w, rmse) = eval_subset(a, b, yty, dim, &selected, lambda, n);
-        eprintln!("  baseline ({} fixed): in-sample {:.6}", selected.len(), rmse);
+        let (w, rmse, cv_rmse) = eval_subset(a, b, yty, dim, &selected, lambda, n, folds);
+        if cv {
+            eprintln!(
+                "  baseline ({} fixed): in-sample {:.6}  cv {:.6}",
+                selected.len(), rmse, cv_rmse,
+            );
+        } else {
+            eprintln!("  baseline ({} fixed): in-sample {:.6}", selected.len(), rmse);
+        }
         steps.push(ForwardStep {
             added: format!("<baseline: {} fixed>", selected.len()),
             in_sample_rmse: rmse,
+            cv_rmse,
         });
         fits.push(("base".to_string(), selected.clone(), w));
+        note_step(cv_rmse);
     }
 
     while !remaining.is_empty() && selected.len() < target {
-        let (pos, cand, rmse, w) = remaining
+        let (pos, cand, rmse, cv_rmse, w) = remaining
             .par_iter()
             .enumerate()
             .map(|(pos, &c)| {
                 let mut trial = selected.clone();
                 trial.push(c);
-                let (w, rmse) = eval_subset(a, b, yty, dim, &trial, lambda, n);
-                (pos, c, rmse, w)
+                let (w, rmse, cv_rmse) = eval_subset(a, b, yty, dim, &trial, lambda, n, folds);
+                (pos, c, rmse, cv_rmse, w)
             })
-            .min_by(|x, y| x.2.partial_cmp(&y.2).expect("NaN RMSE in candidate eval"))
+            .min_by(|x, y| {
+                let (sx, sy) = if cv { (x.3, y.3) } else { (x.2, y.2) };
+                sx.partial_cmp(&sy).expect("NaN RMSE in candidate eval")
+            })
             .expect("non-empty remaining");
 
         remaining.remove(pos);
         selected.push(cand);
-        eprintln!(
-            "  step {}/{}: + {} (in-sample {:.6})",
-            selected.len(), target, unique[cand], rmse,
-        );
-        steps.push(ForwardStep { added: unique[cand].clone(), in_sample_rmse: rmse });
+        if cv {
+            eprintln!(
+                "  step {}/{}: + {} (in-sample {:.6}  cv {:.6})",
+                selected.len(), target, unique[cand], rmse, cv_rmse,
+            );
+        } else {
+            eprintln!(
+                "  step {}/{}: + {} (in-sample {:.6})",
+                selected.len(), target, unique[cand], rmse,
+            );
+        }
+        steps.push(ForwardStep {
+            added: unique[cand].clone(),
+            in_sample_rmse: rmse,
+            cv_rmse,
+        });
         fits.push((format!("k={}", selected.len()), selected.clone(), w));
+        if note_step(cv_rmse) {
+            eprintln!(
+                "  stopping: {} steps without a CV improvement",
+                cv_patience.expect("patience fired"),
+            );
+            break;
+        }
     }
     (fits, steps)
 }
@@ -949,24 +1138,44 @@ fn main() -> ExitCode {
     // Build the shared Gram (A = ZᵀZ), its right-hand side (b = Zᵀy) and yty.
     // Normal mode fits on the probe labels; quiz-blend mode fits on the full
     // qual labels recovered from rounded per-model + constant RMSE probes.
+    //
+    // With --cv-folds K the probe rows are split into K folds and one system is
+    // accumulated per fold; `folds` then feeds the CV criterion and their sum is
+    // the same pooled system a non-CV run would have built. Quiz-blend never
+    // splits: its `b` is recovered from RMSEs published over the whole quiz set,
+    // which cannot be reproduced fold by fold. That is moot in practice, since
+    // --quiz-blend and --from are both rejected alongside --forward.
     let dim = m + 1;
-    let (a, b, yty, n): (Vec<f64>, Vec<f64>, f64, usize) = if args.quiz_blend {
+    let k_folds = if args.forward && !args.quiz_blend { args.cv_folds } else { 1 };
+    let (folds, a, b, yty, n): (Vec<GramFold>, Vec<f64>, Vec<f64>, f64, usize) = if args.quiz_blend {
         let y_q: Vec<f64> = y_q_i8.iter().map(|&r| r as f64).collect();
         println!(
             "Quiz-blend: building Gram over full qual ({} ratings), decimals = {}",
             n_q, args.decimals,
         );
-        let (a, b_true) = build_gram(&y_q, &mut qual_readers, &clip,
-            args.in_clip_min as f32, args.in_clip_max as f32);
+        let one = vec![0u32; n_q];
+        let g = build_grams(&y_q, &mut qual_readers, &clip,
+            args.in_clip_min as f32, args.in_clip_max as f32, &one, 1);
+        let a = g.into_iter().next().expect("one fold");
         let yty: f64 = y_q.iter().map(|v| v * v).sum();
-        let b = recover_quiz_b(&a, &b_true, yty, n_q, m, args.decimals);
-        (a, b, yty, n_q)
+        let b = recover_quiz_b(&a.a, &a.b, yty, n_q, m, args.decimals);
+        (Vec::new(), a.a, b, yty, n_q)
     } else {
         println!("Building Gram matrix over {} model(s) × {} ratings...", m, n_probe);
-        let (a, b) = build_gram(&probe_y, &mut readers, &clip,
-            args.in_clip_min as f32, args.in_clip_max as f32);
-        let yty: f64 = probe_y.iter().map(|v| v * v).sum();
-        (a, b, yty, n_probe)
+        let fold_of = assign_folds(n_probe, k_folds, args.cv_seed);
+        if k_folds > 1 {
+            println!("CV:        {} folds, seed {}", k_folds, args.cv_seed);
+        }
+        let mut folds = build_grams(&probe_y, &mut readers, &clip,
+            args.in_clip_min as f32, args.in_clip_max as f32, &fold_of, k_folds);
+        // Without CV the single fold *is* the pooled system, so move it out
+        // rather than summing a one-element list back into a fresh allocation.
+        let total = if folds.len() == 1 {
+            folds.pop().expect("one fold")
+        } else {
+            GramFold::sum(&folds, dim)
+        };
+        (folds, total.a, total.b, total.yty, total.n)
     };
 
     // Build the fits to evaluate: either forward-selection prefixes (one fit per
@@ -981,17 +1190,24 @@ fn main() -> ExitCode {
                 None => Vec::new(),
             };
             println!(
-                "Forward:   λ={} candidates={} fixed={} max_features={}",
+                "Forward:   λ={} candidates={} fixed={} max_features={}{}",
                 args.lambda,
                 m - fixed.len(),
                 fixed.len(),
                 args.max_features.map(|k| k.to_string()).unwrap_or_else(|| "all".to_string()),
+                args.cv_patience.map(|p| format!(" patience={p}")).unwrap_or_default(),
             );
             println!();
             println!("Phase 1/2: forward selection — at each step greedily add the predictor");
-            println!("           that most lowers the in-sample (Gram-only, unclipped) probe RMSE.");
-            let (fits, steps) =
-                forward_select(&a, &b, yty, dim, n, m, &unique, &fixed, args.max_features, args.lambda);
+            if k_folds > 1 {
+                println!("           that most lowers the {}-fold CV (Gram-only, unclipped) probe RMSE.", k_folds);
+            } else {
+                println!("           that most lowers the in-sample (Gram-only, unclipped) probe RMSE.");
+            }
+            let (fits, steps) = forward_select(
+                &a, &b, yty, dim, n, m, &unique, &fixed, args.max_features, args.lambda,
+                &folds, args.cv_patience,
+            );
             (fits, Some(steps))
         } else {
             // Solve per group, plus 'all' if more than one group
@@ -1042,22 +1258,48 @@ fn main() -> ExitCode {
     println!();
     match &fwd_steps {
         Some(steps) => {
-            println!(
-                "{:>4}  {:<40} {:>13} {:>11} {:>11}  {:>9}",
-                "step", "model added", "insample_pr", "clip_probe", "quiz", "delta",
-            );
+            // With CV the extra column is the criterion the selection actually
+            // used; `delta` tracks whichever of the two that was.
+            let cv = k_folds > 1;
+            let score = |s: &ForwardStep| if cv { s.cv_rmse } else { s.in_sample_rmse };
+            if cv {
+                println!(
+                    "{:>4}  {:<40} {:>13} {:>11} {:>11} {:>11}  {:>9}",
+                    "step", "model added", "insample_pr", "cv_pr", "clip_probe", "quiz", "delta",
+                );
+            } else {
+                println!(
+                    "{:>4}  {:<40} {:>13} {:>11} {:>11}  {:>9}",
+                    "step", "model added", "insample_pr", "clip_probe", "quiz", "delta",
+                );
+            }
             let mut prev = f64::INFINITY;
+            let mut best = (0usize, f64::INFINITY);
             for (i, (step, (p_sse, q_sse))) in
                 steps.iter().zip(probe_sse.iter().zip(quiz_sse.iter())).enumerate()
             {
                 let p_rmse = (p_sse / probe_n as f64).sqrt();
                 let q_rmse = (q_sse / quiz_n as f64).sqrt();
-                let delta = if prev.is_finite() { step.in_sample_rmse - prev } else { 0.0 };
-                prev = step.in_sample_rmse;
-                println!(
-                    "{:>4}  {:<40} {:>13.6} {:>11.6} {:>11.6}  {:>+9.6}",
-                    i + 1, step.added, step.in_sample_rmse, p_rmse, q_rmse, delta,
-                );
+                let delta = if prev.is_finite() { score(step) - prev } else { 0.0 };
+                prev = score(step);
+                if score(step) < best.1 {
+                    best = (i + 1, score(step));
+                }
+                if cv {
+                    println!(
+                        "{:>4}  {:<40} {:>13.6} {:>11.6} {:>11.6} {:>11.6}  {:>+9.6}",
+                        i + 1, step.added, step.in_sample_rmse, step.cv_rmse, p_rmse, q_rmse, delta,
+                    );
+                } else {
+                    println!(
+                        "{:>4}  {:<40} {:>13.6} {:>11.6} {:>11.6}  {:>+9.6}",
+                        i + 1, step.added, step.in_sample_rmse, p_rmse, q_rmse, delta,
+                    );
+                }
+            }
+            if cv {
+                println!();
+                println!("Best by {}-fold CV: step {} ({:.6})", k_folds, best.0, best.1);
             }
         }
         None if args.cross_split => {
