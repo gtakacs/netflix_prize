@@ -819,7 +819,7 @@ pub fn fit<M: Regressor + Sync>(
 // ---------------------------------------------------------------------------
 
 /// Train/probe/qual split convention. Constants:
-/// - `SPLIT_OLD` = train → probe, fulltrain → qual, preds_dir = "preds"
+/// - `SPLIT_OLD` = train → probe, fulltrain → qual, preds_dir = "preds_old"
 /// - `SPLIT_NEW` = trainx → probex, fulltrain → qual, preds_dir = "preds_new"
 #[derive(Debug, Clone, Copy)]
 pub struct Split {
@@ -834,7 +834,7 @@ pub struct Split {
 pub const SPLIT_OLD: Split = Split {
     tr: "train", pr: "probe",
     fulltrain_tr: "fulltrain", fulltrain_pr: "qual",
-    preds_dir: "preds",
+    preds_dir: "preds_old",
     sim_dir: "sim",
 };
 
@@ -844,6 +844,33 @@ pub const SPLIT_NEW: Split = Split {
     preds_dir: "preds_new",
     sim_dir: "sim",
 };
+
+impl Split {
+    /// Build a `Split` from the `[split]` table of a pipeline manifest, so a
+    /// dispatcher binary can serve either split (`jobtype = "anysplit_model"`),
+    /// the way the gbm/mlp/fwls blenders take theirs from `-p`.
+    pub fn from_pipeline(path: &str) -> Split {
+        #[derive(serde::Deserialize)]
+        struct P {
+            #[serde(default)]
+            split: std::collections::HashMap<String, String>,
+        }
+        let s = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let p: P = toml::from_str(&s).unwrap_or_else(|e| panic!("parse {path}: {e}"));
+        let get = |k: &str| -> &'static str {
+            p.split
+                .get(k)
+                .unwrap_or_else(|| panic!("[split].{k} missing in {path}"))
+                .clone()
+                .leak()
+        };
+        Split {
+            tr: get("tr"), pr: get("pr"),
+            fulltrain_tr: get("fulltrain_tr"), fulltrain_pr: get("fulltrain_pr"),
+            preds_dir: get("preds"), sim_dir: get("sim"),
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // fit2 family
