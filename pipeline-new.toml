@@ -931,18 +931,18 @@ voting = ["all"]
 
 # --- LightGBM blends ---
 
-# [jobs.gbr1]
-# jobtype = "gbmblend"
-# groups = ["integrated", "rbm", "other"]
-# voting = ["all"]
-# seeds = [1, 2, 3, 4, 5, 6, 7]
+[jobs.gbr1]
+jobtype = "gbmblend"
+groups = ["integrated", "rbm", "other"]
+voting = ["all"]
+seeds = [1]
 
 [jobs.gbr2]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
 voting = ["all"]
 exclude = ["cfnade-96_ep95", "cfnade-96_ep10", "cfnade-48_ep95", "cfnade-48_ep25", "cfnade-12_ep40", "cfnade-96r_ep95"]
-seeds = [1, 2, 3]
+seeds = [1]
 
 [jobs.gbr3]
 jobtype = "gbmblend"
@@ -950,23 +950,38 @@ groups = ["integrated", "rbm", "other"]
 voting = ["all"]
 seeds = [1]
 
-# [jobs.gbr4o]
-# jobtype = "gbmblend"
-# groups = ["integrated", "rbm", "other"]
-# voting = ["all"]
-# seeds = [1, 2, 3]
-
-[jobs.gbc1]
+[jobs.gbr4o]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
 voting = ["all"]
-seeds = [1, 2, 3, 4, 5]
+seeds = [1, 2]
 
 [jobs.gbc2o]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other"]
 voting = ["all"]
 seeds = [1]
+
+# gbr1 params on the gold models across all four voting subsets.
+[jobs.gbr1g]
+jobtype = "gbmblend"
+groups = ["gold"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+seeds = [1, 2, 3]
+
+###
+[jobs.gbr4x]
+jobtype = "gbmblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+seeds = [1]
+###
+[jobs.gbc2x]
+jobtype = "gbmblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+#seeds = [1, 2]
+seeds = [2, 3]
 
 # --- MLP blends ---
 
@@ -975,50 +990,47 @@ seeds = [1]
 # groups = ["integrated", "rbm", "other"]
 # seeds = [1, 2, 3, 4, 5, 6, 7, 8]
 
-[jobs.mlpr2o]
-jobtype = "mlpblend"
-groups = ["integrated", "rbm", "other"]
-voting = ["all"]
-seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-
-# Ordinal-classifier MLP (4 sigmoid threshold heads + BCE); mlpc3o params.
-[jobs.mlpc3o]
-jobtype = "mlpblend"
-groups = ["integrated", "rbm", "other"]
-voting = ["all"]
-seeds = [1]
-
-# --- Blends over the base set plus the x14 group ---
-
 [jobs.gbr1x]
 jobtype = "gbmblend"
 groups = ["integrated", "rbm", "other", "x14"]
 voting = ["all"]
 seeds = [1]
 
-[jobs.gbr1y]
+[jobs.gbr2x]
 jobtype = "gbmblend"
-groups = ["integrated2", "rbm2", "other2"]
-voting = ["all"]
-seeds = [1, 2]
-
-[jobs.gbr4ox]
-jobtype = "gbmblend"
-groups = ["integrated", "rbm", "other", "x14"]
-voting = ["all"]
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+exclude = ["cfnade-96_ep95", "cfnade-96_ep10", "cfnade-48_ep95", "cfnade-48_ep25", "cfnade-12_ep40", "cfnade-96r_ep95"]
 seeds = [1, 2, 3]
 
-[jobs.gbc1x]
-jobtype = "gbmblend"
-groups = ["integrated", "rbm", "other", "x14"]
-voting = ["all"]
-seeds = [1, 2, 3]
-
-[jobs.mlpr2ox]
+# mlpr2o params over the cleaned gold+silver columns and the subset1-4 voting
+# features (the same column set the gbr2x/gbr3x/gbc2x blends use).
+[jobs.mlpr2x]
 jobtype = "mlpblend"
-groups = ["integrated", "rbm", "other", "x14"]
-voting = ["all"]
-seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+seeds = [6, 9, 10, 11, 15, 17, 18, 21, 22, 24]
+
+# Ordinal counterpart of mlpr2x (mlpc3o params).
+[jobs.mlpc3x]
+jobtype = "mlpblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+seeds = [1, 4]
+
+# Wider 128x64 net on the same columns.
+[jobs.mlpr3x]
+jobtype = "mlpblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+seeds = [1, 2, 5]
+
+# mlpr2x on a narrower voting subspace, for feature diversity in the blend.
+[jobs.mlpr2x14]
+jobtype = "mlpblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset4"]
+seeds = [7, 10, 12]
 
 # --- FWLS blends ---
 
@@ -1028,24 +1040,12 @@ seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 # voting = ["all"]
 # seeds = [1]
 
-[jobs.fwls1x]
-jobtype = "fwlsblend"
-groups = ["integrated", "rbm", "other", "x14"]
-voting = ["all"]
-seeds = [1]
-extra_args = [
-    "--lambda", "10000",
-    "-m", "gbr1x-s1",
-    "-m", "gbr4ox-s1", "-m", "gbr4ox-s2",
-    "-m", "mlpr2ox-s1", "-m", "mlpr2ox-s2",
-    "-m", "gbr2-s1", "-m", "gbr2-s2", "-m", "gbr2-s3",
-    "-m", "gbr3-s1",
-    "-m", "gbc1-s1", "-m", "gbc1-s2", "-m", "gbc1-s3"
-]
 
-[jobs.fwls2]
+# Modern fwls2: the same 20 context features and lambda, but over the cleaned
+# model set instead of the stale base/blends meta-groups (D stays ~3400).
+[jobs.fwls2x]
 jobtype = "fwlsblend"
-groups = ["base", "blends"]
+groups = ["gold", "silver", "gbmblend2", "mlpblend2"]
 voting = ["fwls2"]
 seeds = [1]
 extra_args = ["--lambda", "50", "-m", "vf/vf090_movie_rating_slope"]
@@ -1071,3 +1071,35 @@ groups = ["fwls5"]
 voting = ["fwls5"]
 seeds = [1]
 extra_args = ["--lambda", "100", "--in-clip", "0,6"]
+
+# [jobs.fwls6g]
+# jobtype = "fwlsblend"
+# groups = ["gold"]
+# voting = ["subset1", "subset2", "subset3", "subset4"]
+# seeds = [1]
+# extra_args = ["--lambda", "10000"]
+
+# FWLS over the blend columns alone: context-weights the second-level outputs
+# rather than the base predictors.
+[jobs.fwls7b]
+jobtype = "fwlsblend"
+groups = ["gbmblend2", "mlpblend2"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+seeds = [1]
+extra_args = ["--lambda", "1000"]
+
+# One job per voting subset, over the full cleaned model set.
+[jobs.fwls7x1]
+jobtype = "fwlsblend"
+groups = ["gold", "silver", "gbmblend2", "mlpblend2"]
+voting = ["subset1"]
+seeds = [1]
+extra_args = ["--lambda", "1000"]
+
+# Same as fwls7x but without the silver models.
+[jobs.fwls7g]
+jobtype = "fwlsblend"
+groups = ["gold", "gbmblend2", "mlpblend2"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+seeds = [1]
+extra_args = ["--lambda", "10000"]
