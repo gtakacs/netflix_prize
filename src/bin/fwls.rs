@@ -604,7 +604,7 @@ fn main() -> ExitCode {
             let w = solve_fold(amat, b);
 
             let p_te = predict_rows(test, &xpr, &fpr, &w, m, p, true);
-            teeln!("    fold RMSE {:.5}", rmse_sel(&p_te, &y_pr, test));
+            teeln!("    fold RMSE {:.6}", rmse_sel(&p_te, &y_pr, test));
             for (ii, &row) in test.iter().enumerate() {
                 yhat_pr[row] = p_te[ii];
             }
@@ -627,8 +627,8 @@ fn main() -> ExitCode {
             }
         }
         let quiz_rmse = (quiz_sse / quiz_n as f64).sqrt();
-        teeln!(" ProbeRMSE: {:.5}", probe_rmse);
-        teeln!("  QuizRMSE: {:.5}", quiz_rmse);
+        teeln!(" ProbeRMSE: {:.6}", probe_rmse);
+        teeln!("  QuizRMSE: {:.6}", quiz_rmse);
 
         let pr_path = format!("{preds}/{}-s{seed}.{pr}.npy", args.name);
         let ql_path = format!("{preds}/{}-s{seed}.{fulltrain_pr}.npy", args.name);
