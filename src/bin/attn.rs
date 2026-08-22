@@ -1,5 +1,5 @@
 use netflix_prize::{
-    SPLIT_NEW,
+    Split,
     attn::{AttnConfig, AttnModel},
     fit2,
     knn3::{Knn3Config, Knn3Model},
@@ -12,9 +12,19 @@ fn ev<T: std::str::FromStr>(key: &str, default: T) -> T {
     env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
+/// Split for this run, from the `-p FILE` manifest. Defaults to the new split,
+/// so an ad-hoc probe run (`attn attn-x1`) needs no extra argument.
+fn split_arg(args: &[String]) -> Split {
+    let path = args.iter().position(|a| a == "-p")
+        .map(|i| args.get(i + 1).expect("'-p' requires a manifest path").as_str())
+        .unwrap_or("pipeline-new.toml");
+    Split::from_pipeline(path)
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let job_name = args[1].as_str();
+    let split = split_arg(&args);
 
     // Post-processing chains, as in the other model families. Both read the
     // base model's saved train-set predictions, so the base job must have run
@@ -24,7 +34,7 @@ fn main() {
     if job_name == "attn-32__nlpp__knn3" {
         let base = job_name.strip_suffix("__knn3").unwrap();
         let target = format!("1.0*{}", base);
-        fit2!(Knn3Model, Knn3Config::default(), &target, job_name, SPLIT_NEW);
+        fit2!(Knn3Model, Knn3Config::default(), &target, job_name, split);
         return;
     }
     if job_name == "attn-32__nlpp" {
@@ -33,7 +43,7 @@ fn main() {
         // for a base of similar accuracy; not re-optimised per model.
         let cfg = NlppConfig {
             base_model: base.to_string().leak(),
-            preds_dir: SPLIT_NEW.preds_dir,
+            preds_dir: split.preds_dir,
             n_als_iters: 2,
             reg_a: [(4.74449, 0.489646), (1.86309, 4.83715e5),
                     (118.959, 1.19996e-6), (2.37045e5, 6.54512e-4)],
@@ -43,7 +53,7 @@ fn main() {
             shrinkage_i: 25.0,
             regs_path: None,
         };
-        fit2!(NlppModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+        fit2!(NlppModel, cfg, "rtg", job_name, split, save_train: true);
         return;
     }
 
@@ -93,12 +103,12 @@ fn main() {
     };
 
     if job_name.starts_with("attn-x") {
-        fit2!(AttnModel, cfg, "rtg", job_name, SPLIT_NEW, no_fulltrain: true);
+        fit2!(AttnModel, cfg, "rtg", job_name, split, no_fulltrain: true);
     } else if job_name.ends_with("-t") {
-        fit2!(AttnModel, cfg, "rtg", job_name, SPLIT_NEW,
+        fit2!(AttnModel, cfg, "rtg", job_name, split,
               transpose: true, save_train: true, save_probe_each_epoch: true);
     } else {
-        fit2!(AttnModel, cfg, "rtg", job_name, SPLIT_NEW,
+        fit2!(AttnModel, cfg, "rtg", job_name, split,
               save_train: true, save_probe_each_epoch: true, save_subscores: true);
     }
 }
