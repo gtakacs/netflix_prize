@@ -357,6 +357,51 @@ mlpblend = [
 	"mlpr2ox-s{1,2}"
 ]
 
+# Cleaned second-level blend columns: what survived a leave-one-out sweep over
+# the gold+silver blend (221 -> 171 columns). Ordered by the probe RMSE cost of
+# dropping the column, largest first. Left out of `[meta] all`; select with
+# `-g gbmblend2` (see also gold/silver).
+gbmblend2 = [
+    "gbc2o-s1",               # 3.2e-5
+    "gbr2x-s2",               # 1.6e-5
+    "gbr1-s1",                # 1.5e-5
+    "gbc2x-s3",               # 1.4e-5
+    "gbc2x-s2",               # 1.4e-5
+    "gbr3-s1",                # 1.0e-5
+    "gbr1g-s1",               # 0.9e-5
+    "gbr4o-s2",               # 0.8e-5
+    "gbr4o-s1",               # 0.7e-5
+    "gbr4x-s1",               # 0.6e-5
+    "gbr1g-s3",               # 0.6e-5
+    "gbr1x-s1",               # 0.5e-5
+    "gbr2-s1",                # 0.4e-5
+    "gbr1g-s2",               # 0.4e-5
+    "gbr2x-s3",               # 0.3e-5
+    "gbr2x-s1",               # 0.3e-5
+]
+
+# The mlp half of the same cleaned selection, same ordering.
+mlpblend2 = [
+    "mlpc3x-s4",              # 1.0e-5
+    "mlpr2x-s9",              # 0.7e-5
+    "mlpr2x-s21",             # 0.7e-5
+    "mlpr2x-s10",             # 0.7e-5
+    "mlpr2x-s17",             # 0.6e-5
+    "mlpr3x-s1",              # 0.5e-5
+    "mlpr2x-s6",              # 0.5e-5
+    "mlpr3x-s5",              # 0.4e-5
+    "mlpr3x-s2",              # 0.4e-5
+    "mlpr2x-s24",             # 0.4e-5
+    "mlpr2x-s15",             # 0.4e-5
+    "mlpr2x14-s12",           # 0.3e-5
+    "mlpr2x-s18",             # 0.3e-5
+    "mlpc3x-s1",              # 0.3e-5
+    "mlpr2x14-s10",           # 0.2e-5
+    "mlpr2x-s22",             # 0.2e-5
+    "mlpr2x-s11",             # 0.2e-5
+    "mlpr2x14-s7",            # 0.1e-5
+]
+
 fwlsblend = [
     #"fwls1-s1",
     "fwls1x-s1",
@@ -364,6 +409,19 @@ fwlsblend = [
     "fwls3-s1",
     "fwls4-s1",
     "fwls5-s1",
+]
+
+# The fwls layer after a leave-one-out sweep on the quiz-fitted blend
+# (--from new): fwls1x dropped, since fwls7x1/fwls7g took over its role.
+# Ordered by the quiz RMSE cost of dropping the column, largest first.
+fwlsblend2 = [
+    "fwls5-s1",               # 11.5e-5
+    "fwls3-s1",               # 6.1e-5
+    "fwls7x1-s1",             # 2.1e-5
+    "fwls7g-s1",              # 1.9e-5
+    "fwls4-s1",               # 1.0e-5
+    "fwls7b-s1",              # 0.9e-5
+    "fwls2x-s1",              # 0.5e-5
 ]
 
 # The deep-learning family and its chains. See NOTES.md for what was tried
