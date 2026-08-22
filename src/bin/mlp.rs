@@ -68,17 +68,24 @@ impl Default for BlendParams {
 fn blend_config(name: &str) -> BlendParams {
     match name {
         // create_nn: (64, 64), alpha 0.05, lr 0.0004, 64 iters, 2-fold.
-        "mlpr1" => BlendParams::default(),
+        "mlpr1" | "mlpr1x" => BlendParams::default(),
 
         // Bayesian-optimized MLP.
-        "mlpr2o" | "mlpr2ox" => BlendParams {
+        "mlpr2o" | "mlpr2ox" | "mlpr2x" | "mlpr2x14" => BlendParams {
             hidden: vec![32, 32], alpha: 0.24101624563575427, lr: 0.0005339808669500829,
             iters: 80, momentum: 0.9148116502629432, tol: 2.890613343488106e-5,
             n_iter_no_change: 9, ..Default::default()
         },
 
+        // Wider net for blend diversity: 128x64 with proportionally more
+        // weight decay and a bigger batch.
+        "mlpr3x" => BlendParams {
+            hidden: vec![128, 64], alpha: 0.5, lr: 0.0004, iters: 100, batch: 400,
+            tol: 1e-5, n_iter_no_change: 10, ..Default::default()
+        },
+
         // Bayesian-optimized ordinal MLP.
-        "mlpc3o" => BlendParams {
+        "mlpc3o" | "mlpc3x" => BlendParams {
             hidden: vec![64, 32], alpha: 0.9723373672604836, lr: 0.000953329728567159,
             iters: 80, batch: 400, momentum: 0.9380845452666436, tol: 1.4640841816087311e-5,
             n_iter_no_change: 7, head: MlpHead::Ordinal, ..Default::default()

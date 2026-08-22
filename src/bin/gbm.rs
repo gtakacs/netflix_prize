@@ -77,9 +77,10 @@ mod real {
 
     fn blend_config(name: &str) -> BlendParams {
         match name {
-            "gbr1" | "gbr1x" | "gbr1y" => BlendParams::default(),
-            "gbr2" => BlendParams { iters: 50, ..Default::default() },
-            "gbr3" => BlendParams { iters: 10, ..Default::default() },
+            "gbr1" => BlendParams::default(),
+            "gbr1g" | "gbr1g1" | "gbr1g2" | "gbr1g3" | "gbr1g4" => BlendParams::default(),
+            "gbr2" | "gbr2x" => BlendParams { iters: 50, ..Default::default() },
+            "gbr3" | "gbr3x" => BlendParams { iters: 10, ..Default::default() },
 
             // Bayesian-optimized regression GBR.
             "gbr4o" | "gbr4ox" => BlendParams {
@@ -89,11 +90,18 @@ mod real {
                 lambda_l1: 4.074486360693566, lambda_l2: 4.156792180633296e-7,
                 max_bin: 127, ..Default::default()
             },
+            "gbr4g1" | "gbr4g2" | "gbr4g3" | "gbr4g4" | "gbr4x" => BlendParams {
+                num_leaves: 95, iters: 192, lr: 0.044121174451031774,
+                min_data_in_leaf: 388, feature_fraction: 0.9740037968504494,
+                bagging_fraction: 0.9171367599808904, bagging_freq: 3,
+                lambda_l1: 4.074486360693566, lambda_l2: 4.156792180633296e-7,
+                max_bin: 127, ..Default::default()
+            },
 
-            "gbc1" | "gbc1x" => BlendParams { multiclass: true, ..Default::default() },
+            "gbc1" | "gbc1x" | "gbc1y" => BlendParams { multiclass: true, ..Default::default() },
 
             // Bayesian-optimized multiclass classifier GBC.
-            "gbc2o" => BlendParams {
+            "gbc2o" | "gbc2x" => BlendParams {
                 num_leaves: 191, iters: 400, lr: 0.019929113104398585,
                 min_data_in_leaf: 527, feature_fraction: 0.6706351917324398,
                 bagging_fraction: 0.9755609862783436, bagging_freq: 3,
