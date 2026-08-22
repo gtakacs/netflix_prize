@@ -61,6 +61,20 @@ inputs        = ["src/bin/fwls.rs"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
 cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-old.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
+# Model job whose dispatcher serves any split: one binary at src/bin/{binary}.rs,
+# the split comes from -p (cf. the gbm/mlp/fwls blenders). The deep predictors
+# of the `x14` group run here; every other old-split model predates the Rust
+# pipeline and ships as a prediction file.
+[defaults.anysplit_model]
+inputs_from = ["ingest"]
+inputs      = ["src/bin/{binary}.rs"]
+outputs = [
+    "{preds}/{name}.{pr}.npy",
+    "{preds}/{name}.{fulltrain_pr}.npy",
+    "{preds}/{name}.out",
+]
+cmd = "cargo build --release --bin {binary} && ./target/release/{binary} {name} -p pipeline-old.toml"
+
 # --- Data preparation ---
 
 # Download the original Netflix Prize dataset from archive.org (no Kaggle
@@ -79,6 +93,105 @@ outputs = ["data/train/", "data/probe/", "data/fulltrain/", "data/qual/", "data/
 cmd = "./target/release/ingest"
 
 # --- Base predictors ---
+
+[jobs."dnn-16"]
+jobtype = "anysplit_model"
+binary = "dnn"
+
+[jobs."dnn-64"]
+jobtype = "anysplit_model"
+binary = "dnn"
+
+[jobs."dnn-24"]
+jobtype = "anysplit_model"
+binary = "dnn"
+
+[jobs."dnn-24__knn3"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16__knn3"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50__knn3"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__asym-16p75"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__asym-16p75__knn3"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50__asym-16p50"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50__asym-16p75"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50__asym-16p75__knn3b"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-16p50__asym-16p75__knn3c"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__dnn-24p50"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+[jobs."dnn-24__attn-32"]
+jobtype = "anysplit_model"
+binary = "dnn"
+extras = ["@train_preds"]
+
+# --- Attentive neighborhood models ---
+
+[jobs."attn-32"]
+jobtype = "anysplit_model"
+binary = "attn"
+
+[jobs."attn-32__nlpp"]
+jobtype = "anysplit_model"
+binary = "attn"
+extras = ["@train_preds"]
+
+[jobs."attn-32__nlpp__knn3"]
+jobtype = "anysplit_model"
+binary = "attn"
+extras = ["@train_preds"]
+
+[jobs."attn-32-t"]
+jobtype = "anysplit_model"
+binary = "attn"
+
+# --- Voting features ---
 
 # --- LightGBM blends ---
 

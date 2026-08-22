@@ -65,6 +65,19 @@ inputs_from   = ["vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
 cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
+# Model job whose dispatcher serves any split: one binary at src/bin/{binary}.rs,
+# the split comes from -p (cf. the gbm/mlp/fwls blenders). Everything else
+# matches [defaults.model].
+[defaults.anysplit_model]
+inputs_from = ["ingest", "newsplit"]
+inputs      = ["src/bin/{binary}.rs"]
+outputs = [
+    "{preds}/{name}.{pr}.npy",
+    "{preds}/{name}.{fulltrain_pr}.npy",
+    "{preds}/{name}.out",
+]
+cmd = "cargo build --release --bin {binary} && ./target/release/{binary} {name} -p pipeline-new.toml"
+
 [defaults.paropt]
 inputs_from = ["ingest", "newsplit"]
 inputs      = ["src/bin/{binary}-{split.name}.rs"]
@@ -822,105 +835,105 @@ extras = ["@train_preds"]
 # --- Deep neural predictors ---
 
 [jobs."dnn-16"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 
 [jobs."dnn-64"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 
 [jobs."dnn-24"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 
 [jobs."dnn-24__knn3"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__dnn-16"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__dnn-16__knn3"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__dnn-16p50"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__dnn-16p50__knn3"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__asym-16p75"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__asym-16p75__knn3"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__dnn-16p50__asym-16p50"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__dnn-16p50__asym-16p75"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__dnn-16p50__asym-16p75__knn3b"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__dnn-16p50__asym-16p75__knn3c"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__dnn-24p50"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."tsvdx5-120o__dnn-16p50"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 [jobs."dnn-24__attn-32"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "dnn"
 extras = ["@train_preds"]
 
 # --- Attentive neighborhood models ---
 
 [jobs."attn-32"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "attn"
 
 [jobs."attn-32__nlpp"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "attn"
 extras = ["@train_preds"]
 
 [jobs."attn-32__nlpp__knn3"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "attn"
 extras = ["@train_preds"]
 
 [jobs."attn-32-t"]
-jobtype = "model"
+jobtype = "anysplit_model"
 binary = "attn"
 
 # --- Voting features ---
