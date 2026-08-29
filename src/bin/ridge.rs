@@ -25,6 +25,13 @@ const IN_CLIP_MIN: f64 = 0.0;
 const IN_CLIP_MAX: f64 = 6.0;
 const OUT_CLIP_MIN: f64 = 1.05;
 const OUT_CLIP_MAX: f64 = 4.95;
+// Quiz blending probes each column as its own leaderboard submission, so the
+// default input clip is the legal rating range rather than the wide outlier clip.
+const QUIZ_IN_CLIP_MIN: f64 = 1.0;
+const QUIZ_IN_CLIP_MAX: f64 = 5.0;
+// A clipped rating vector cannot be this far off; anything above is a raw
+// component that the '>' marker failed to flag.
+const SUSPECT_RMSE: f64 = 1.5;
 const ROW_BLOCK: usize = 100_000;
 const CV_SEED: u64 = 42;
 const PIPELINE_OLD: &str = "pipeline-old.toml";
@@ -122,6 +129,7 @@ struct Args {
     out_clip_min: f64,
     out_clip_max: f64,
     quiz_blend: bool,
+    raw_probes: bool,
     decimals: i32,
 }
 
@@ -164,6 +172,10 @@ fn print_help() {
     println!("    --decimals N             RMSE feedback precision for --quiz-blend (default 4)");
     println!("                             Combines with --forward: selection then costs no extra");
     println!("                             probes, and only the final prefix gets a clipped pass.");
+    println!("                             Every column stands in for one submitted rating vector,");
+    println!("                             so '>' (no-clip) columns are dropped and the input clip");
+    println!("                             defaults to [{QUIZ_IN_CLIP_MIN}, {QUIZ_IN_CLIP_MAX}] instead of [{IN_CLIP_MIN}, {IN_CLIP_MAX}].");
+    println!("    --raw-probes             opt out of both: keep '>' columns and probe them raw");
     println!();
     println!("  Cross-split quiz blending (combine qual.npy predictors from BOTH splits):");
     println!("    --from SPLIT             open a source scope for SPLIT (old|new); the models");
@@ -208,6 +220,8 @@ fn parse_args() -> Args {
     let (mut in_clip_min, mut in_clip_max) = (IN_CLIP_MIN, IN_CLIP_MAX);
     let (mut out_clip_min, mut out_clip_max) = (OUT_CLIP_MIN, OUT_CLIP_MAX);
     let mut quiz_blend = false;
+    let mut raw_probes = false;
+    let mut in_clip_set = false;
     let mut decimals = 4;
 
     // Legacy single-source accumulator (used when no --from is given), plus the
@@ -307,10 +321,11 @@ fn parse_args() -> Args {
                 i += 2;
             }
             "--quiz-blend" => { quiz_blend = true; i += 1; }
+            "--raw-probes" => { raw_probes = true; i += 1; }
             "--decimals" => { decimals = need(&argv, i).parse().expect("bad --decimals value"); i += 2; }
             "--in-clip" => {
                 let (lo, hi) = parse_clip(&need(&argv, i), "--in-clip");
-                in_clip_min = lo; in_clip_max = hi; i += 2;
+                in_clip_min = lo; in_clip_max = hi; in_clip_set = true; i += 2;
             }
             "--out-clip" => {
                 let (lo, hi) = parse_clip(&need(&argv, i), "--out-clip");
@@ -350,6 +365,16 @@ fn parse_args() -> Args {
         vec![legacy]
     };
 
+    // A quiz-blend column stands in for a submitted rating vector, so unless the
+    // caller overrides it the input clip is the legal rating range.
+    if quiz_blend && !raw_probes && !in_clip_set {
+        in_clip_min = QUIZ_IN_CLIP_MIN;
+        in_clip_max = QUIZ_IN_CLIP_MAX;
+    }
+    if raw_probes && !quiz_blend {
+        eprintln!("warning: --raw-probes has no effect without --quiz-blend/--from");
+    }
+
     // Quiz-blend recovers b from RMSEs published over the whole qual set, which
     // cannot be reproduced fold by fold, so the CV criterion is unavailable there.
     if quiz_blend && cv_folds > 1 {
@@ -372,6 +397,7 @@ fn parse_args() -> Args {
         out_clip_min,
         out_clip_max,
         quiz_blend,
+        raw_probes,
         decimals,
     }
 }
@@ -476,6 +502,59 @@ fn build_registry(
     }
 
     (names, clip, preds_dirs, labels, group_indices)
+}
+
+/// Drop the `>` (no-clip) columns from a flattened registry, reindexing the
+/// groups and discarding any that end up empty. Quiz blending recovers each
+/// column's `Zᵀy` from the RMSE of that column submitted on its own, and a raw
+/// factor/bias component is not a rating vector anyone could have submitted.
+/// Returns the dropped names, in registry order.
+fn drop_noclip(
+    names: &mut Vec<String>,
+    clip: &mut Vec<bool>,
+    preds_dirs: &mut Vec<String>,
+    labels: &mut Vec<String>,
+    group_indices: &mut IndexMap<String, Vec<usize>>,
+) -> Vec<String> {
+    let keep = clip.clone();
+    if keep.iter().all(|&k| k) {
+        return Vec::new();
+    }
+    let dropped: Vec<String> = names
+        .iter()
+        .zip(keep.iter())
+        .filter(|&(_, &k)| !k)
+        .map(|(n, _)| n.clone())
+        .collect();
+
+    // Old index → new index, for the columns that survive.
+    let mut remap = vec![usize::MAX; keep.len()];
+    let mut next = 0usize;
+    for (i, &k) in keep.iter().enumerate() {
+        if k {
+            remap[i] = next;
+            next += 1;
+        }
+    }
+
+    let mut it = keep.iter();
+    names.retain(|_| *it.next().expect("keep covers names"));
+    let mut it = keep.iter();
+    clip.retain(|_| *it.next().expect("keep covers clip"));
+    let mut it = keep.iter();
+    preds_dirs.retain(|_| *it.next().expect("keep covers preds_dirs"));
+    let mut it = keep.iter();
+    labels.retain(|_| *it.next().expect("keep covers labels"));
+
+    group_indices.retain(|_, idxs| {
+        idxs.retain(|&i| remap[i] != usize::MAX);
+        for i in idxs.iter_mut() {
+            *i = remap[*i];
+        }
+        !idxs.is_empty()
+    });
+
+    dropped
 }
 
 // ---------------------------------------------------------------------------
@@ -988,6 +1067,7 @@ fn recover_quiz_b(
     n: usize,
     m: usize,
     decimals: i32,
+    names: &[String],
 ) -> (Vec<f64>, f64) {
     let dim = m + 1;
     let nf = n as f64;
@@ -1009,9 +1089,16 @@ fn recover_quiz_b(
     // Step 2: recover Xᵀy per model from its RMSE probe.
     let mut b = vec![0.0f64; dim];
     let (mut max_abs, mut sum_abs, mut max_rel, mut sum_rel) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+    // Columns whose own RMSE is far off the rating scale: raw factor/bias
+    // components that carry no '>' marker, so the no-clip drop misses them. They
+    // still recover correctly, just with the largest rounding error of the set.
+    let mut suspect: Vec<(usize, f64)> = Vec::new();
     for j in 0..m {
         let xjxj = a[j * dim + j];
         let rmse_j = ((xjxj - 2.0 * b_true[j] + yty) / nf).sqrt();
+        if rmse_j > SUSPECT_RMSE {
+            suspect.push((j, rmse_j));
+        }
         let rj = round(rmse_j);
         let xty = (xjxj + yty_rec - nf * rj * rj) / 2.0;
         b[j] = xty;
@@ -1037,6 +1124,16 @@ fn recover_quiz_b(
     println!("  Mean absolute error: {:.1}", sum_abs / m as f64);
     println!("  Max relative error:  {:.2e}", max_rel);
     println!("  Mean relative error: {:.2e}", sum_rel / m as f64);
+    if !suspect.is_empty() {
+        suspect.sort_by(|x, y| y.1.total_cmp(&x.1));
+        println!(
+            "  {} column(s) probe above RMSE {}, i.e. they are not rating vectors:",
+            suspect.len(), SUSPECT_RMSE,
+        );
+        for (j, r) in &suspect {
+            println!("    {:<44} {:.4}", names[*j], r);
+        }
+    }
     println!();
     (b, yty_rec)
 }
@@ -1048,12 +1145,27 @@ fn recover_quiz_b(
 fn main() -> ExitCode {
     let args = parse_args();
 
-    let (unique, clip, preds_dirs, labels, group_indices) = build_registry(&args);
+    let (mut unique, mut clip, mut preds_dirs, mut labels, mut group_indices) =
+        build_registry(&args);
+    let dropped_noclip = if args.quiz_blend && !args.raw_probes {
+        drop_noclip(&mut unique, &mut clip, &mut preds_dirs, &mut labels, &mut group_indices)
+    } else {
+        Vec::new()
+    };
     let m = unique.len();
     if m == 0 {
         eprintln!("error: no models left after exclusion");
         return ExitCode::from(2);
     }
+
+    // Column names as reported. A cross-split registry can hold the same model
+    // name once per split (dedup is per source), so qualify it there.
+    let display: Vec<String> = if args.cross_split {
+        unique.iter().zip(labels.iter()).map(|(n, l)| format!("{}/{}", l, n)).collect()
+    } else {
+        unique.clone()
+    };
+
 
     // The qual dataset name is shared across splits (both pipelines set
     // fulltrain_pr = "qual"); read it from the first source's pipeline.
@@ -1097,7 +1209,19 @@ fn main() -> ExitCode {
         }
     }
     println!("Lambda λ:  {}", args.lambda);
-    println!("In-clip:   [{}, {}] (skips '>' columns)", args.in_clip_min, args.in_clip_max);
+    if args.quiz_blend && !args.raw_probes {
+        println!("In-clip:   [{}, {}] (applied to every column)",
+            args.in_clip_min, args.in_clip_max);
+        if !dropped_noclip.is_empty() {
+            println!("No-clip:   dropped {} '>' column(s) — not submittable as ratings:",
+                dropped_noclip.len());
+            for chunk in dropped_noclip.chunks(3) {
+                println!("           {}", chunk.join(", "));
+            }
+        }
+    } else {
+        println!("In-clip:   [{}, {}] (skips '>' columns)", args.in_clip_min, args.in_clip_max);
+    }
     println!("Out-clip:  [{}, {}]", args.out_clip_min, args.out_clip_max);
     print_blas_info();
     println!();
@@ -1179,7 +1303,7 @@ fn main() -> ExitCode {
         let yty: f64 = y_q.iter().map(|v| v * v).sum();
         // `yty_rec` (not the true yᵀy) is what goes on: every number the forward
         // criterion sees then comes from the rounded RMSE feedback alone.
-        let (b, yty_rec) = recover_quiz_b(&a.a, &a.b, yty, n_q, m, args.decimals);
+        let (b, yty_rec) = recover_quiz_b(&a.a, &a.b, yty, n_q, m, args.decimals, &display);
         quiz_truth = Some((a.b, yty));
         (Vec::new(), a.a, b, yty_rec, n_q)
     } else {
@@ -1198,14 +1322,6 @@ fn main() -> ExitCode {
             GramFold::sum(&folds, dim)
         };
         (folds, total.a, total.b, total.yty, total.n)
-    };
-
-    // Column names as reported. A cross-split registry can hold the same model
-    // name once per split (dedup is per source), so qualify it there.
-    let display: Vec<String> = if args.cross_split {
-        unique.iter().zip(labels.iter()).map(|(n, l)| format!("{}/{}", l, n)).collect()
-    } else {
-        unique.clone()
     };
 
     // Build the fits to evaluate: either forward-selection prefixes (one fit per
