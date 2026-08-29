@@ -29,9 +29,6 @@ const OUT_CLIP_MAX: f64 = 4.95;
 // default input clip is the legal rating range rather than the wide outlier clip.
 const QUIZ_IN_CLIP_MIN: f64 = 1.0;
 const QUIZ_IN_CLIP_MAX: f64 = 5.0;
-// A clipped rating vector cannot be this far off; anything above is a raw
-// component that the '>' marker failed to flag.
-const SUSPECT_RMSE: f64 = 1.5;
 const ROW_BLOCK: usize = 100_000;
 const CV_SEED: u64 = 42;
 const PIPELINE_OLD: &str = "pipeline-old.toml";
@@ -1067,7 +1064,6 @@ fn recover_quiz_b(
     n: usize,
     m: usize,
     decimals: i32,
-    names: &[String],
 ) -> (Vec<f64>, f64) {
     let dim = m + 1;
     let nf = n as f64;
@@ -1089,16 +1085,9 @@ fn recover_quiz_b(
     // Step 2: recover Xᵀy per model from its RMSE probe.
     let mut b = vec![0.0f64; dim];
     let (mut max_abs, mut sum_abs, mut max_rel, mut sum_rel) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
-    // Columns whose own RMSE is far off the rating scale: raw factor/bias
-    // components that carry no '>' marker, so the no-clip drop misses them. They
-    // still recover correctly, just with the largest rounding error of the set.
-    let mut suspect: Vec<(usize, f64)> = Vec::new();
     for j in 0..m {
         let xjxj = a[j * dim + j];
         let rmse_j = ((xjxj - 2.0 * b_true[j] + yty) / nf).sqrt();
-        if rmse_j > SUSPECT_RMSE {
-            suspect.push((j, rmse_j));
-        }
         let rj = round(rmse_j);
         let xty = (xjxj + yty_rec - nf * rj * rj) / 2.0;
         b[j] = xty;
@@ -1124,16 +1113,6 @@ fn recover_quiz_b(
     println!("  Mean absolute error: {:.1}", sum_abs / m as f64);
     println!("  Max relative error:  {:.2e}", max_rel);
     println!("  Mean relative error: {:.2e}", sum_rel / m as f64);
-    if !suspect.is_empty() {
-        suspect.sort_by(|x, y| y.1.total_cmp(&x.1));
-        println!(
-            "  {} column(s) probe above RMSE {}, i.e. they are not rating vectors:",
-            suspect.len(), SUSPECT_RMSE,
-        );
-        for (j, r) in &suspect {
-            println!("    {:<44} {:.4}", names[*j], r);
-        }
-    }
     println!();
     (b, yty_rec)
 }
@@ -1303,7 +1282,7 @@ fn main() -> ExitCode {
         let yty: f64 = y_q.iter().map(|v| v * v).sum();
         // `yty_rec` (not the true yᵀy) is what goes on: every number the forward
         // criterion sees then comes from the rounded RMSE feedback alone.
-        let (b, yty_rec) = recover_quiz_b(&a.a, &a.b, yty, n_q, m, args.decimals, &display);
+        let (b, yty_rec) = recover_quiz_b(&a.a, &a.b, yty, n_q, m, args.decimals);
         quiz_truth = Some((a.b, yty));
         (Vec::new(), a.a, b, yty_rec, n_q)
     } else {
