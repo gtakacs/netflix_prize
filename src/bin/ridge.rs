@@ -149,7 +149,8 @@ fn print_help() {
     println!("    --out-clip MIN,MAX       clip the blended output before RMSE (default {OUT_CLIP_MIN},{OUT_CLIP_MAX})");
     println!();
     println!("  Forward feature selection (Gram computed once, then submatrix slicing):");
-    println!("    --forward                greedily add models by in-sample (Gram) probe RMSE");
+    println!("    --forward                greedily add models by in-sample (Gram) RMSE — probe by");
+    println!("                             default, the recovered qual system under --quiz-blend/--from");
     println!("    --max-features K         stop after K total selected features (incl. --fixed)");
     println!("    --fixed GROUP            pre-select all models in GROUP, search over the rest");
     println!("    --cv-folds K             select by K-fold CV RMSE instead, recovered from K");
@@ -161,6 +162,8 @@ fn print_help() {
     println!("    --quiz-blend             build the Gram over the full qual set and recover");
     println!("                             Z'y from rounded per-model + constant RMSE probes");
     println!("    --decimals N             RMSE feedback precision for --quiz-blend (default 4)");
+    println!("                             Combines with --forward: selection then costs no extra");
+    println!("                             probes, and only the final prefix gets a clipped pass.");
     println!();
     println!("  Cross-split quiz blending (combine qual.npy predictors from BOTH splits):");
     println!("    --from SPLIT             open a source scope for SPLIT (old|new); the models");
@@ -334,10 +337,6 @@ fn parse_args() -> Args {
     let sources = if using_from {
         // Cross-split blending always fits on qual → enable quiz-blend implicitly.
         quiz_blend = true;
-        if forward {
-            eprintln!("error: --from cannot be combined with --forward");
-            std::process::exit(2);
-        }
         from_sources
     } else {
         if legacy.models_toml.is_none() && legacy.models_manual.is_empty() {
@@ -348,12 +347,15 @@ fn parse_args() -> Args {
             eprintln!("error: -g/--groups requires a models TOML (-t/-N/-O)");
             std::process::exit(2);
         }
-        if quiz_blend && forward {
-            eprintln!("error: --quiz-blend cannot be combined with --forward");
-            std::process::exit(2);
-        }
         vec![legacy]
     };
+
+    // Quiz-blend recovers b from RMSEs published over the whole qual set, which
+    // cannot be reproduced fold by fold, so the CV criterion is unavailable there.
+    if quiz_blend && cv_folds > 1 {
+        eprintln!("error: --cv-folds cannot be combined with --quiz-blend/--from");
+        std::process::exit(2);
+    }
 
     Args {
         sources,
@@ -420,10 +422,11 @@ fn load_pipeline_split(path: &str) -> HashMap<String, String> {
 /// two splits yields two distinct columns from two preds dirs.
 fn build_registry(
     args: &Args,
-) -> (Vec<String>, Vec<bool>, Vec<String>, IndexMap<String, Vec<usize>>) {
+) -> (Vec<String>, Vec<bool>, Vec<String>, Vec<String>, IndexMap<String, Vec<usize>>) {
     let mut names: Vec<String> = Vec::new();
     let mut clip: Vec<bool> = Vec::new();
     let mut preds_dirs: Vec<String> = Vec::new();
+    let mut labels: Vec<String> = Vec::new();
     let mut group_indices: IndexMap<String, Vec<usize>> = IndexMap::new();
 
     for src in &args.sources {
@@ -463,6 +466,7 @@ fn build_registry(
             names.push(nm.clone());
             clip.push(*cl);
             preds_dirs.push(preds_dir.clone());
+            labels.push(src.label.clone());
         }
         for (gname, idxs) in &flat.group_indices {
             let key = if args.cross_split { format!("{}/{}", src.label, gname) } else { gname.clone() };
@@ -471,7 +475,7 @@ fn build_registry(
         }
     }
 
-    (names, clip, preds_dirs, group_indices)
+    (names, clip, preds_dirs, labels, group_indices)
 }
 
 // ---------------------------------------------------------------------------
@@ -977,7 +981,14 @@ fn print_blas_info() {
 ///
 /// `a` is ZᵀZ (with the bias row/col), `b_true` the true Zᵀy, `yty` the true
 /// yᵀy — all over the full qual set. Returns the recovered `b`.
-fn recover_quiz_b(a: &[f64], b_true: &[f64], yty: f64, n: usize, m: usize, decimals: i32) -> Vec<f64> {
+fn recover_quiz_b(
+    a: &[f64],
+    b_true: &[f64],
+    yty: f64,
+    n: usize,
+    m: usize,
+    decimals: i32,
+) -> (Vec<f64>, f64) {
     let dim = m + 1;
     let nf = n as f64;
     let round = |x: f64| {
@@ -1027,7 +1038,7 @@ fn recover_quiz_b(a: &[f64], b_true: &[f64], yty: f64, n: usize, m: usize, decim
     println!("  Max relative error:  {:.2e}", max_rel);
     println!("  Mean relative error: {:.2e}", sum_rel / m as f64);
     println!();
-    b
+    (b, yty_rec)
 }
 
 // ---------------------------------------------------------------------------
@@ -1037,7 +1048,7 @@ fn recover_quiz_b(a: &[f64], b_true: &[f64], yty: f64, n: usize, m: usize, decim
 fn main() -> ExitCode {
     let args = parse_args();
 
-    let (unique, clip, preds_dirs, group_indices) = build_registry(&args);
+    let (unique, clip, preds_dirs, labels, group_indices) = build_registry(&args);
     let m = unique.len();
     if m == 0 {
         eprintln!("error: no models left after exclusion");
@@ -1091,13 +1102,18 @@ fn main() -> ExitCode {
     print_blas_info();
     println!();
 
+    // Forward selection on a quiz-blend Gram: the whole run is qual-only, so the
+    // probe set is neither fitted nor scored and stays unopened.
+    let fwd_quiz = args.forward && args.quiz_blend;
+
     // Load probe ratings + open probe readers — legacy single-split only; a
     // cross-split blend has no shared probe set, so it fits/evaluates on qual.
     let mut readers: Vec<NpyF32Reader> = Vec::new();
     let mut probe_y_i8: Option<Array1<i8>> = None;
     let mut probe_y: Vec<f64> = Vec::new();
     let mut n_probe = 0usize;
-    if !args.cross_split {
+    let need_probe = !args.cross_split && !fwd_quiz;
+    if need_probe {
         let pr = load_pipeline_split(&args.sources[0].pipeline)
             .get("pr").expect("pipeline [split].pr missing").clone();
         let y_path = format!("data/{}/ratings.npy", pr);
@@ -1147,6 +1163,9 @@ fn main() -> ExitCode {
     // --quiz-blend and --from are both rejected alongside --forward.
     let dim = m + 1;
     let k_folds = if args.forward && !args.quiz_blend { args.cv_folds } else { 1 };
+    // The exact (Zᵀy, yᵀy) the recovery approximates. Diagnostics only: it feeds
+    // the control column of the forward table, never the selection itself.
+    let mut quiz_truth: Option<(Vec<f64>, f64)> = None;
     let (folds, a, b, yty, n): (Vec<GramFold>, Vec<f64>, Vec<f64>, f64, usize) = if args.quiz_blend {
         let y_q: Vec<f64> = y_q_i8.iter().map(|&r| r as f64).collect();
         println!(
@@ -1158,8 +1177,11 @@ fn main() -> ExitCode {
             args.in_clip_min as f32, args.in_clip_max as f32, &one, 1);
         let a = g.into_iter().next().expect("one fold");
         let yty: f64 = y_q.iter().map(|v| v * v).sum();
-        let b = recover_quiz_b(&a.a, &a.b, yty, n_q, m, args.decimals);
-        (Vec::new(), a.a, b, yty, n_q)
+        // `yty_rec` (not the true yᵀy) is what goes on: every number the forward
+        // criterion sees then comes from the rounded RMSE feedback alone.
+        let (b, yty_rec) = recover_quiz_b(&a.a, &a.b, yty, n_q, m, args.decimals);
+        quiz_truth = Some((a.b, yty));
+        (Vec::new(), a.a, b, yty_rec, n_q)
     } else {
         println!("Building Gram matrix over {} model(s) × {} ratings...", m, n_probe);
         let fold_of = assign_folds(n_probe, k_folds, args.cv_seed);
@@ -1176,6 +1198,14 @@ fn main() -> ExitCode {
             GramFold::sum(&folds, dim)
         };
         (folds, total.a, total.b, total.yty, total.n)
+    };
+
+    // Column names as reported. A cross-split registry can hold the same model
+    // name once per split (dedup is per source), so qualify it there.
+    let display: Vec<String> = if args.cross_split {
+        unique.iter().zip(labels.iter()).map(|(n, l)| format!("{}/{}", l, n)).collect()
+    } else {
+        unique.clone()
     };
 
     // Build the fits to evaluate: either forward-selection prefixes (one fit per
@@ -1197,15 +1227,25 @@ fn main() -> ExitCode {
                 args.max_features.map(|k| k.to_string()).unwrap_or_else(|| "all".to_string()),
                 args.cv_patience.map(|p| format!(" patience={p}")).unwrap_or_default(),
             );
+            if fwd_quiz {
+                println!(
+                    "Probes:    {} RMSE submissions (one per model + 2 constants); the search itself",
+                    m + 2,
+                );
+                println!("           needs none — every step is Gram algebra over the recovered system.");
+            }
             println!();
             println!("Phase 1/2: forward selection — at each step greedily add the predictor");
             if k_folds > 1 {
                 println!("           that most lowers the {}-fold CV (Gram-only, unclipped) probe RMSE.", k_folds);
+            } else if fwd_quiz {
+                println!("           that most lowers the in-sample (Gram-only, unclipped) qual RMSE,");
+                println!("           taken over the recovered Zᵀy / yᵀy alone.");
             } else {
                 println!("           that most lowers the in-sample (Gram-only, unclipped) probe RMSE.");
             }
             let (fits, steps) = forward_select(
-                &a, &b, yty, dim, n, m, &unique, &fixed, args.max_features, args.lambda,
+                &a, &b, yty, dim, n, m, &display, &fixed, args.max_features, args.lambda,
                 &folds, args.cv_patience,
             );
             (fits, Some(steps))
@@ -1227,22 +1267,50 @@ fn main() -> ExitCode {
             (fits, None)
         };
 
+    // Control column: the selected weights re-scored against the exact Zᵀy / yᵀy.
+    // The gap to the criterion is what the rounded-RMSE recovery costs per step.
+    let insample_true: Option<Vec<f64>> = match (args.forward, &quiz_truth) {
+        (true, Some((b_true, yty_true))) => Some(
+            fits.iter()
+                .map(|(_, gidxs, w)| {
+                    let (a_sub, b_sub) = build_subsystem(&a, b_true, dim, gidxs);
+                    (sse_of(w, &a_sub, &b_sub, *yty_true) / n as f64).sqrt()
+                })
+                .collect(),
+        ),
+        _ => None,
+    };
+
+    // Which fits reach the streaming clipped pass. A quiz-blend forward run
+    // scores only its final prefix: the per-step curve is the Gram criterion,
+    // and the clipped number is an after-the-fact diagnostic, not a selector.
+    let scored: &[(String, Vec<usize>, DVector<f64>)] = if fwd_quiz {
+        &fits[fits.len().saturating_sub(1)..]
+    } else {
+        &fits
+    };
+
     if fwd_steps.is_some() {
         println!();
-        println!("Phase 2/2: streaming probe + qual passes to score the actual clipped");
-        println!("           probe & quiz RMSE for every selected prefix ({} fits).", fits.len());
+        if fwd_quiz {
+            println!("Phase 2/2: one streaming qual pass for the final prefix only ({} columns).",
+                scored.last().map(|f| f.1.len()).unwrap_or(0));
+        } else {
+            println!("Phase 2/2: streaming probe + qual passes to score the actual clipped");
+            println!("           probe & quiz RMSE for every selected prefix ({} fits).", fits.len());
+        }
     }
 
     // Second pass on probe: compute clipped RMSE per fit (legacy single-split
     // only; a cross-split blend has no shared probe, so this is skipped).
-    let (probe_sse, probe_n) = if args.cross_split {
-        (vec![0.0f64; fits.len()], 0usize)
+    let (probe_sse, probe_n) = if !need_probe {
+        (vec![0.0f64; scored.len()], 0usize)
     } else {
         compute_clipped_sse(
             &mut readers, &clip,
             args.in_clip_min as f32, args.in_clip_max as f32, args.out_clip_min, args.out_clip_max,
             probe_y_i8.as_ref().expect("probe labels loaded in legacy mode"),
-            None, &fits, m, "probe",
+            None, scored, m, "probe",
         )
     };
 
@@ -1252,11 +1320,56 @@ fn main() -> ExitCode {
     let (quiz_sse, quiz_n) = compute_clipped_sse(
         &mut qual_readers, &clip,
         args.in_clip_min as f32, args.in_clip_max as f32, args.out_clip_min, args.out_clip_max,
-        &y_q_i8, Some(&is_test_q), &fits, m, "quiz",
+        &y_q_i8, Some(&is_test_q), scored, m, "quiz",
     );
 
     println!();
     match &fwd_steps {
+        Some(steps) if fwd_quiz => {
+            // Qual-only run: no probe column exists, and the clipped quiz number
+            // is a single after-the-fact line rather than a per-step column.
+            // `insample_true` re-scores the same weights against the exact Zᵀy /
+            // yᵀy, so `delta_true` shows which steps only fitted recovery noise.
+            let truth = insample_true.as_ref().expect("quiz-blend keeps the exact system");
+            println!(
+                "{:>4}  {:<44} {:>13} {:>13} {:>10} {:>10}",
+                "step", "model added", "insample_qual", "insample_true", "delta", "delta_true",
+            );
+            let (mut prev, mut prev_t) = (f64::INFINITY, f64::INFINITY);
+            let mut best_true = (0usize, f64::INFINITY);
+            let mut noise_steps = 0usize;
+            for (i, (step, &t_rmse)) in steps.iter().zip(truth.iter()).enumerate() {
+                let delta = if prev.is_finite() { step.in_sample_rmse - prev } else { 0.0 };
+                let delta_t = if prev_t.is_finite() { t_rmse - prev_t } else { 0.0 };
+                prev = step.in_sample_rmse;
+                prev_t = t_rmse;
+                if t_rmse < best_true.1 {
+                    best_true = (i + 1, t_rmse);
+                }
+                if delta < 0.0 && delta_t > 0.0 {
+                    noise_steps += 1;
+                }
+                println!(
+                    "{:>4}  {:<44} {:>13.6} {:>13.6} {:>+10.6} {:>+10.6}",
+                    i + 1, step.added, step.in_sample_rmse, t_rmse, delta, delta_t,
+                );
+            }
+            println!();
+            println!(
+                "Recovery noise: {} of {} steps lowered the criterion while raising the true fit.",
+                noise_steps, steps.len(),
+            );
+            println!(
+                "Best true in-sample: step {} ({:.6}) — diagnostic, not available to the search.",
+                best_true.0, best_true.1,
+            );
+            if let (Some((_, gidxs, _)), Some(q_sse)) = (scored.last(), quiz_sse.last()) {
+                println!(
+                    "Final prefix ({} columns): clipped quiz RMSE {:.6} (scored on the true labels).",
+                    gidxs.len(), (q_sse / quiz_n as f64).sqrt(),
+                );
+            }
+        }
         Some(steps) => {
             // With CV the extra column is the criterion the selection actually
             // used; `delta` tracks whichever of the two that was.
