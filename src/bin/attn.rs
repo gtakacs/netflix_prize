@@ -21,10 +21,17 @@ fn split_arg(args: &[String]) -> Split {
     Split::from_pipeline(path)
 }
 
+/// `--skip-fulltrain`: run only the first phase and leave the fulltrain → qual
+/// files to be supplied by hand (that phase is the same in every split).
+fn skip_fulltrain_arg(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--skip-fulltrain")
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let job_name = args[1].as_str();
     let split = split_arg(&args);
+    let skip = skip_fulltrain_arg(&args);
 
     // Post-processing chains, as in the other model families. Both read the
     // base model's saved train-set predictions, so the base job must have run
@@ -34,7 +41,7 @@ fn main() {
     if job_name == "attn-32__nlpp__knn3" {
         let base = job_name.strip_suffix("__knn3").unwrap();
         let target = format!("1.0*{}", base);
-        fit2!(Knn3Model, Knn3Config::default(), &target, job_name, split);
+        fit2!(Knn3Model, Knn3Config::default(), &target, job_name, split, skip_fulltrain: skip);
         return;
     }
     if job_name == "attn-32__nlpp" {
@@ -53,7 +60,7 @@ fn main() {
             shrinkage_i: 25.0,
             regs_path: None,
         };
-        fit2!(NlppModel, cfg, "rtg", job_name, split, save_train: true);
+        fit2!(NlppModel, cfg, "rtg", job_name, split, save_train: true, skip_fulltrain: skip);
         return;
     }
 
@@ -106,9 +113,10 @@ fn main() {
         fit2!(AttnModel, cfg, "rtg", job_name, split, no_fulltrain: true);
     } else if job_name.ends_with("-t") {
         fit2!(AttnModel, cfg, "rtg", job_name, split,
-              transpose: true, save_train: true, save_probe_each_epoch: true);
+              transpose: true, save_train: true, save_probe_each_epoch: true, skip_fulltrain: skip);
     } else {
         fit2!(AttnModel, cfg, "rtg", job_name, split,
-              save_train: true, save_probe_each_epoch: true, save_subscores: true);
+              save_train: true, save_probe_each_epoch: true, save_subscores: true,
+              skip_fulltrain: skip);
     }
 }

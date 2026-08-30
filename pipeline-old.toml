@@ -73,7 +73,7 @@ outputs = [
     "{preds}/{name}.{fulltrain_pr}.npy",
     "{preds}/{name}.out",
 ]
-cmd = "cargo build --release --bin {binary} && ./target/release/{binary} {name} -p pipeline-old.toml"
+cmd = "cargo build --release --bin {binary} && ./target/release/{binary} {name} -p pipeline-old.toml {extra}"
 
 # --- Data preparation ---
 
@@ -247,6 +247,15 @@ jobtype = "fwlsblend"
 groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend"]
 voting = ["all"]
 seeds = [1]
+
+# fwls1 plus the x13 deep-predictor group. x13 is deliberately outside
+# `[meta] all`, so it has to be named here; lambda matches the fwls1 preset.
+[jobs.fwls1x]
+jobtype = "fwlsblend"
+groups = ["integrated", "rbm", "other", "x13", "gbmblend", "mlpblend"]
+voting = ["all"]
+seeds = [1]
+extra_args = ["--lambda", "10000"]
 
 [jobs.fwls3]
 jobtype = "fwlsblend"

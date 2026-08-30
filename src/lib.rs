@@ -885,6 +885,11 @@ pub struct Fit2Opts {
     /// Skip the fulltrain → fulltrain_pr phase; instead, predict fulltrain_pr
     /// using the phase-1 model.
     pub no_fulltrain: bool,
+    /// Skip the fulltrain → fulltrain_pr phase and write nothing in its place.
+    /// That phase reads only `fulltrain` and the structure of `fulltrain_pr`,
+    /// both the same in every split, so its files can be supplied by hand from
+    /// another split's preds dir. Unlike `no_fulltrain`, no prediction is made.
+    pub skip_fulltrain: bool,
     pub transpose: bool,
 }
 
@@ -903,7 +908,8 @@ macro_rules! fit2 {
 /// Run standard experiment: split.tr → split.pr (with optional epoch saves,
 /// subscores, train preds), save config, then split.fulltrain_tr → split.fulltrain_pr
 /// (unless `opts.no_fulltrain`, in which case the phase-1 model is used to
-/// predict `split.fulltrain_pr` directly).
+/// predict `split.fulltrain_pr` directly, or `opts.skip_fulltrain`, which drops
+/// the phase and writes nothing).
 #[inline]
 pub fn fit2_inner<M: Regressor + Sync>(
     cfg: M::Config,
@@ -912,7 +918,9 @@ pub fn fit2_inner<M: Regressor + Sync>(
     split: Split,
     opts: Fit2Opts,
 ) {
-    let Fit2Opts { save_train, save_probe_each_epoch, save_subscores, no_fulltrain, transpose } = opts;
+    let Fit2Opts {
+        save_train, save_probe_each_epoch, save_subscores, no_fulltrain, skip_fulltrain, transpose,
+    } = opts;
     let preds_dir = split.preds_dir;
 
     std::fs::create_dir_all(preds_dir).unwrap();
@@ -1008,7 +1016,10 @@ pub fn fit2_inner<M: Regressor + Sync>(
     // drop(f);
 
     // Phase 2: split.fulltrain_tr → split.fulltrain_pr
-    if !no_fulltrain {
+    if skip_fulltrain {
+        teeln!("{} => {}: skipped, files supplied by hand",
+               split.fulltrain_tr, split.fulltrain_pr);
+    } else if !no_fulltrain {
         fit::<M>(cfg, target, split.fulltrain_tr, split.fulltrain_pr, model_name,
                  save_subscores, save_train, save_probe_each_epoch, preds_dir, transpose);
     }
@@ -1315,6 +1326,7 @@ pub fn fit3_inner<M: Regressor + Sync>(
         save_subscores,
         no_fulltrain,
         transpose,
+        ..Default::default()
     });
 
     let base_target: &str = format!("1.0*{}", model_name).leak();

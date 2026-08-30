@@ -143,10 +143,7 @@ fwlsblend = [
     "fwls4-s1",
 ]
 
-# The deep-learning family, ported from the new split (see the x14 group in
-# models-new.toml). `tsvdx5-120o__dnn-16p50` is left out: its root model does
-# not exist on this split.
-x14 = [
+x13 = [
     "dnn-16",
     "dnn-64",
     "dnn-24__dnn-24p50",
@@ -168,4 +165,4 @@ blends = ["gbmblend", "mlpblend"]
 # `all` is what an unqualified selection (no -g/--groups) resolves to: the
 # maintained list of *real* predictor groups. Add new real groups here;
 # selection/helper groups stay out so they never leak into a default run.
-all    = ["integrated", "rbm", "other", "x14", "gbmblend", "mlpblend", "fwlsblend"]
+all    = ["integrated", "rbm", "other", "gbmblend", "mlpblend", "fwlsblend"]

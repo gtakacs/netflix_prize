@@ -22,6 +22,12 @@ fn split_arg(args: &[String]) -> Split {
     Split::from_pipeline(path)
 }
 
+/// `--skip-fulltrain`: run only the first phase and leave the fulltrain → qual
+/// files to be supplied by hand (that phase is the same in every split).
+fn skip_fulltrain_arg(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--skip-fulltrain")
+}
+
 /// Split a `<d>` or `<d>pNN` size spec into the factor count and the residual
 /// weight: bare = 1.0, `p50` = 0.5, `p25` = 0.25. The weight is the axis that
 /// moves the blend most. The less of the base a chained model is handed, the
@@ -42,6 +48,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let job_name = args[1].as_str();
     let split = split_arg(&args);
+    let skip = skip_fulltrain_arg(&args);
 
     // kNN3 over a base model's residuals is its own job, as in the other model
     // families: it reads the base model's saved train predictions rather than
@@ -57,7 +64,7 @@ fn main() {
     ) {
         let base = job_name.strip_suffix("__knn3").unwrap();
         let target = format!("1.0*{}", base);
-        fit2!(Knn3Model, Knn3Config::default(), &target, job_name, split);
+        fit2!(Knn3Model, Knn3Config::default(), &target, job_name, split, skip_fulltrain: skip);
         return;
     }
 
@@ -85,7 +92,7 @@ fn main() {
         };
         let base = job_name[..job_name.len() - 1].strip_suffix("__knn3").unwrap();
         let target = format!("1.0*{}", base);
-        fit2!(Knn3Model, cfg, &target, job_name, split);
+        fit2!(Knn3Model, cfg, &target, job_name, split, skip_fulltrain: skip);
         return;
     }
 
@@ -100,7 +107,7 @@ fn main() {
             n_feat: 32, n_pool: 32, n_mf: 0, n_epochs: 10, n_threads: 1,
             ..AttnConfig::default()
         };
-        fit2!(AttnModel, cfg, "1.0*dnn-24", job_name, split);
+        fit2!(AttnModel, cfg, "1.0*dnn-24", job_name, split, skip_fulltrain: skip);
         return;
     }
 
@@ -138,7 +145,7 @@ fn main() {
             save_ifeat: false,
         };
         let target: &'static str = format!("{}*{}", weight, residual_base).leak();
-        fit2!(AsymModel, cfg, target, job_name, split, save_train: true);
+        fit2!(AsymModel, cfg, target, job_name, split, save_train: true, skip_fulltrain: skip);
         return;
     }
 
@@ -253,16 +260,17 @@ fn main() {
         // The `__knn3` chain needs this model's train-set predictions; its own
         // epoch snapshots are not used by the blend, so they are not written.
         fit2!(DnnModel, cfg, target, job_name, split,
-              save_train: true, save_subscores: true);
+              save_train: true, save_subscores: true, skip_fulltrain: skip);
     } else if matches!(job_name, "dnn-24__dnn-16" | "dnn-24__dnn-16p50") {
         // Both variants feed a kNN3 chain, and in both cases the chain is what
         // the blend takes. `dnn-24__dnn-16p50` is fully redundant next to its own
         // `__knn3`, so only the train predictions matter here.
-        fit2!(DnnModel, cfg, target, job_name, split, save_train: true);
+        fit2!(DnnModel, cfg, target, job_name, split, save_train: true, skip_fulltrain: skip);
     } else if matches!(job_name, "dnn-24__dnn-24p50" | "tsvdx5-120o__dnn-16p50") {
         // Nothing chains off these, so they write predictions and nothing else.
-        fit2!(DnnModel, cfg, target, job_name, split);
+        fit2!(DnnModel, cfg, target, job_name, split, skip_fulltrain: skip);
     } else {
-        fit2!(DnnModel, cfg, target, job_name, split, save_probe_each_epoch: true, save_subscores: true);
+        fit2!(DnnModel, cfg, target, job_name, split,
+              save_probe_each_epoch: true, save_subscores: true, skip_fulltrain: skip);
     }
 }
