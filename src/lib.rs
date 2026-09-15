@@ -199,6 +199,7 @@ pub mod mfrbmx;
 pub mod mlp;
 pub mod nbstats;
 pub mod nlpp;
+pub mod pipeline;
 pub mod rbmx2;
 pub mod rx;
 pub mod tsvdx4;
