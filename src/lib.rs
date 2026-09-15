@@ -851,13 +851,7 @@ impl Split {
     /// dispatcher binary can serve either split (`jobtype = "anysplit_model"`),
     /// the way the gbm/mlp/fwls blenders take theirs from `-p`.
     pub fn from_pipeline(path: &str) -> Split {
-        #[derive(serde::Deserialize)]
-        struct P {
-            #[serde(default)]
-            split: std::collections::HashMap<String, String>,
-        }
-        let s = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
-        let p: P = toml::from_str(&s).unwrap_or_else(|e| panic!("parse {path}: {e}"));
+        let p = crate::pipeline::Pipeline::load(path).unwrap_or_else(|e| panic!("{e}"));
         let get = |k: &str| -> &'static str {
             p.split
                 .get(k)
