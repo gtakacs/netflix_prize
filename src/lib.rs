@@ -201,6 +201,7 @@ pub mod nbstats;
 pub mod nlpp;
 pub mod pipeline;
 pub mod rbmx2;
+pub mod remote;
 pub mod rx;
 pub mod tsvdx4;
 pub mod tsvdx4p;
