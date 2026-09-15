@@ -3,25 +3,37 @@
 //! directories and that bucket in sync. `index` writes the md5 index that
 //! `pull` verifies every downloaded file against.
 
+use netflix_prize::pipeline::{Pipeline, referenced_files, resolve_pipeline};
 use netflix_prize::remote::{self, BUCKET, FileEntry, INDEX_FILE, LocalState};
+use std::collections::{BTreeSet, HashMap};
+use std::path::Path;
 use std::process::ExitCode;
 
 const DEFAULT_JOBS: usize = 8;
+/// Both manifests, because the store spans both splits.
+const DEFAULT_MANIFESTS: [&str; 2] = ["pipeline-old.toml", "pipeline-new.toml"];
+/// Uploads go through one `hf` process each, so stay gentler than with GETs.
+const DEFAULT_UPLOAD_JOBS: usize = 4;
 
 fn print_help() {
     println!("Usage: preds [OPTIONS] index");
     println!("       preds [OPTIONS] pull [PATTERN...]");
+    println!("       preds [OPTIONS] push");
     println!();
     println!("  index                      write the md5 index of the bucket's contents");
     println!("  pull [PATTERN...]          download the files an index lists, verifying each");
     println!("                             md5; PATTERN globs the path ('*' matches anything)");
+    println!("  push                       upload what the manifests reference, then the index");
+    println!("                             (needs 'hf auth login'; never deletes)");
     println!();
     println!("  --bucket ID                bucket as <owner>/<name> (default: {})", BUCKET);
     println!("  -o FILE, --output FILE     index: where to write it (default: {})", INDEX_FILE);
     println!("  --index FILE               pull: read this index instead of the bucket's");
     println!("  -n, --dry-run              pull: report what is missing, download nothing");
     println!("  --quick                    pull: judge local files by size, skipping the md5 pass");
-    println!("  -j N, --jobs N             pull: parallel downloads (default: {})", DEFAULT_JOBS);
+    println!("  -p FILE, --pipeline FILE   push: manifest to take the upload set from,");
+    println!("                             repeatable (default: {})", DEFAULT_MANIFESTS.join(", "));
+    println!("  -j N, --jobs N             parallel transfers (default: {} pulling, {} pushing)", DEFAULT_JOBS, DEFAULT_UPLOAD_JOBS);
     println!("  -h, --help                 show this help");
 }
 
@@ -60,6 +72,66 @@ fn glob_match(pattern: &str, text: &str) -> bool {
         }
     }
     true
+}
+
+fn walk_files(dir: &str, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path.to_string_lossy().to_string();
+        if path.is_dir() {
+            walk_files(&name, out);
+        } else if path.is_file() {
+            out.push(name);
+        }
+    }
+}
+
+/// What the store should hold: every path under a preds directory that some job
+/// references, plus the `.out` logs and `.cfg` configs sitting beside them.
+///
+/// Predictions on the *training* sets (`{tr}`, `{fulltrain_tr}`) are left out.
+/// They are 21 GB, and they only matter for retraining residual models, not for
+/// blending. The dataset names come from each manifest's `[split]` table, so
+/// nothing here is hardcoded per split.
+fn upload_set(manifests: &[String]) -> Result<BTreeSet<String>, String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for manifest in manifests {
+        let p = Pipeline::load(manifest)?;
+        let preds_dir = p
+            .split
+            .get("preds")
+            .ok_or_else(|| format!("{manifest}: [split].preds is missing"))?
+            .clone();
+        let training: Vec<String> = ["tr", "fulltrain_tr"]
+            .iter()
+            .filter_map(|k| p.split.get(*k))
+            .map(|ds| format!(".{ds}.npy"))
+            .collect();
+
+        let resolved = resolve_pipeline(&p);
+        for f in referenced_files(&resolved) {
+            if !f.starts_with(&format!("{preds_dir}/")) {
+                continue;
+            }
+            if training.iter().any(|suffix| f.ends_with(suffix)) {
+                continue;
+            }
+            // A referenced file that does not exist is simply a job not yet run.
+            if Path::new(&f).is_file() {
+                set.insert(f);
+            }
+        }
+
+        let mut found = Vec::new();
+        walk_files(&preds_dir, &mut found);
+        for f in found {
+            if f.ends_with(".out") || f.ends_with(".cfg") {
+                set.insert(f);
+            }
+        }
+    }
+    Ok(set)
 }
 
 /// List the bucket, then md5 the local copy of every object it holds. The
@@ -191,13 +263,120 @@ fn cmd_pull(
     Ok(())
 }
 
+/// Bring the bucket up to date with the local tree, then refresh the index.
+/// The index is the record of what the bucket holds, so it is also what decides
+/// whether a local file has changed: a retrained model keeps its name and size,
+/// and only the md5 gives it away.
+fn cmd_push(bucket: &str, manifests: &[String], dry_run: bool, jobs: usize) -> Result<(), String> {
+    let who = remote::require_auth()?;
+    println!("Authenticated ({})", who);
+
+    let set = upload_set(manifests)?;
+    let set_bytes: u64 = set.iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum();
+    println!(
+        "Upload set from {}: {} file(s), {}",
+        manifests.join(" + "),
+        set.len(),
+        human(set_bytes),
+    );
+
+    println!("Fetching index from {} ...", bucket);
+    let index = remote::fetch_index(bucket)?;
+    let known: HashMap<&str, &FileEntry> =
+        index.file.iter().map(|e| (e.path.as_str(), e)).collect();
+
+    let indexed: Vec<FileEntry> = set
+        .iter()
+        .filter_map(|p| known.get(p.as_str()).map(|e| (*e).clone()))
+        .collect();
+    let mut todo: Vec<String> =
+        set.iter().filter(|p| !known.contains_key(p.as_str())).cloned().collect();
+    let n_new = todo.len();
+
+    println!("  {} already in the index; checking them for changes ...", indexed.len());
+    let states = remote::classify_all(&indexed, false);
+    let mut n_same = 0;
+    for (entry, state) in indexed.iter().zip(&states) {
+        if *state == LocalState::Current {
+            n_same += 1;
+        } else {
+            todo.push(entry.path.clone());
+        }
+    }
+    todo.sort();
+    println!("  {} unchanged, {} changed, {} new", n_same, todo.len() - n_new, n_new);
+
+    let orphans: Vec<&FileEntry> =
+        index.file.iter().filter(|e| !set.contains(&e.path)).collect();
+    if !orphans.is_empty() {
+        let bytes: u64 = orphans.iter().map(|e| e.size).sum();
+        println!(
+            "  {} object(s) in the bucket sit outside the upload set ({}); push never deletes",
+            orphans.len(),
+            human(bytes),
+        );
+        // Grouped by extension, so it is obvious what a later prune would drop.
+        let mut by_ext: Vec<(&str, usize, u64)> = Vec::new();
+        for e in &orphans {
+            let ext = e.path.rsplit('.').next().unwrap_or("");
+            match by_ext.iter_mut().find(|(x, _, _)| *x == ext) {
+                Some(row) => {
+                    row.1 += 1;
+                    row.2 += e.size;
+                }
+                None => by_ext.push((ext, 1, e.size)),
+            }
+        }
+        by_ext.sort_by(|a, b| b.2.cmp(&a.2));
+        for (ext, n, bytes) in by_ext {
+            println!("      {:5} .{:<4} {}", n, ext, human(bytes));
+        }
+    }
+
+    if todo.is_empty() {
+        println!("Bucket is up to date.");
+        return Ok(());
+    }
+    let bytes: u64 = todo.iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum();
+    if dry_run {
+        println!("Dry run: would upload {} file(s), {}.", todo.len(), human(bytes));
+        for p in todo.iter().take(20) {
+            println!("  {}", p);
+        }
+        if todo.len() > 20 {
+            println!("  ... and {} more", todo.len() - 20);
+        }
+        return Ok(());
+    }
+
+    println!("Uploading {} file(s), {} ...", todo.len(), human(bytes));
+    let errs = remote::upload_all(bucket, &todo, jobs);
+    if !errs.is_empty() {
+        let shown = errs.iter().take(10).cloned().collect::<Vec<_>>().join("\n  ");
+        let more = if errs.len() > 10 {
+            format!("\n  ... and {} more", errs.len() - 10)
+        } else {
+            String::new()
+        };
+        return Err(format!("{} upload(s) failed:\n  {}{}", errs.len(), shown, more));
+    }
+
+    // The index goes up last, so the bucket never advertises a file it lacks.
+    println!("Refreshing the index ...");
+    cmd_index(bucket, INDEX_FILE)?;
+    remote::upload_file(bucket, INDEX_FILE, INDEX_FILE)?;
+    println!("Done: {} file(s) pushed, index updated.", todo.len());
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let mut bucket = BUCKET.to_string();
     let mut out = INDEX_FILE.to_string();
     let mut index_path: Option<String> = None;
     let mut dry_run = false;
     let mut quick = false;
-    let mut jobs = DEFAULT_JOBS;
+    let mut jobs: Option<usize> = None;
+    let mut manifests: Vec<String> = Vec::new();
     let mut positional: Vec<String> = Vec::new();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -208,7 +387,7 @@ fn main() -> ExitCode {
             "-h" | "--help" => { print_help(); return ExitCode::SUCCESS; }
             "-n" | "--dry-run" => { dry_run = true; i += 1; }
             "--quick" => { quick = true; i += 1; }
-            "--bucket" | "-o" | "--output" | "--index" | "-j" | "--jobs" => {
+            "--bucket" | "-o" | "--output" | "--index" | "-j" | "--jobs" | "-p" | "--pipeline" => {
                 let Some(val) = args.get(i + 1).cloned() else {
                     eprintln!("error: {} requires an argument", flag);
                     return ExitCode::from(2);
@@ -217,8 +396,9 @@ fn main() -> ExitCode {
                     "--bucket" => bucket = val,
                     "-o" | "--output" => out = val,
                     "--index" => index_path = Some(val),
+                    "-p" | "--pipeline" => manifests.push(val),
                     _ => match val.parse::<usize>() {
-                        Ok(n) if n > 0 => jobs = n,
+                        Ok(n) if n > 0 => jobs = Some(n),
                         _ => {
                             eprintln!("error: {} needs a positive number, got '{}'", flag, val);
                             return ExitCode::from(2);
@@ -248,7 +428,24 @@ fn main() -> ExitCode {
             }
             cmd_index(&bucket, &out)
         }
-        "pull" => cmd_pull(&bucket, index_path.as_deref(), rest, dry_run, quick, jobs),
+        "pull" => cmd_pull(
+            &bucket,
+            index_path.as_deref(),
+            rest,
+            dry_run,
+            quick,
+            jobs.unwrap_or(DEFAULT_JOBS),
+        ),
+        "push" => {
+            if !rest.is_empty() {
+                eprintln!("error: 'push' takes no further arguments");
+                return ExitCode::from(2);
+            }
+            if manifests.is_empty() {
+                manifests = DEFAULT_MANIFESTS.iter().map(|s| s.to_string()).collect();
+            }
+            cmd_push(&bucket, &manifests, dry_run, jobs.unwrap_or(DEFAULT_UPLOAD_JOBS))
+        }
         other => {
             eprintln!("error: unknown subcommand '{}'", other);
             print_help();

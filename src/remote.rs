@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
 use std::path::Path;
+use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Default bucket, as `<owner>/<name>`.
@@ -405,6 +406,65 @@ pub fn fetch_all(base: &str, entries: &[FileEntry], jobs: usize) -> Vec<String> 
             .filter_map(|e| {
                 let r = fetch_file(base, e);
                 pb.inc(e.size);
+                r.err()
+            })
+            .collect()
+    });
+    pb.finish_and_clear();
+    errs
+}
+
+// ---------------------------------------------------------------------------
+// Uploading
+// ---------------------------------------------------------------------------
+
+/// Uploads go through the `hf` CLI, which holds the credentials. Nothing in
+/// this crate ever sees a token, and a reader needs none: the bucket is public
+/// to read and authenticated to write.
+pub fn require_auth() -> Result<String, String> {
+    let out = Command::new("hf")
+        .args(["auth", "whoami"])
+        .output()
+        .map_err(|e| format!("cannot run the 'hf' CLI ({e}); see https://hf.co/cli"))?;
+    if !out.status.success() {
+        return Err("not logged in to Hugging Face; run 'hf auth login'".to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Copy one local file into the bucket, at `remote` relative to its root.
+pub fn upload_file(bucket: &str, local: &str, remote: &str) -> Result<(), String> {
+    let dst = format!("hf://buckets/{bucket}/{remote}");
+    let out = Command::new("hf")
+        .args(["buckets", "cp", local, &dst])
+        .output()
+        .map_err(|e| format!("{local}: cannot run the 'hf' CLI ({e})"))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        let tail = err.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
+        return Err(format!("{local}: upload failed: {tail}"));
+    }
+    Ok(())
+}
+
+/// Upload every path, `jobs` at a time. Returns the failures.
+pub fn upload_all(bucket: &str, paths: &[String], jobs: usize) -> Vec<String> {
+    let pb = make_pb(paths.len() as u64);
+    pb.set_style(
+        ProgressStyle::with_template("  {pos}/{len} [{bar:30}] ETA {eta}")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(jobs)
+        .build()
+        .expect("build thread pool");
+    let errs = pool.install(|| {
+        paths
+            .par_iter()
+            .filter_map(|p| {
+                let r = upload_file(bucket, p, p);
+                pb.inc(1);
                 r.err()
             })
             .collect()
