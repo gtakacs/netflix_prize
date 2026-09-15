@@ -9,9 +9,10 @@ use crate::make_pb;
 use indicatif::ProgressStyle;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::Read;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::fs::{File, OpenOptions};
+use std::io::{self, Read};
+use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Default bucket, as `<owner>/<name>`.
 pub const BUCKET: &str = "gtakacs/netflix_prize";
@@ -236,4 +237,176 @@ fn format_utc(secs: u64) -> String {
         (tod % 3600) / 60,
         tod % 60
     )
+}
+
+// ---------------------------------------------------------------------------
+// Fetching
+// ---------------------------------------------------------------------------
+
+const MAX_ATTEMPTS: u32 = 5;
+
+/// Download the index straight from the bucket. This is the bootstrap: a fresh
+/// clone has no local index, and the bucket's copy is the authority anyway.
+pub fn fetch_index(bucket: &str) -> Result<Index, String> {
+    let url = format!("{}/{}", base_url(bucket), INDEX_FILE);
+    let resp = minreq::get(&url)
+        .with_max_redirects(5)
+        .with_timeout(HTTP_TIMEOUT_SECS)
+        .send()
+        .map_err(|e| format!("GET {url}: {e}"))?;
+    if resp.status_code != 200 {
+        return Err(format!("GET {url}: HTTP {}", resp.status_code));
+    }
+    let body = resp.as_str().map_err(|e| format!("GET {url}: {e}"))?;
+    toml::from_str(body).map_err(|e| format!("parse {url}: {e}"))
+}
+
+/// What the local tree holds for an index entry.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LocalState {
+    /// Present with the expected content (or the expected size under `--quick`).
+    Current,
+    /// Not there at all.
+    Missing,
+    /// There, but not what the index describes: a retrained model keeps both the
+    /// file name and the array size, so only the md5 tells the two apart.
+    Stale,
+}
+
+pub fn classify(entry: &FileEntry, quick: bool) -> LocalState {
+    let Ok(meta) = std::fs::metadata(&entry.path) else {
+        return LocalState::Missing;
+    };
+    if meta.len() != entry.size {
+        return LocalState::Stale;
+    }
+    if quick {
+        return LocalState::Current;
+    }
+    match md5_file(&entry.path) {
+        Ok(md5) if md5 == entry.md5 => LocalState::Current,
+        _ => LocalState::Stale,
+    }
+}
+
+/// Classify every entry, in parallel, with a progress bar over the bytes read.
+pub fn classify_all(entries: &[FileEntry], quick: bool) -> Vec<LocalState> {
+    let total: u64 = entries.iter().map(|e| e.size).sum();
+    let pb = make_pb(if quick { 0 } else { total });
+    pb.set_style(
+        ProgressStyle::with_template("  {bytes}/{total_bytes} [{bar:30}] {bytes_per_sec}, ETA {eta}")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+    let out = entries
+        .par_iter()
+        .map(|e| {
+            let s = classify(e, quick);
+            pb.inc(e.size);
+            s
+        })
+        .collect();
+    pb.finish_and_clear();
+    out
+}
+
+/// Fetch one entry into place: resume into `<path>.part`, verify the md5, then
+/// rename. The file the caller sees is therefore either absent or complete.
+pub fn fetch_file(base: &str, entry: &FileEntry) -> Result<(), String> {
+    let url = format!("{}/{}", base, entry.path);
+    let tmp = format!("{}.part", entry.path);
+    if let Some(parent) = Path::new(&entry.path).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    }
+
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let outcome = fetch_once(&url, &tmp).and_then(|()| {
+            let md5 = md5_file(&tmp)?;
+            if md5 == entry.md5 {
+                Ok(())
+            } else {
+                // A bad resume or a truncated transfer: drop the partial file so
+                // the next attempt starts clean rather than appending to it.
+                let _ = std::fs::remove_file(&tmp);
+                Err(format!("md5 mismatch (got {md5}, expected {})", entry.md5))
+            }
+        });
+        match outcome {
+            Ok(()) => {
+                return std::fs::rename(&tmp, &entry.path)
+                    .map_err(|e| format!("{}: rename: {e}", entry.path));
+            }
+            Err(_) if attempt < MAX_ATTEMPTS => {
+                std::thread::sleep(Duration::from_secs(2 * attempt as u64));
+            }
+            Err(e) => return Err(format!("{}: {e} (after {attempt} attempts)", entry.path)),
+        }
+    }
+}
+
+/// One transfer attempt, resuming from whatever `<path>.part` already holds.
+fn fetch_once(url: &str, tmp: &str) -> Result<(), String> {
+    let offset = std::fs::metadata(tmp).map(|m| m.len()).unwrap_or(0);
+    let mut req = minreq::get(url)
+        .with_max_redirects(5) // the bucket answers with a 302 to a signed CDN URL
+        .with_timeout(HTTP_TIMEOUT_SECS);
+    if offset > 0 {
+        req = req.with_header("Range", format!("bytes={}-", offset));
+    }
+
+    let resp = req.send_lazy().map_err(|e| e.to_string())?;
+    let status = resp.status_code;
+    // 416 on a resume means the partial file is already the whole object; let
+    // the md5 check judge it.
+    if offset > 0 && status == 416 {
+        return Ok(());
+    }
+    if status != 200 && status != 206 {
+        return Err(format!("HTTP {status}"));
+    }
+
+    // A ranged request answered with 200 means the range was ignored (a
+    // redirect may drop the header); rewrite from scratch instead of appending.
+    let truncate = offset > 0 && status != 206;
+    let mut oo = OpenOptions::new();
+    oo.create(true).write(true);
+    if truncate {
+        oo.truncate(true);
+    } else {
+        oo.append(true);
+    }
+    let mut file = oo.open(tmp).map_err(|e| e.to_string())?;
+    let mut reader = resp;
+    io::copy(&mut reader, &mut file).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Fetch every entry, `jobs` at a time. Returns the failures; the caller
+/// decides how loud to be about them.
+pub fn fetch_all(base: &str, entries: &[FileEntry], jobs: usize) -> Vec<String> {
+    let total: u64 = entries.iter().map(|e| e.size).sum();
+    let pb = make_pb(total);
+    pb.set_style(
+        ProgressStyle::with_template("  {bytes}/{total_bytes} [{bar:30}] {bytes_per_sec}, ETA {eta}")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(jobs)
+        .build()
+        .expect("build thread pool");
+    let errs: Vec<String> = pool.install(|| {
+        entries
+            .par_iter()
+            .filter_map(|e| {
+                let r = fetch_file(base, e);
+                pb.inc(e.size);
+                r.err()
+            })
+            .collect()
+    });
+    pb.finish_and_clear();
+    errs
 }
