@@ -110,6 +110,13 @@ fn next_link(header: &str) -> Option<String> {
     None
 }
 
+/// The index covers the prediction files, not itself: an entry for the index
+/// would describe the previous generation the moment the index is rewritten.
+/// Snapshots under `index/` are left out for the same reason.
+pub fn is_index_path(path: &str) -> bool {
+    path == INDEX_FILE || path.starts_with("index/")
+}
+
 pub fn md5_file(path: &str) -> Result<String, String> {
     let mut f = File::open(path).map_err(|e| format!("open {path}: {e}"))?;
     let mut ctx = md5::Context::new();

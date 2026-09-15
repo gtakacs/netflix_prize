@@ -21,10 +21,13 @@ fn print_help() {
 /// supplies the digests.
 fn cmd_index(bucket: &str, out: &str) -> Result<(), String> {
     println!("Listing {} ...", bucket);
-    let remote_files = remote::list_bucket(bucket)?;
+    let mut remote_files = remote::list_bucket(bucket)?;
+    let n_objects = remote_files.len();
+    remote_files.retain(|f| !remote::is_index_path(&f.path));
     let total: u64 = remote_files.iter().map(|f| f.size).sum();
     println!(
-        "  {} file(s), {:.2} GB; hashing local copies ...",
+        "  {} object(s), {} to index, {:.2} GB; hashing local copies ...",
+        n_objects,
         remote_files.len(),
         total as f64 / 1e9,
     );
