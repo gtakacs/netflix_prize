@@ -111,11 +111,13 @@ fn next_link(header: &str) -> Option<String> {
     None
 }
 
-/// The index covers the prediction files, not itself: an entry for the index
-/// would describe the previous generation the moment the index is rewritten.
-/// Snapshots under `index/` are left out for the same reason.
-pub fn is_index_path(path: &str) -> bool {
-    path == INDEX_FILE || path.starts_with("index/")
+/// Bucket-level documentation and bookkeeping, as opposed to a prediction file.
+/// The index covers the predictions only: an entry for the index itself would
+/// describe the previous generation the moment the index is rewritten, and the
+/// bucket's README has no counterpart in the local tree (the repo's own
+/// README.md is a different file that happens to share the name).
+pub fn is_bucket_meta(path: &str) -> bool {
+    path == INDEX_FILE || path.starts_with("index/") || path == "README.md"
 }
 
 pub fn md5_file(path: &str) -> Result<String, String> {

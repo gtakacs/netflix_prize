@@ -69,7 +69,7 @@ fn cmd_index(bucket: &str, out: &str) -> Result<(), String> {
     println!("Listing {} ...", bucket);
     let mut remote_files = remote::list_bucket(bucket)?;
     let n_objects = remote_files.len();
-    remote_files.retain(|f| !remote::is_index_path(&f.path));
+    remote_files.retain(|f| !remote::is_bucket_meta(&f.path));
     let total: u64 = remote_files.iter().map(|f| f.size).sum();
     println!(
         "  {} object(s), {} to index, {}; hashing local copies ...",
