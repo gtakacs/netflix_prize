@@ -472,3 +472,45 @@ pub fn upload_all(bucket: &str, paths: &[String], jobs: usize) -> Vec<String> {
     pb.finish_and_clear();
     errs
 }
+
+/// Delete one object. Always one explicit path: the CLI's recursive mode takes
+/// a prefix, and on an unversioned bucket a mistyped prefix is unrecoverable.
+pub fn delete_file(bucket: &str, path: &str) -> Result<(), String> {
+    let target = format!("hf://buckets/{bucket}/{path}");
+    let out = Command::new("hf")
+        .args(["buckets", "rm", &target, "--yes"])
+        .output()
+        .map_err(|e| format!("{path}: cannot run the 'hf' CLI ({e})"))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        let tail = err.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
+        return Err(format!("{path}: delete failed: {tail}"));
+    }
+    Ok(())
+}
+
+/// Delete every path, `jobs` at a time. Returns the failures.
+pub fn delete_all(bucket: &str, paths: &[String], jobs: usize) -> Vec<String> {
+    let pb = make_pb(paths.len() as u64);
+    pb.set_style(
+        ProgressStyle::with_template("  {pos}/{len} [{bar:30}] ETA {eta}")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(jobs)
+        .build()
+        .expect("build thread pool");
+    let errs = pool.install(|| {
+        paths
+            .par_iter()
+            .filter_map(|p| {
+                let r = delete_file(bucket, p);
+                pb.inc(1);
+                r.err()
+            })
+            .collect()
+    });
+    pb.finish_and_clear();
+    errs
+}

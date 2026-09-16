@@ -19,12 +19,15 @@ fn print_help() {
     println!("Usage: preds [OPTIONS] index");
     println!("       preds [OPTIONS] pull [PATTERN...]");
     println!("       preds [OPTIONS] push");
+    println!("       preds [OPTIONS] prune --yes");
     println!();
     println!("  index                      write the md5 index of the bucket's contents");
     println!("  pull [PATTERN...]          download the files an index lists, verifying each");
     println!("                             md5; PATTERN globs the path ('*' matches anything)");
     println!("  push                       upload what the manifests reference, then the index");
     println!("                             (needs 'hf auth login'; never deletes)");
+    println!("  prune                      delete bucket objects outside that set, but only");
+    println!("                             ones with an intact local copy; irreversible");
     println!();
     println!("  --bucket ID                bucket as <owner>/<name> (default: {})", BUCKET);
     println!("  -o FILE, --output FILE     index: where to write it (default: {})", INDEX_FILE);
@@ -34,6 +37,7 @@ fn print_help() {
     println!("  -p FILE, --pipeline FILE   push: manifest to take the upload set from,");
     println!("                             repeatable (default: {})", DEFAULT_MANIFESTS.join(", "));
     println!("  -j N, --jobs N             parallel transfers (default: {} pulling, {} pushing)", DEFAULT_JOBS, DEFAULT_UPLOAD_JOBS);
+    println!("  -y, --yes                  prune: actually delete (without it, a dry run)");
     println!("  -h, --help                 show this help");
 }
 
@@ -369,12 +373,89 @@ fn cmd_push(bucket: &str, manifests: &[String], dry_run: bool, jobs: usize) -> R
     Ok(())
 }
 
+/// Delete what the bucket holds beyond the upload set. Buckets are unversioned,
+/// so this cannot be undone; the safeguard is that every object is verified
+/// against an intact local copy first, and nothing is deleted unless all of them
+/// pass. The local files are never touched.
+fn cmd_prune(
+    bucket: &str,
+    manifests: &[String],
+    assume_yes: bool,
+    jobs: usize,
+) -> Result<(), String> {
+    let who = remote::require_auth()?;
+    println!("Authenticated ({})", who);
+
+    let set = upload_set(manifests)?;
+    println!("Fetching index from {} ...", bucket);
+    let index = remote::fetch_index(bucket)?;
+    let orphans: Vec<FileEntry> =
+        index.file.iter().filter(|e| !set.contains(&e.path)).cloned().collect();
+    if orphans.is_empty() {
+        println!("Nothing in the bucket sits outside the upload set.");
+        return Ok(());
+    }
+    let bytes: u64 = orphans.iter().map(|e| e.size).sum();
+    println!("  {} object(s) outside the upload set, {}", orphans.len(), human(bytes));
+
+    println!("Verifying that every one of them survives locally ...");
+    let states = remote::classify_all(&orphans, false);
+    let unverified: Vec<&FileEntry> = orphans
+        .iter()
+        .zip(&states)
+        .filter(|(_, s)| **s != LocalState::Current)
+        .map(|(e, _)| e)
+        .collect();
+    if !unverified.is_empty() {
+        let shown = unverified
+            .iter()
+            .take(10)
+            .map(|e| e.path.clone())
+            .collect::<Vec<_>>()
+            .join("\n  ");
+        return Err(format!(
+            "{} object(s) have no intact local copy, so deleting them would lose data. \
+             Nothing was deleted:\n  {}",
+            unverified.len(),
+            shown,
+        ));
+    }
+    println!("  all {} verified byte for byte against the local tree", orphans.len());
+
+    let paths: Vec<String> = orphans.iter().map(|e| e.path.clone()).collect();
+    if !assume_yes {
+        println!("Dry run: would delete {} object(s), {}.", paths.len(), human(bytes));
+        for p in paths.iter().take(20) {
+            println!("  {}", p);
+        }
+        if paths.len() > 20 {
+            println!("  ... and {} more", paths.len() - 20);
+        }
+        println!("Pass --yes to delete. This cannot be undone.");
+        return Ok(());
+    }
+
+    println!("Deleting {} object(s) ...", paths.len());
+    let errs = remote::delete_all(bucket, &paths, jobs);
+    if !errs.is_empty() {
+        let shown = errs.iter().take(10).cloned().collect::<Vec<_>>().join("\n  ");
+        return Err(format!("{} deletion(s) failed:\n  {}", errs.len(), shown));
+    }
+
+    println!("Refreshing the index ...");
+    cmd_index(bucket, INDEX_FILE)?;
+    remote::upload_file(bucket, INDEX_FILE, INDEX_FILE)?;
+    println!("Done: {} object(s) deleted, index updated.", paths.len());
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let mut bucket = BUCKET.to_string();
     let mut out = INDEX_FILE.to_string();
     let mut index_path: Option<String> = None;
     let mut dry_run = false;
     let mut quick = false;
+    let mut assume_yes = false;
     let mut jobs: Option<usize> = None;
     let mut manifests: Vec<String> = Vec::new();
     let mut positional: Vec<String> = Vec::new();
@@ -387,6 +468,7 @@ fn main() -> ExitCode {
             "-h" | "--help" => { print_help(); return ExitCode::SUCCESS; }
             "-n" | "--dry-run" => { dry_run = true; i += 1; }
             "--quick" => { quick = true; i += 1; }
+            "-y" | "--yes" => { assume_yes = true; i += 1; }
             "--bucket" | "-o" | "--output" | "--index" | "-j" | "--jobs" | "-p" | "--pipeline" => {
                 let Some(val) = args.get(i + 1).cloned() else {
                     eprintln!("error: {} requires an argument", flag);
@@ -445,6 +527,21 @@ fn main() -> ExitCode {
                 manifests = DEFAULT_MANIFESTS.iter().map(|s| s.to_string()).collect();
             }
             cmd_push(&bucket, &manifests, dry_run, jobs.unwrap_or(DEFAULT_UPLOAD_JOBS))
+        }
+        "prune" => {
+            if !rest.is_empty() {
+                eprintln!("error: 'prune' takes no further arguments");
+                return ExitCode::from(2);
+            }
+            if manifests.is_empty() {
+                manifests = DEFAULT_MANIFESTS.iter().map(|s| s.to_string()).collect();
+            }
+            cmd_prune(
+                &bucket,
+                &manifests,
+                assume_yes && !dry_run,
+                jobs.unwrap_or(DEFAULT_UPLOAD_JOBS),
+            )
         }
         other => {
             eprintln!("error: unknown subcommand '{}'", other);
