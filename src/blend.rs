@@ -455,7 +455,7 @@ pub fn pair_atoms(pairs: &[(String, String)]) -> (Vec<String>, Vec<(usize, usize
 pub fn load_preds(spec: &str, preds_dir: &str, dataset: &str, n: usize, clip: (f32, f32)) -> Array1<f32> {
     let do_clip = !spec.starts_with(NOCLIP_OP);
     let model = spec.trim_start_matches(NOCLIP_OP);
-    let path = format!("{preds_dir}/{model}.{dataset}.npy");
+    let path = crate::preds_path(preds_dir, model, dataset);
     let mut arr: Array1<f32> = match read_npy(&path) {
         Ok(a) => a,
         Err(e) => {

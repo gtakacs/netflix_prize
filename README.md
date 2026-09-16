@@ -119,3 +119,20 @@ requested job:
 
 `-p FILE` selects a manifest explicitly; `-n` is a shorthand for
 `-p pipeline-new.toml` (default is `pipeline-old.toml`).
+
+## Trying your own predictor
+
+Adding a model to a manifest takes a library module, a dispatcher, a job and a
+models-TOML entry. An *experiment* needs none of that: copy
+`src/bin/lab-example.rs` to `src/bin/lab-<yours>.rs`, replace the model, and
+run it. Predictions go to the gitignored `preds_lab/`, no manifest refers to
+the file, and dropping the experiment is one `rm`.
+
+```
+cp src/bin/lab-example.rs src/bin/lab-foo.rs
+cargo run --release --bin lab-foo -- --smoke   # seconds: does it run?
+cargo run --release --bin lab-foo              # full trainx -> probex
+```
+
+See [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) for the whole loop, including how
+to judge a new column and what to do when it pays.

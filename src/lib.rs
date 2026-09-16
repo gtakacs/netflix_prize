@@ -194,6 +194,7 @@ pub mod knn;
 pub mod knn3;
 pub mod knnf;
 pub mod knns;
+pub mod lab;
 pub mod mf;
 pub mod mfrbmx;
 pub mod mlp;
@@ -213,6 +214,33 @@ pub mod vfeat1;
 // ---------------------------------------------------------------------------
 // Dataset and target spec
 // ---------------------------------------------------------------------------
+
+/// Read-side fallback for the lab sandbox: `(lab_dir, base_dir)`. Only
+/// `lab::LabArgs::split` sets it, so no pipeline job can pick up a prediction
+/// from another preds dir by accident.
+static PREDS_FALLBACK: Mutex<Option<(String, String)>> = Mutex::new(None);
+
+/// Serve reads that miss in `lab_dir` from `base_dir`. See `preds_path`.
+pub fn set_preds_fallback(lab_dir: &str, base_dir: &str) {
+    *PREDS_FALLBACK.lock().unwrap() = Some((lab_dir.to_string(), base_dir.to_string()));
+}
+
+/// Path of another model's predictions, normally
+/// `{preds_dir}/{model}.{dataset}.npy`. A lab run reads its own `preds_lab/`
+/// copy when there is one and the base split's copy otherwise, so an experiment
+/// can train on the residual of a model it did not produce. Reads only: every
+/// write goes to `preds_dir` unconditionally.
+pub fn preds_path(preds_dir: &str, model: &str, dataset: &str) -> String {
+    let path = format!("{preds_dir}/{model}.{dataset}.npy");
+    if std::path::Path::new(&path).exists() { return path; }
+    if let Some((lab_dir, base_dir)) = PREDS_FALLBACK.lock().unwrap().as_ref() {
+        if preds_dir == lab_dir {
+            let alt = format!("{base_dir}/{model}.{dataset}.npy");
+            if std::path::Path::new(&alt).exists() { return alt; }
+        }
+    }
+    path
+}
 
 /// Parse "weight*model" or "model" target spec term into (weight, model_name)
 fn parse_target_term(spec: &str) -> (f32, &str) {
@@ -268,7 +296,7 @@ impl Dataset {
             let mut combined = ratings;
             for term in &terms {
                 let (weight, model) = parse_target_term(term);
-                let path = format!("{}/{}.{}.npy", preds_dir, model, name);
+                let path = preds_path(preds_dir, model, name);
                 let preds: Array1<f32> = ::ndarray_npy::read_npy(&path).expect(&path);
                 combined = combined - &preds * weight;
             }
@@ -284,11 +312,11 @@ impl Dataset {
         let n_ratings = raw_ratings.len();
         let transposed = false;
 
-        Self {
+        lab::maybe_subsample(Self {
             user_idxs, user_cnts, item_idxs, item_cnts, item_years,
             raw_ratings, residuals, dates, is_test,
             name, n_users, n_items, n_ratings, transposed,
-        }
+        })
     }
 
     /// Transpose dataset: swap user ↔ item roles.
@@ -1072,7 +1100,7 @@ pub fn epoch_blend(model_name: &str, non_epoch_names: &[&str], lambda: f64, spli
     }
 
     for &name in non_epoch_names {
-        let path = format!("{}/{}.{}.npy", preds_dir, name, split.pr);
+        let path = preds_path(preds_dir, name, split.pr);
         if !std::path::Path::new(&path).exists() { continue; }
         let preds: Array1<f32> = ndarray_npy::read_npy(&path).expect(&path);
         col_names.push(name.to_string());
