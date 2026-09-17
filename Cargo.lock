@@ -825,6 +825,7 @@ dependencies = [
  "serde_json",
  "tar",
  "toml",
+ "toml_edit",
 ]
 
 [[package]]

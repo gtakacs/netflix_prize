@@ -73,24 +73,31 @@ overrides the model name.
 
 ## 4. Judge it
 
-The standalone RMSE is printed by the run itself. What actually matters is the
-marginal value in the blend, and the cheapest early proxy for it is the
-correlation of the new column's probe residuals with the ensemble's: what pays
-is low correlation *at comparable accuracy*, not accuracy on its own. The best
-standalone model in this project adds nothing to the blend for exactly that
-reason.
-
-Blending a `preds_lab/` column directly is phase 2 of this work and not
-implemented yet. Until then, to measure a column against the ensemble, copy it
-next to the others and use the manual-model flag:
+The standalone RMSE is printed by the run itself, and it is the less interesting
+number. What matters is what the column adds to the ensemble:
 
 ```
-cp preds_lab/lab-foo.probex.npy preds_new/
-./target/release/ridge -N --lambda 1000 -m lab-foo      # read the 'all*' row
+cargo build --release --features blas --bin ridge
+./target/release/ridge --ensemble new -m preds_lab/lab-foo
 ```
 
-(This is the one step that touches `preds_new/`. Remove the copy afterwards if
-the experiment does not pay; `preds push` would otherwise upload it.)
+`--ensemble new` is the stored single-split blend from `ensembles.toml`. The
+command fits it twice out of one shared Gram matrix, with and without your
+column, and prints:
+
+- the **delta**, next to what deltas are normally worth here. They are small:
+  the strongest single column in the whole set is worth about -7e-6;
+- the **residual correlation** with the ensemble. What pays is low correlation
+  *at comparable accuracy*, not accuracy on its own: the most accurate
+  standalone model in this project adds nothing to the blend for exactly that
+  reason;
+- the reference rows against their recorded values, so a gain is never read off
+  a baseline that has silently drifted.
+
+Nothing is copied into `preds_new/`: a `dir/name` column is read where it lies.
+Without a `--final` run there are no qual predictions, so the quiz column shows
+`-` and the probe numbers carry the measurement. Run `--final` once the probe
+delta justifies it.
 
 ## 5a. Throw it away
 

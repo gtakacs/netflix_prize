@@ -226,11 +226,16 @@ pub fn set_preds_fallback(lab_dir: &str, base_dir: &str) {
 }
 
 /// Path of another model's predictions, normally
-/// `{preds_dir}/{model}.{dataset}.npy`. A lab run reads its own `preds_lab/`
-/// copy when there is one and the base split's copy otherwise, so an experiment
-/// can train on the residual of a model it did not produce. Reads only: every
-/// write goes to `preds_dir` unconditionally.
+/// `{preds_dir}/{model}.{dataset}.npy`. A name that carries a directory of its
+/// own (`preds_lab/lab-foo`) is taken as the whole prefix, so a column outside
+/// the split's preds dir can be named wherever a model name is accepted. A lab
+/// run reads its own `preds_lab/` copy when there is one and the base split's
+/// copy otherwise, so an experiment can train on the residual of a model it did
+/// not produce. Reads only: every write goes to `preds_dir` unconditionally.
 pub fn preds_path(preds_dir: &str, model: &str, dataset: &str) -> String {
+    if model.contains('/') {
+        return format!("{model}.{dataset}.npy");
+    }
     let path = format!("{preds_dir}/{model}.{dataset}.npy");
     if std::path::Path::new(&path).exists() { return path; }
     if let Some((lab_dir, base_dir)) = PREDS_FALLBACK.lock().unwrap().as_ref() {

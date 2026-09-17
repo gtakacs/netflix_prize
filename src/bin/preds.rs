@@ -237,6 +237,7 @@ fn cmd_pull(
     println!("  {} up to date, {} missing, {} stale", n_current, n_missing, n_stale);
     if todo.is_empty() {
         println!("Nothing to download.");
+        print_next_steps();
         return Ok(());
     }
 
@@ -264,7 +265,21 @@ fn cmd_pull(
         return Err(format!("{} download(s) failed:\n  {}{}", errs.len(), shown, more));
     }
     println!("Done: {} file(s) downloaded.", todo.len());
+    print_next_steps();
     Ok(())
+}
+
+/// What to run once the predictions are on disk. The store exists so that
+/// blending can be tried without training anything, and this is the one command
+/// that shows whether the download is complete and correct.
+fn print_next_steps() {
+    println!();
+    println!("Next:");
+    println!("  cargo build --release --features blas --bin ridge");
+    println!("  ./target/release/ridge --ensemble          # does the stored blend reproduce?");
+    println!("  ./target/release/ridge --ensemble -m NAME  # what does a column of yours add?");
+    println!();
+    println!("See README.md and docs/EXPERIMENTS.md for the rest of the loop.");
 }
 
 /// Bring the bucket up to date with the local tree, then refresh the index.

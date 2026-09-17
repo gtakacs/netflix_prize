@@ -9,14 +9,16 @@ extern crate blas_src;
 
 use blas::dsyrk;
 use indexmap::IndexMap;
+use flate2::read::GzDecoder;
 use netflix_prize::blend::{flatten_groups, load_models_toml, permuted_folds, select_groups};
+use netflix_prize::preds_path;
 use nalgebra::{DMatrix, DVector};
 use ndarray::Array1;
 use ndarray_npy::read_npy;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::process::ExitCode;
 
 // Default clip bounds: inputs are clipped wide (mostly to tame outliers), the
@@ -35,6 +37,10 @@ const PIPELINE_OLD: &str = "pipeline-old.toml";
 const PIPELINE_NEW: &str = "pipeline-new.toml";
 const MODELS_OLD: &str = "models-old.toml";
 const MODELS_NEW: &str = "models-new.toml";
+const ENSEMBLES_TOML: &str = "ensembles.toml";
+const QUAL_RATINGS_CSV_GZ: &str = "data/qual_ratings/qual_ratings.csv.gz";
+const N_QUAL: usize = 2_817_131;
+const ENSEMBLE_ROW: &str = "ensemble";
 
 // ---------------------------------------------------------------------------
 // Partial .npy reader for 1-D float32 arrays
@@ -128,6 +134,13 @@ struct Args {
     quiz_blend: bool,
     raw_probes: bool,
     decimals: i32,
+    /// The stored ensemble this run reproduces (`--ensemble`).
+    ensemble: Option<EnsembleDef>,
+    /// Columns measured on top of that ensemble (`-m` in ensemble mode).
+    extras: Vec<String>,
+    /// Calibration lines printed next to a measured delta.
+    scale: Vec<String>,
+    update_expected: bool,
 }
 
 fn print_help() {
@@ -183,6 +196,18 @@ fn print_help() {
     println!("                             Example: ridge --quiz-blend --from old -g integrated \\");
     println!("                                            --from new -g integrated,rbm,other");
     println!();
+    println!();
+    println!("  Stored ensembles ({}):", ENSEMBLES_TOML);
+    println!("    --ensemble [NAME]        run a stored blend and check it against the numbers");
+    println!("                             recorded for it (default: the one marked default).");
+    println!("                             With -m NAME it also fits the same blend WITH that");
+    println!("                             column and reports the gain, so the reference is the");
+    println!("                             control condition of the measurement. -m takes a bare");
+    println!("                             name (looked up in the last source's preds dir) or a");
+    println!("                             dir/name path, e.g. -m preds_lab/lab-foo.");
+    println!("                             Exits non-zero if the reference does not reproduce.");
+    println!("    --update-expected        write this run's numbers back into {}", ENSEMBLES_TOML);
+    println!();
     println!("    -h, --help               show this help");
 }
 
@@ -220,6 +245,8 @@ fn parse_args() -> Args {
     let mut raw_probes = false;
     let mut in_clip_set = false;
     let mut decimals = 4;
+    let mut ensemble_name: Option<String> = None;
+    let mut update_expected = false;
 
     // Legacy single-source accumulator (used when no --from is given), plus the
     // list of --from sources. The two are mutually exclusive.
@@ -304,6 +331,18 @@ fn parse_args() -> Args {
                     _ => { src.models_exclude.push(need(&argv, i)); i += 2; }
                 }
             }
+            "--ensemble" => {
+                // Optional value: `--ensemble` takes the default one, `--ensemble NAME`
+                // the named one. Nothing else in this CLI is positional, so a bare
+                // word after the flag is unambiguous.
+                let name = match argv.get(i + 1) {
+                    Some(a) if !a.starts_with('-') => { i += 1; a.clone() }
+                    _ => String::new(),
+                };
+                ensemble_name = Some(name);
+                i += 1;
+            }
+            "--update-expected" => { update_expected = true; i += 1; }
             "--lambda" => { lambda = need(&argv, i).parse().expect("bad --lambda value"); i += 2; }
             "--forward" => { forward = true; i += 1; }
             "--max-features" => {
@@ -343,6 +382,55 @@ fn parse_args() -> Args {
     // nothing for patience to wait for without a held-out criterion.
     if cv_patience.is_some() && cv_folds < 2 {
         eprintln!("error: --cv-patience needs --cv-folds >= 2");
+        std::process::exit(2);
+    }
+
+    // `--ensemble` replaces the whole selection: sources, groups and lambda come
+    // from ensembles.toml, and the only thing the caller adds is extra columns.
+    let mut ensemble: Option<EnsembleDef> = None;
+    let mut extras: Vec<String> = Vec::new();
+    let mut scale: Vec<String> = Vec::new();
+    if let Some(name) = &ensemble_name {
+        let rejected: &[(&str, bool)] = &[
+            ("--from", using_from),
+            ("-t/-g/-x", legacy.models_toml.is_some() || !legacy.groups.is_empty()
+                || !legacy.models_exclude.is_empty()),
+            ("--forward", forward),
+            ("--quiz-blend", quiz_blend),
+            ("--cv-folds", cv_folds > 1),
+        ];
+        if let Some((flag, _)) = rejected.iter().find(|(_, hit)| *hit) {
+            eprintln!("error: '{}' cannot be combined with --ensemble", flag);
+            eprintln!("       --ensemble runs a stored blend verbatim; only -m adds to it");
+            std::process::exit(2);
+        }
+        let file = load_ensembles();
+        let def = pick_ensemble(&file, name);
+        if def.source.is_empty() {
+            eprintln!("error: ensemble '{}' lists no sources", def.name);
+            std::process::exit(2);
+        }
+        extras = std::mem::take(&mut legacy.models_manual);
+        scale = file.scale.lines.clone();
+        lambda = def.lambda;
+        using_from = def.source.len() > 1;
+        if using_from { quiz_blend = true; }
+        from_sources = def.source.iter().map(|src| Source {
+            label: src.split.clone(),
+            pipeline: format!("pipeline-{}.toml", src.split),
+            models_toml: Some(format!("models-{}.toml", src.split)),
+            models_manual: src.models.clone(),
+            models_exclude: Vec::new(),
+            groups: src.groups.clone(),
+        }).collect();
+        // A single-source ensemble is an ordinary one-split run, so it keeps the
+        // unprefixed group names and fits on the probe labels.
+        if !using_from {
+            legacy = from_sources.remove(0);
+        }
+        ensemble = Some(def);
+    } else if update_expected {
+        eprintln!("error: --update-expected needs --ensemble");
         std::process::exit(2);
     }
 
@@ -396,6 +484,10 @@ fn parse_args() -> Args {
         quiz_blend,
         raw_probes,
         decimals,
+        ensemble,
+        extras,
+        scale,
+        update_expected,
     }
 }
 
@@ -423,6 +515,167 @@ fn parse_clip(s: &str, flag: &str) -> (f64, f64) {
         std::process::exit(2);
     }
     (lo, hi)
+}
+
+// ---------------------------------------------------------------------------
+// Named ensembles (ensembles.toml)
+// ---------------------------------------------------------------------------
+
+/// One stored ensemble: the sources it blends and the numbers a complete
+/// prediction set reproduces. `--ensemble` runs it as a check; `--ensemble -m
+/// NAME` measures what an extra column does to it, against the same reference
+/// in the same run.
+#[derive(serde::Deserialize, Clone)]
+struct EnsembleDef {
+    name: String,
+    #[serde(default, rename = "default")]
+    is_default: bool,
+    #[serde(default)]
+    description: String,
+    lambda: f64,
+    #[serde(default = "default_tolerance")]
+    tolerance: f64,
+    #[serde(default)]
+    source: Vec<EnsembleSourceDef>,
+    /// Row name → the RMSEs it is expected to produce.
+    #[serde(default)]
+    expected: IndexMap<String, ExpectedRow>,
+}
+
+#[derive(serde::Deserialize, Clone)]
+struct EnsembleSourceDef {
+    split: String,
+    #[serde(default)]
+    groups: Vec<String>,
+    #[serde(default)]
+    models: Vec<String>,
+}
+
+#[derive(serde::Deserialize, Clone, Copy, Default)]
+struct ExpectedRow {
+    #[serde(default)]
+    probe: Option<f64>,
+    #[serde(default)]
+    quiz: Option<f64>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct ScaleNote {
+    #[serde(default)]
+    lines: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct EnsembleFile {
+    #[serde(default)]
+    ensemble: Vec<EnsembleDef>,
+    #[serde(default)]
+    scale: ScaleNote,
+}
+
+fn default_tolerance() -> f64 { 1e-5 }
+
+fn load_ensembles() -> EnsembleFile {
+    let s = std::fs::read_to_string(ENSEMBLES_TOML).unwrap_or_else(|e| {
+        eprintln!("error: read {}: {}", ENSEMBLES_TOML, e);
+        std::process::exit(2);
+    });
+    toml::from_str(&s).unwrap_or_else(|e| {
+        eprintln!("error: parse {}: {}", ENSEMBLES_TOML, e);
+        std::process::exit(2);
+    })
+}
+
+/// The named ensemble, or the one marked `default = true`.
+fn pick_ensemble(file: &EnsembleFile, name: &str) -> EnsembleDef {
+    let found = if name.is_empty() {
+        file.ensemble.iter().find(|e| e.is_default).or_else(|| file.ensemble.first())
+    } else {
+        file.ensemble.iter().find(|e| e.name == name)
+    };
+    match found {
+        Some(e) => e.clone(),
+        None => {
+            let names: Vec<&str> = file.ensemble.iter().map(|e| e.name.as_str()).collect();
+            eprintln!("error: no ensemble '{}' in {} (have: {})",
+                name, ENSEMBLES_TOML, names.join(", "));
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Qual labels. The `.npy` arrays when `ingest` has run, otherwise the
+/// `rating,is_test` CSV that ships with the repo: `ingest` writes one straight
+/// from the other, row for row, so a blend can be scored on a clone that has
+/// never downloaded the dataset.
+fn load_qual_labels(qual: &str) -> (Array1<i8>, Array1<i8>) {
+    let y_path = format!("data/{}/ratings.npy", qual);
+    let t_path = format!("data/{}/is_test.npy", qual);
+    if std::path::Path::new(&y_path).exists() && std::path::Path::new(&t_path).exists() {
+        let y: Array1<i8> = read_npy(&y_path).unwrap_or_else(|e| panic!("read {}: {}", y_path, e));
+        let t: Array1<i8> = read_npy(&t_path).unwrap_or_else(|e| panic!("read {}: {}", t_path, e));
+        return (y, t);
+    }
+    if qual != "qual" || !std::path::Path::new(QUAL_RATINGS_CSV_GZ).exists() {
+        eprintln!("error: {} not found, and no fallback for dataset '{}'", y_path, qual);
+        eprintln!("       run: ./target/release/run -n ingest");
+        std::process::exit(2);
+    }
+    println!("Qual labels: {} (data/{}/ not ingested)", QUAL_RATINGS_CSV_GZ, qual);
+    let f = File::open(QUAL_RATINGS_CSV_GZ)
+        .unwrap_or_else(|e| panic!("open {}: {}", QUAL_RATINGS_CSV_GZ, e));
+    let mut y: Vec<i8> = Vec::with_capacity(N_QUAL);
+    let mut t: Vec<i8> = Vec::with_capacity(N_QUAL);
+    for (i, line) in BufReader::new(GzDecoder::new(f)).lines().enumerate() {
+        let line = line.unwrap_or_else(|e| panic!("read {}: {}", QUAL_RATINGS_CSV_GZ, e));
+        if i == 0 { continue; } // rating,is_test
+        let (r, is_test) = line.split_once(',')
+            .unwrap_or_else(|| panic!("{}: bad row {}", QUAL_RATINGS_CSV_GZ, i));
+        y.push(r.trim().parse().expect("bad rating"));
+        t.push(is_test.trim().parse().expect("bad is_test"));
+    }
+    (Array1::from(y), Array1::from(t))
+}
+
+/// Prediction files a run needs but does not have, as `(column, path)` pairs.
+fn missing_columns(
+    display: &[String],
+    unique: &[String],
+    preds_dirs: &[String],
+    datasets: &[&str],
+) -> Vec<(String, String)> {
+    let mut missing = Vec::new();
+    for ds in datasets {
+        for ((name, dir), shown) in unique.iter().zip(preds_dirs.iter()).zip(display.iter()) {
+            let path = preds_path(dir, name, ds);
+            if !std::path::Path::new(&path).exists() {
+                missing.push((shown.clone(), path));
+            }
+        }
+    }
+    missing
+}
+
+/// Report missing prediction files and how to get them, then exit. A column the
+/// caller added is their own to produce; a stored one is a download away.
+fn abort_on_missing(missing: &[(String, String)], total: usize, added_only: bool) -> ! {
+    eprintln!();
+    eprintln!("error: {} of {} prediction files are missing, for example:", missing.len(), total);
+    for (name, path) in missing.iter().take(5) {
+        eprintln!("         {} → {}", name, path);
+    }
+    eprintln!();
+    if added_only {
+        eprintln!("       These are columns given with -m, not part of the ensemble. Check the");
+        eprintln!("       name, and that the run producing them has finished writing.");
+    } else {
+        eprintln!("       The stored ensembles are blends of the project's own predictions.");
+        eprintln!("       Fetch them with:");
+        eprintln!("         cargo build --release --bin preds");
+        eprintln!("         ./target/release/preds pull 'preds_*/*.qual.npy'   # the qual columns");
+        eprintln!("       (or ./target/release/preds pull for everything, including the probe sets)");
+    }
+    std::process::exit(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -1131,6 +1384,25 @@ fn main() -> ExitCode {
     } else {
         Vec::new()
     };
+    // Columns measured on top of the ensemble. They are appended after the stored
+    // registry (and after the no-clip drop, which concerns stored columns only),
+    // so the reference fit stays the prefix `0..ref_m` whatever is added, and a
+    // bare name resolves in the last source's preds dir while `dir/name` names
+    // its own directory.
+    let ref_m = unique.len();
+    for spec in &args.extras {
+        let no_clip = spec.starts_with('>');
+        if no_clip && args.quiz_blend {
+            eprintln!("error: '{}' is a no-clip column, and a quiz blend fits only on", spec);
+            eprintln!("       columns that could have been submitted as ratings");
+            return ExitCode::from(2);
+        }
+        preds_dirs.push(preds_dirs.last().cloned().unwrap_or_default());
+        labels.push(labels.last().cloned().unwrap_or_default());
+        unique.push(spec.trim_start_matches('>').to_string());
+        clip.push(!no_clip);
+    }
+
     let m = unique.len();
     if m == 0 {
         eprintln!("error: no models left after exclusion");
@@ -1138,9 +1410,12 @@ fn main() -> ExitCode {
     }
 
     // Column names as reported. A cross-split registry can hold the same model
-    // name once per split (dedup is per source), so qualify it there.
+    // name once per split (dedup is per source), so qualify it there; a column
+    // that names its own directory is already unambiguous.
     let display: Vec<String> = if args.cross_split {
-        unique.iter().zip(labels.iter()).map(|(n, l)| format!("{}/{}", l, n)).collect()
+        unique.iter().zip(labels.iter())
+            .map(|(n, l)| if n.contains('/') { n.clone() } else { format!("{}/{}", l, n) })
+            .collect()
     } else {
         unique.clone()
     };
@@ -1187,6 +1462,13 @@ fn main() -> ExitCode {
                 src.models_exclude.len(), src.models_exclude.join(", "));
         }
     }
+    if let Some(def) = &args.ensemble {
+        println!("Ensemble:  {} ({}){}", def.name, ENSEMBLES_TOML,
+            if def.description.is_empty() { String::new() } else { format!(" - {}", def.description) });
+        if m > ref_m {
+            println!("Added:     {}", display[ref_m..].join(", "));
+        }
+    }
     println!("Lambda λ:  {}", args.lambda);
     if args.quiz_blend && !args.raw_probes {
         println!("In-clip:   [{}, {}] (applied to every column)",
@@ -1216,16 +1498,41 @@ fn main() -> ExitCode {
     let mut probe_y: Vec<f64> = Vec::new();
     let mut n_probe = 0usize;
     let need_probe = !args.cross_split && !fwd_quiz;
-    if need_probe {
-        let pr = load_pipeline_split(&args.sources[0].pipeline)
-            .get("pr").expect("pipeline [split].pr missing").clone();
+    let pr_name: Option<String> = if need_probe {
+        Some(load_pipeline_split(&args.sources[0].pipeline)
+            .get("pr").expect("pipeline [split].pr missing").clone())
+    } else {
+        None
+    };
+
+    // Preflight. A column that was never downloaded is a fetch problem, so say
+    // which ones and how to get them rather than failing on the first open. A
+    // missing qual column is fatal only where the fit itself lives on qual; a
+    // plain probe run can still report everything but the quiz number, which is
+    // what an experiment that has not run its `--final` phase looks like.
+    let added_only = |missing: &[(String, String)]| {
+        missing.iter().all(|(name, _)| display[ref_m..].contains(name))
+    };
+    if let Some(pr) = &pr_name {
+        let missing = missing_columns(&display, &unique, &preds_dirs, &[pr]);
+        if !missing.is_empty() {
+            abort_on_missing(&missing, m, added_only(&missing));
+        }
+    }
+    let missing_qual = missing_columns(&display, &unique, &preds_dirs, &[&qual]);
+    let have_qual = missing_qual.is_empty();
+    if !have_qual && (args.quiz_blend || args.forward) {
+        abort_on_missing(&missing_qual, m, added_only(&missing_qual));
+    }
+
+    if let Some(pr) = &pr_name {
         let y_path = format!("data/{}/ratings.npy", pr);
         let y_i8: Array1<i8> = read_npy(&y_path).unwrap_or_else(|e| panic!("read {}: {}", y_path, e));
         probe_y = y_i8.iter().map(|&r| r as f64).collect();
         n_probe = y_i8.len();
         println!("Probe set: {} ratings ({})", n_probe, y_path);
         for (name, dir) in unique.iter().zip(preds_dirs.iter()) {
-            let path = format!("{}/{}.{}.npy", dir, name, pr);
+            let path = preds_path(dir, name, pr);
             let r = NpyF32Reader::open(&path);
             assert_eq!(r.len, n_probe, "{}: length {} != probe {}", path, r.len, n_probe);
             readers.push(r);
@@ -1235,23 +1542,33 @@ fn main() -> ExitCode {
 
     // Load qual ratings + is_test (for the quiz evaluation pass; in quiz-blend
     // mode the Gram is also built here, over the full qual set).
-    let y_q_i8: Array1<i8> =
-        read_npy(format!("data/{}/ratings.npy", qual))
-            .unwrap_or_else(|e| panic!("read data/{}/ratings.npy: {}", qual, e));
-    let is_test_q: Array1<i8> =
-        read_npy(format!("data/{}/is_test.npy", qual))
-            .unwrap_or_else(|e| panic!("read data/{}/is_test.npy: {}", qual, e));
+    let (y_q_i8, is_test_q) = if have_qual {
+        load_qual_labels(&qual)
+    } else {
+        (Array1::<i8>::zeros(0), Array1::<i8>::zeros(0))
+    };
     let n_q = y_q_i8.len();
     let quiz_n_expected = is_test_q.iter().filter(|&&t| t == 0).count();
-    println!("Quiz set:  {} of {} qual ratings", quiz_n_expected, n_q);
+    if have_qual {
+        println!("Quiz set:  {} of {} qual ratings", quiz_n_expected, n_q);
+    } else {
+        println!("Quiz set:  skipped, {} column(s) have no {} predictions:",
+            missing_qual.len(), qual);
+        for (name, _) in missing_qual.iter().take(3) {
+            println!("           {}", name);
+        }
+        println!("           re-run that model with --final to get its quiz number");
+    }
 
     // Open one partial qual reader per unique model, from its own preds dir.
     let mut qual_readers: Vec<NpyF32Reader> = Vec::with_capacity(m);
-    for (name, dir) in unique.iter().zip(preds_dirs.iter()) {
-        let path = format!("{}/{}.{}.npy", dir, name, qual);
-        let r = NpyF32Reader::open(&path);
-        assert_eq!(r.len, n_q, "{}: length {} != qual {}", path, r.len, n_q);
-        qual_readers.push(r);
+    if have_qual {
+        for (name, dir) in unique.iter().zip(preds_dirs.iter()) {
+            let path = preds_path(dir, name, &qual);
+            let r = NpyF32Reader::open(&path);
+            assert_eq!(r.len, n_q, "{}: length {} != qual {}", path, r.len, n_q);
+            qual_readers.push(r);
+        }
     }
 
     // Build the shared Gram (A = ZᵀZ), its right-hand side (b = Zᵀy) and yty.
@@ -1354,7 +1671,20 @@ fn main() -> ExitCode {
             // Everything in the registry: the selected groups plus any -m
             // predictors. Named `all*` so it is not read as an `all` TOML group —
             // a helper group left out of that meta is absent here too.
-            if group_indices.len() > 1 {
+            if args.ensemble.is_some() {
+                // The reference fit, and the same fit with the added columns.
+                // Both are slices of the one Gram, so measuring an addition costs
+                // one extra column in the streaming pass, not a second run.
+                let ref_idxs: Vec<usize> = (0..ref_m).collect();
+                let w = solve_group(&a, &b, dim, &ref_idxs, args.lambda);
+                fits.push((ENSEMBLE_ROW.to_string(), ref_idxs, w));
+                if m > ref_m {
+                    let all_idxs: Vec<usize> = (0..m).collect();
+                    let w = solve_group(&a, &b, dim, &all_idxs, args.lambda);
+                    fits.push((format!("{} + {}", ENSEMBLE_ROW, display[ref_m..].join(", ")),
+                               all_idxs, w));
+                }
+            } else if group_indices.len() > 1 {
                 let all_idxs: Vec<usize> = (0..m).collect();
                 let w = solve_group(&a, &b, dim, &all_idxs, args.lambda);
                 fits.push(("all*".to_string(), all_idxs, w));
@@ -1398,26 +1728,58 @@ fn main() -> ExitCode {
 
     // Second pass on probe: compute clipped RMSE per fit (legacy single-split
     // only; a cross-split blend has no shared probe, so this is skipped).
-    let (probe_sse, probe_n) = if !need_probe {
-        (vec![0.0f64; scored.len()], 0usize)
+    let (probe_sse, probe_n, _, _) = if !need_probe {
+        (vec![0.0f64; scored.len()], 0usize, Vec::new(), 0usize)
     } else {
         compute_clipped_sse(
             &mut readers, &clip,
             args.in_clip_min as f32, args.in_clip_max as f32, args.out_clip_min, args.out_clip_max,
             probe_y_i8.as_ref().expect("probe labels loaded in legacy mode"),
-            None, scored, m, "probe",
+            None, false, scored, m, "probe",
         )
     };
 
     // Third pass on qual: compute clipped quiz RMSE per fit (mask via is_test).
     // y_q_i8 / is_test_q / qual_readers were loaded above; reuse them (the
     // readers re-seek on every block, so quiz-blend's Gram pass left them usable).
-    let (quiz_sse, quiz_n) = compute_clipped_sse(
-        &mut qual_readers, &clip,
-        args.in_clip_min as f32, args.in_clip_max as f32, args.out_clip_min, args.out_clip_max,
-        &y_q_i8, Some(&is_test_q), scored, m, "quiz",
-    );
+    // The ensemble report also splits off the qual rows the quiz mask excludes:
+    // the weights are fitted against quiz feedback, so that half is held out.
+    let (quiz_sse, quiz_n, test_sse, test_n) = if have_qual {
+        compute_clipped_sse(
+            &mut qual_readers, &clip,
+            args.in_clip_min as f32, args.in_clip_max as f32, args.out_clip_min, args.out_clip_max,
+            &y_q_i8, Some(&is_test_q), args.ensemble.is_some(), scored, m, "quiz",
+        )
+    } else {
+        (vec![0.0f64; scored.len()], 0usize, vec![0.0f64; scored.len()], 0usize)
+    };
 
+    // Residual correlation of each added column with the reference blend, over
+    // the rows the delta was measured on. This is the triage number: a column
+    // pays when it is wrong in different places, not when it is merely accurate.
+    let extra_corr: Vec<f64> = match (&args.ensemble, fits.iter().position(|(n, _, _)| n == ENSEMBLE_ROW)) {
+        (Some(_), Some(ens_i)) if m > ref_m => {
+            let fit = &fits[ens_i];
+            (ref_m..m).map(|j| {
+                if need_probe {
+                    residual_correlation(
+                        &mut readers, &clip, args.in_clip_min as f32, args.in_clip_max as f32,
+                        args.out_clip_min, args.out_clip_max,
+                        probe_y_i8.as_ref().expect("probe labels"), None, fit, j, m,
+                    )
+                } else {
+                    residual_correlation(
+                        &mut qual_readers, &clip, args.in_clip_min as f32, args.in_clip_max as f32,
+                        args.out_clip_min, args.out_clip_max,
+                        &y_q_i8, Some(&is_test_q), fit, j, m,
+                    )
+                }
+            }).collect()
+        }
+        _ => Vec::new(),
+    };
+
+    let mut check_failed = false;
     println!();
     match &fwd_steps {
         Some(steps) if fwd_quiz => {
@@ -1510,6 +1872,128 @@ fn main() -> ExitCode {
                 println!("Best by {}-fold CV: step {} ({:.6})", k_folds, best.0, best.1);
             }
         }
+        None if args.ensemble.is_some() => {
+            let def = args.ensemble.as_ref().expect("ensemble mode");
+            let val = |sse: &[f64], n: usize, i: usize| -> Option<f64> {
+                if n == 0 { None } else { Some((sse[i] / n as f64).sqrt()) }
+            };
+            let fmt = |v: Option<f64>| -> String {
+                v.map_or_else(|| "-".to_string(), |x| format!("{:.6}", x))
+            };
+            let w = fits.iter().map(|(n, _, _)| n.len()).max().unwrap_or(20).clamp(20, 56);
+
+            if need_probe {
+                println!("{:<w$} {:>7} {:>10} {:>10} {:>10} {:>10} {:>11}",
+                    "row", "models", "probe", "quiz", "test", "expected", "delta", w = w);
+            } else {
+                println!("{:<w$} {:>7} {:>10} {:>10} {:>10} {:>11}",
+                    "row", "models", "quiz", "test", "expected", "delta", w = w);
+            }
+
+            let mut checked = 0usize;
+            let mut details: Vec<String> = Vec::new();
+            let mut measured: Vec<(String, Option<f64>, Option<f64>)> = Vec::new();
+            let ens_primary = fits.iter().position(|(n, _, _)| n == ENSEMBLE_ROW)
+                .and_then(|i| if need_probe { val(&probe_sse, probe_n, i) } else { val(&quiz_sse, quiz_n, i) });
+
+            for (i, (name, gidxs, _w)) in fits.iter().enumerate() {
+                let p = val(&probe_sse, probe_n, i);
+                let q = val(&quiz_sse, quiz_n, i);
+                let t = val(&test_sse, test_n, i);
+                let primary = if need_probe { p } else { q };
+                measured.push((name.clone(), p, q));
+
+                // Every metric the file pins down is checked; the column shows
+                // the one the row is fitted on, which is the one that moves.
+                let exp = def.expected.get(name);
+                let mut status = String::new();
+                let mut delta: Option<f64> = None;
+                match exp {
+                    Some(e) => {
+                        let pairs = [("probe", p, e.probe), ("quiz", q, e.quiz)];
+                        let mut row_ok = true;
+                        let mut any = false;
+                        for (label, got, want) in pairs {
+                            if let (Some(g), Some(wv)) = (got, want) {
+                                any = true;
+                                if (g - wv).abs() > def.tolerance {
+                                    row_ok = false;
+                                    details.push(format!(
+                                        "  {}: {} {:.6} vs expected {:.6} ({:+.1e})",
+                                        name, label, g, wv, g - wv));
+                                }
+                            }
+                        }
+                        if any {
+                            checked += 1;
+                            status = if row_ok { "OK".to_string() } else { "FAIL".to_string() };
+                            if !row_ok { check_failed = true; }
+                        }
+                        let want_primary = if need_probe { e.probe } else { e.quiz };
+                        delta = match (primary, want_primary) {
+                            (Some(g), Some(wv)) => Some(g - wv),
+                            _ => None,
+                        };
+                    }
+                    // The added-column row has nothing to reproduce: its number
+                    // is the gain over the reference in the same run.
+                    None if name.starts_with(ENSEMBLE_ROW) => {
+                        delta = match (primary, ens_primary) {
+                            (Some(g), Some(r)) => Some(g - r),
+                            _ => None,
+                        };
+                    }
+                    None => {}
+                }
+                let d = delta.map_or_else(|| "-".to_string(), |x| format!("{:+.2e}", x));
+                let e_str = exp.and_then(|e| if need_probe { e.probe } else { e.quiz });
+                if need_probe {
+                    println!("{:<w$} {:>7} {:>10} {:>10} {:>10} {:>10} {:>11}  {}",
+                        name, gidxs.len(), fmt(p), fmt(q), fmt(t), fmt(e_str), d, status, w = w);
+                } else {
+                    println!("{:<w$} {:>7} {:>10} {:>10} {:>10} {:>11}  {}",
+                        name, gidxs.len(), fmt(q), fmt(t), fmt(e_str), d, status, w = w);
+                }
+            }
+
+            if !details.is_empty() {
+                println!();
+                println!("Rows outside the {:.0e} tolerance:", def.tolerance);
+                for d in &details { println!("{}", d); }
+            }
+
+            if m > ref_m {
+                println!();
+                println!("Added column(s), against the same reference in the same fit:");
+                for (k, j) in (ref_m..m).enumerate() {
+                    let corr = extra_corr.get(k).copied();
+                    println!("  {:<40} residual corr {}", display[j],
+                        corr.map_or_else(|| "-".to_string(), |c| format!("{:.4}", c)));
+                }
+                for line in &args.scale {
+                    println!("  scale: {}", line);
+                }
+                if !have_qual {
+                    println!("  (probe only: no qual predictions, so the quiz number is unmeasured)");
+                }
+            }
+
+            println!();
+            if checked == 0 {
+                println!("Reference check: no expected values in {} for '{}'", ENSEMBLES_TOML, def.name);
+            } else if check_failed {
+                println!("Reference check: FAIL ({} of {} rows outside {:.0e})",
+                    details.len(), checked, def.tolerance);
+                println!("  A single group means those columns changed; many means a stale");
+                println!("  download. ./target/release/preds pull --dry-run re-checks every md5.");
+            } else {
+                println!("Reference check: PASS ({} rows within {:.0e})", checked, def.tolerance);
+            }
+
+            if args.update_expected {
+                update_expected(&def.name, &measured, need_probe, have_qual);
+            }
+        }
         None if args.cross_split => {
             // Cross-split: only the quiz RMSE is meaningful (no shared probe).
             println!("{:<24} {:>8} {:>14}", "source/group", "models", "quiz_rmse");
@@ -1530,6 +2014,7 @@ fn main() -> ExitCode {
         }
     }
 
+    if check_failed { return ExitCode::from(1); }
     ExitCode::SUCCESS
 }
 
@@ -1548,15 +2033,21 @@ fn compute_clipped_sse(
     out_clip_max: f64,
     y: &Array1<i8>,
     mask: Option<&Array1<i8>>,
+    split_mask: bool,
     fits: &[(String, Vec<usize>, DVector<f64>)],
     m: usize,
     label: &str,
-) -> (Vec<f64>, usize) {
+) -> (Vec<f64>, usize, Vec<f64>, usize) {
     let n = y.len();
     let n_fits = fits.len();
     let dim = m + 1;
     let mut sse = vec![0.0f64; n_fits];
     let mut count = 0usize;
+    // The masked-out rows, accumulated separately when `split_mask` is set and
+    // skipped outright otherwise (the extra arithmetic is wasted on a run that
+    // never reports them).
+    let mut sse_held = vec![0.0f64; n_fits];
+    let mut count_held = 0usize;
 
     // Persistent f32 prediction buffer (column-major dim × ROW_BLOCK) + bias row.
     let mut zt_f32 = vec![0.0f32; ROW_BLOCK * dim];
@@ -1576,26 +2067,24 @@ fn compute_clipped_sse(
         for (fi, (_, gidxs, w)) in fits.iter().enumerate() {
             let bias = w[gidxs.len()];
             let mut acc = 0.0f64;
+            let mut acc_held = 0.0f64;
             for k in 0..blen {
-                if let Some(mk) = mask {
-                    if mk[start + k] != 0 { continue; }
-                }
+                let held = mask.is_some_and(|mk| mk[start + k] != 0);
+                if held && !split_mask { continue; }
                 let mut yhat = bias;
                 for (jj, &gi) in gidxs.iter().enumerate() {
                     yhat += w[jj] * zt_f32[gi + k * dim] as f64;
                 }
                 let yh = yhat.clamp(out_clip_min, out_clip_max);
                 let err = yh - y[start + k] as f64;
-                acc += err * err;
+                if held { acc_held += err * err; } else { acc += err * err; }
             }
             sse[fi] += acc;
+            sse_held[fi] += acc_held;
         }
 
         for k in 0..blen {
-            if let Some(mk) = mask {
-                if mk[start + k] != 0 { continue; }
-            }
-            count += 1;
+            if mask.is_some_and(|mk| mk[start + k] != 0) { count_held += 1; } else { count += 1; }
         }
 
         start += blen;
@@ -1604,5 +2093,117 @@ fn compute_clipped_sse(
     }
     eprintln!();
 
-    (sse, count)
+    (sse, count, sse_held, if split_mask { count_held } else { 0 })
+}
+
+/// Pearson correlation between an added column's residuals and the reference
+/// blend's, over the scored rows. The project's rule of thumb is that a column
+/// pays when it is wrong in different places at comparable accuracy, so this
+/// number triages a new model long before a full blend does.
+#[allow(clippy::too_many_arguments)]
+fn residual_correlation(
+    readers: &mut [NpyF32Reader],
+    clip: &[bool],
+    in_clip_min: f32,
+    in_clip_max: f32,
+    out_clip_min: f64,
+    out_clip_max: f64,
+    y: &Array1<i8>,
+    mask: Option<&Array1<i8>>,
+    fit: &(String, Vec<usize>, DVector<f64>),
+    col: usize,
+    m: usize,
+) -> f64 {
+    let n = y.len();
+    let dim = m + 1;
+    let (_, gidxs, w) = fit;
+    let bias = w[gidxs.len()];
+    let (mut cnt, mut sx, mut sy, mut sxx, mut syy, mut sxy) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+
+    let mut zt_f32 = vec![0.0f32; ROW_BLOCK * dim];
+    for k in 0..ROW_BLOCK {
+        zt_f32[m + k * dim] = 1.0;
+    }
+    let mut col_bufs: Vec<Vec<f32>> = (0..m).map(|_| vec![0.0f32; ROW_BLOCK]).collect();
+
+    let n_blocks = n.div_ceil(ROW_BLOCK);
+    let mut start = 0;
+    let mut bidx = 0;
+    while start < n {
+        let blen = (n - start).min(ROW_BLOCK);
+        load_block_parallel(readers, clip, in_clip_min, in_clip_max, &mut col_bufs, &mut zt_f32, start, blen, dim);
+        for k in 0..blen {
+            if mask.is_some_and(|mk| mk[start + k] != 0) { continue; }
+            let mut yhat = bias;
+            for (jj, &gi) in gidxs.iter().enumerate() {
+                yhat += w[jj] * zt_f32[gi + k * dim] as f64;
+            }
+            let yv = y[start + k] as f64;
+            let x = yv - yhat.clamp(out_clip_min, out_clip_max);
+            let z = yv - zt_f32[col + k * dim] as f64;
+            cnt += 1.0;
+            sx += x;
+            sy += z;
+            sxx += x * x;
+            syy += z * z;
+            sxy += x * z;
+        }
+        start += blen;
+        bidx += 1;
+        eprint!("\r  corr block {}/{}", bidx, n_blocks);
+    }
+    eprintln!();
+
+    let cov = sxy - sx * sy / cnt;
+    let vx = sxx - sx * sx / cnt;
+    let vy = syy - sy * sy / cnt;
+    if vx <= 0.0 || vy <= 0.0 { return f64::NAN; }
+    cov / (vx * vy).sqrt()
+}
+
+/// Rewrite one ensemble's `expected` table with the numbers this run measured.
+/// Comments and every other table are preserved, so the commit diff shows
+/// exactly how far the reference moved and nothing else.
+fn update_expected(
+    name: &str,
+    rows: &[(String, Option<f64>, Option<f64>)],
+    keep_probe: bool,
+    keep_quiz: bool,
+) {
+    let text = std::fs::read_to_string(ENSEMBLES_TOML)
+        .unwrap_or_else(|e| panic!("read {}: {}", ENSEMBLES_TOML, e));
+    let mut doc: toml_edit::DocumentMut = text
+        .parse()
+        .unwrap_or_else(|e| panic!("parse {}: {}", ENSEMBLES_TOML, e));
+    let arr = doc
+        .get_mut("ensemble")
+        .and_then(|i| i.as_array_of_tables_mut())
+        .unwrap_or_else(|| panic!("{}: no [[ensemble]] tables", ENSEMBLES_TOML));
+    let Some(t) = arr.iter_mut().find(|t| t.get("name").and_then(|v| v.as_str()) == Some(name))
+    else {
+        panic!("{}: no ensemble '{}'", ENSEMBLES_TOML, name);
+    };
+
+    let mut tbl = toml_edit::Table::new();
+    let mut n = 0usize;
+    for (row, p, q) in rows {
+        // The added-column row is a measurement of something that is not in the
+        // ensemble, so there is nothing to pin down.
+        if row.contains(" + ") { continue; }
+        // Written as text and parsed back, so the numbers keep the six decimals
+        // the hand-written rows use and an update diff shows only what moved.
+        let mut parts: Vec<String> = Vec::new();
+        if let (true, Some(v)) = (keep_probe, p) { parts.push(format!("probe = {:.6}", v)); }
+        if let (true, Some(v)) = (keep_quiz, q) { parts.push(format!("quiz = {:.6}", v)); }
+        if parts.is_empty() { continue; }
+        let value: toml_edit::Value = format!("{{ {} }}", parts.join(", "))
+            .parse()
+            .expect("inline table built here is valid TOML");
+        tbl.insert(row, toml_edit::Item::Value(value));
+        n += 1;
+    }
+    t.insert("expected", toml_edit::Item::Table(tbl));
+    std::fs::write(ENSEMBLES_TOML, doc.to_string())
+        .unwrap_or_else(|e| panic!("write {}: {}", ENSEMBLES_TOML, e));
+    println!("Updated {} rows of [expected] for '{}' in {}", n, name, ENSEMBLES_TOML);
 }

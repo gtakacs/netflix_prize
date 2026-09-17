@@ -56,6 +56,59 @@ directly into the `.npy` arrays the rest of the pipeline consumes:
 See [Pipeline](#pipeline) below for the available flags, the two manifests,
 and how job dependencies are resolved.
 
+## Predictions without training
+
+Training the ~300 base predictors takes weeks of CPU time. They are published as
+a public store, so the interesting part, blending, can be tried straight away:
+
+```
+cargo build --release --bin preds
+./target/release/preds pull 'preds_*/*.qual.npy'   # 6.2 GB, the qual columns only
+./target/release/preds pull                        # everything, 8.9 GB
+```
+
+The qual columns alone are enough for the reference check below; the full pull
+adds the probe-set predictions, which is what measuring a new column needs.
+
+### Check that it reproduces
+
+`ensembles.toml` records the blends this project reports and the numbers they
+produce. One command runs a stored blend and compares it with its record:
+
+```
+cargo build --release --features blas --bin ridge
+./target/release/ridge --ensemble
+```
+
+```
+row                   models       quiz       test   expected       delta
+old/integrated            48   0.865765   0.866673   0.865765    +2.71e-7  OK
+...
+ensemble                 302   0.856716   0.857684   0.856716    -6.74e-8  OK
+
+Reference check: PASS (13 rows within 1e-5)
+```
+
+It takes about half a minute, exits non-zero if the numbers have drifted, and
+needs no dataset download: the qualifying-set labels ship with the repo
+(`data/qual_ratings/qual_ratings.csv.gz`), and the blend reads them directly
+when `data/qual/` has not been ingested. `--ensemble new` runs the single-split
+blend instead, which is fitted on the probe set and reports a probe number too.
+
+### Measure a column of your own
+
+The same command, with the column added:
+
+```
+./target/release/ridge --ensemble new -m preds_lab/lab-foo
+```
+
+It fits the reference and the reference-plus-your-column from one shared Gram
+matrix, so the measurement costs about as much as the check alone, and the
+check still runs: a gain is never read off a baseline that has silently moved.
+The output gives the delta and the residual correlation with the ensemble,
+alongside what deltas in this project are normally worth.
+
 ## Data
 
 You do not have to download anything by hand — the `download` and `ingest` jobs

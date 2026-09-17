@@ -1,0 +1,71 @@
+# Named reference ensembles: the blends this project reports, and the numbers a
+# complete prediction set reproduces.
+#
+#   ./target/release/ridge --ensemble                      # does the reference hold?
+#   ./target/release/ridge --ensemble -m preds_lab/lab-foo # what does my column add?
+#
+# The two questions share one run: the reference is the control condition of
+# every measurement, so a gain can never be read off a baseline that has
+# silently drifted. `--update-expected` writes the numbers below back after a
+# deliberate change to the groups.
+
+[[ensemble]]
+name        = "cross"
+default     = true
+description = "cross-split quiz blend, the headline number"
+lambda      = 1000
+tolerance   = 1e-5
+
+[[ensemble.source]]
+split  = "old"
+groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend", "fwlsblend"]
+models = ["fwls1x-s1"]
+
+[[ensemble.source]]
+split  = "new"
+groups = ["gold", "silver", "gbmblend2", "mlpblend2", "fwlsblend2"]
+
+[ensemble.expected]
+"old/integrated" = { quiz = 0.865765 }
+"old/rbm" = { quiz = 0.871184 }
+"old/other" = { quiz = 0.864390 }
+"old/gbmblend" = { quiz = 0.859885 }
+"old/mlpblend" = { quiz = 0.859103 }
+"old/fwlsblend" = { quiz = 0.858148 }
+"old/manual" = { quiz = 0.858076 }
+"new/gold" = { quiz = 0.861694 }
+"new/silver" = { quiz = 0.865118 }
+"new/gbmblend2" = { quiz = 0.860069 }
+"new/mlpblend2" = { quiz = 0.859214 }
+"new/fwlsblend2" = { quiz = 0.858014 }
+ensemble = { quiz = 0.856716 }
+
+# Single split, fitted on the probe labels: the cheap bench a new column is
+# measured on. It needs only the probex predictions, so an experiment can be
+# judged before it has run its fulltrain -> qual phase.
+[[ensemble]]
+name        = "new"
+description = "new split only, fitted on probex"
+lambda      = 1000
+tolerance   = 1e-5
+
+[[ensemble.source]]
+split  = "new"
+groups = ["gold", "silver", "gbmblend2", "mlpblend2", "fwlsblend2"]
+
+[ensemble.expected]
+gold = { probe = 0.860411, quiz = 0.861869 }
+silver = { probe = 0.863964, quiz = 0.865224 }
+gbmblend2 = { probe = 0.858300, quiz = 0.860105 }
+mlpblend2 = { probe = 0.857486, quiz = 0.859253 }
+fwlsblend2 = { probe = 0.856869, quiz = 0.858087 }
+ensemble = { probe = 0.856410, quiz = 0.858156 }
+
+# What a delta is worth, measured by dropping columns from the blend. Printed
+# next to a measured gain, because the numbers are smaller than they look.
+[scale]
+lines = [
+    "the strongest single column in the set is worth about -7e-6",
+    "the whole 25-model 'other' group is worth about -5e-6",
+    "the dnn family, the largest addition so far, was worth -6.1e-5",
+]
