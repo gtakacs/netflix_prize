@@ -42,16 +42,23 @@ The resulting executables land in `target/release/`.
 ### 3. Run computations
 
 Computations are orchestrated by the `run` binary, which reads a pipeline
-manifest and runs the requested job. The first two jobs prepare the data (see
-[Data](#data)): `download` fetches the raw archive, and `ingest` parses it
-directly into the `.npy` arrays the rest of the pipeline consumes:
+manifest and runs the requested job. From a fresh clone, one command prepares
+all the data (see [Data](#data)): it builds the three data binaries, fetches
+the archive, parses it into the `.npy` arrays the rest of the pipeline
+consumes, and derives the second split. Steps whose outputs already exist are
+skipped, so it is safe to re-run:
 
 ```
+./target/release/run --setup         # data/raw/ -> data/{train,probe,fulltrain,qual}/
+                                     #           -> data/{trainx,probex}/  (~3.3 GB)
 ./target/release/run -n              # list all jobs and their status
-./target/release/run -n download     # fetch the dataset archive into data/raw/
-./target/release/run -n ingest       # parse the archive into data/{train,...}/
 ./target/release/run -n tsvdx4-64    # train a single model
 ```
+
+The three steps are ordinary jobs and can also be run one at a time:
+`download` fetches the archive into `data/raw/`, `ingest` parses it, and
+`newsplit` (in `pipeline-new.toml` only) derives `trainx`/`probex` from
+`train`/`probe`.
 
 See [Pipeline](#pipeline) below for the available flags, the two manifests,
 and how job dependencies are resolved.
@@ -166,6 +173,7 @@ requested job:
 ./target/release/run -n              # list jobs (pipeline-new.toml)
 ./target/release/run -n JOB          # run JOB
 ./target/release/run -n -f JOB       # force re-run
+./target/release/run --setup         # download + ingest + newsplit in one go
 ./target/release/run -n -c -f        # delete preds/features files no
                                      # active job references
 ```

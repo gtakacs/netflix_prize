@@ -82,13 +82,19 @@ fn list_jobs(pipeline_path: &str, p: &Pipeline, resolved: &IndexMap<String, Reso
 }
 
 fn run_job(job_name: &str, resolved: &IndexMap<String, ResolvedJob>, force: bool) -> ExitCode {
+    ExitCode::from(run_one(job_name, resolved, force))
+}
+
+/// Run one job by name. Returns 0 when it ran or was skipped as DONE, and the
+/// job's own exit code otherwise, so callers can chain several jobs.
+fn run_one(job_name: &str, resolved: &IndexMap<String, ResolvedJob>, force: bool) -> u8 {
     let job = match resolved.get(job_name) {
         Some(s) => s,
         None => {
             eprintln!("error: unknown job '{}'", job_name);
             let names: Vec<&str> = resolved.keys().map(|s| s.as_str()).collect();
             eprintln!("available: {}", names.join(", "));
-            return ExitCode::from(2);
+            return 2;
         }
     };
     match status_of(job, resolved) {
@@ -108,30 +114,114 @@ fn run_job(job_name: &str, resolved: &IndexMap<String, ResolvedJob>, force: bool
                     eprintln!("    - {}", f);
                 }
             }
-            return ExitCode::from(1);
+            return 1;
         }
         Status::Done if !force => {
             println!("Job '{}' is DONE — skipping. Use -f to force re-run.", job_name);
-            return ExitCode::SUCCESS;
+            return 0;
         }
         _ => {}
     }
     println!("Running '{}': {}", job_name, job.cmd);
     match Command::new("sh").arg("-c").arg(&job.cmd).status() {
-        Ok(es) if es.success() => ExitCode::SUCCESS,
+        Ok(es) if es.success() => 0,
         Ok(es) => {
             eprintln!("job exited with {}", es);
-            ExitCode::from(es.code().unwrap_or(1) as u8)
+            es.code().unwrap_or(1) as u8
         }
         Err(e) => {
             eprintln!("failed to spawn shell: {}", e);
-            ExitCode::from(127)
+            127
         }
     }
 }
 
+const NEW_PIPELINE: &str = "pipeline-new.toml";
+
+/// Total size of a directory tree, for the closing summary.
+fn dir_size(path: &str) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else { return 0 };
+    entries.flatten().map(|e| match e.file_type() {
+        Ok(t) if t.is_dir() => dir_size(&e.path().to_string_lossy()),
+        _ => e.metadata().map(|m| m.len()).unwrap_or(0),
+    }).sum()
+}
+
+fn human(bytes: u64) -> String {
+    match bytes {
+        b if b >= 1 << 30 => format!("{:.1} GB", b as f64 / (1u64 << 30) as f64),
+        b if b >= 1 << 20 => format!("{} MB", b >> 20),
+        b => format!("{} B", b),
+    }
+}
+
+/// Everything a fresh clone needs before any model can run: fetch the archive,
+/// parse it into the npy datasets, then derive the second split. The three
+/// jobs live in two manifests, so they are run by name rather than by walking
+/// one graph. Each is skipped when its outputs are already there.
+fn cmd_setup(pipeline_path: &str, force: bool) -> ExitCode {
+    let build = "cargo build --release --bin download --bin ingest --bin newsplit";
+
+    println!("Setup: dataset -> npy arrays -> both splits");
+    println!();
+    println!("  build      {}", build);
+    println!("  download   data/raw/  (697 MB archive, md5 verified, resumable)");
+    println!("  ingest     data/{{train,probe,fulltrain,qual}}/   [{}]", pipeline_path);
+    println!("  newsplit   data/{{trainx,probex}}/                [{}]", NEW_PIPELINE);
+    println!();
+    println!("About 3.3 GB on disk when finished. Steps whose outputs exist are skipped.");
+    println!();
+
+    println!("Running: {}", build);
+    match Command::new("sh").arg("-c").arg(build).status() {
+        Ok(es) if es.success() => {}
+        Ok(es) => {
+            eprintln!("build exited with {}", es);
+            return ExitCode::from(es.code().unwrap_or(1) as u8);
+        }
+        Err(e) => {
+            eprintln!("failed to spawn shell: {}", e);
+            return ExitCode::from(127);
+        }
+    }
+
+    // download and ingest come from the selected manifest, newsplit only exists
+    // in the new-split one.
+    for (path, jobs) in [(pipeline_path, &["download", "ingest"][..]), (NEW_PIPELINE, &["newsplit"][..])] {
+        let pipeline = match Pipeline::load(path) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("{}", e);
+                return ExitCode::from(2);
+            }
+        };
+        let resolved = resolve_pipeline(&pipeline);
+        for job in jobs {
+            println!();
+            let code = run_one(job, &resolved, force);
+            if code != 0 {
+                return ExitCode::from(code);
+            }
+        }
+    }
+
+    println!();
+    println!("Datasets ready:");
+    for d in ["train", "probe", "fulltrain", "qual", "trainx", "probex"] {
+        let path = format!("data/{}", d);
+        let size = dir_size(&path);
+        if size > 0 {
+            println!("  {:15} {:>9}", path, human(size));
+        }
+    }
+    println!();
+    println!("Next: ./target/release/run -n            # list the jobs and their status");
+    println!("      ./target/release/preds pull        # the published predictions, no training needed");
+    ExitCode::SUCCESS
+}
+
 fn print_help() {
-    println!("Usage: run [-p FILE | -n] [-l] [-c] [-f] [JOB]");
+    println!("Usage: run [-p FILE | -n] [-l] [-c] [-f] [--setup] [JOB]");
     println!();
     println!("  -p FILE, --pipeline FILE   pipeline manifest (default: {})", DEFAULT_PIPELINE);
     println!("  -n, --new                  shortcut for -p pipeline-new.toml");
@@ -139,6 +229,8 @@ fn print_help() {
     println!("  -c, --clean                list (or delete with -f) files in preds dir");
     println!("                             not referenced by any active job");
     println!("  -f, --force                re-run JOB even if DONE; or actually delete with --clean");
+    println!("      --setup                fetch the dataset, parse it into npy arrays and");
+    println!("                             derive both splits (download, ingest, newsplit)");
     println!("  -h, --help                 show this help");
     println!("  JOB                        run the named job");
 }
@@ -208,6 +300,7 @@ fn main() -> ExitCode {
     let mut force_list = false;
     let mut force = false;
     let mut clean_mode = false;
+    let mut setup_mode = false;
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -217,6 +310,7 @@ fn main() -> ExitCode {
             "-l" | "--list" => { force_list = true; i += 1; }
             "-f" | "--force" => { force = true; i += 1; }
             "-c" | "--clean" => { clean_mode = true; i += 1; }
+            "--setup" => { setup_mode = true; i += 1; }
             "-n" | "--new" => { pipeline_path = "pipeline-new.toml".to_string(); i += 1; }
             "-p" | "--pipeline" => {
                 if i + 1 >= args.len() {
@@ -240,6 +334,13 @@ fn main() -> ExitCode {
                 i += 1;
             }
         }
+    }
+
+    if setup_mode {
+        if job_arg.is_some() {
+            eprintln!("warning: JOB argument ignored with --setup");
+        }
+        return cmd_setup(&pipeline_path, force);
     }
 
     let pipeline = match Pipeline::load(&pipeline_path) {
