@@ -1,10 +1,6 @@
 
 The goal of this project is to revisit the Netflix Prize problem, solve it with modern tools, and surpass the previous best result achieved by the Grand Prize winners back in 2009.
 
-## Demo video
-
-[![Watch the video](assets/video-preview.jpg)](https://drive.google.com/file/d/1v7Nvz7EGfXDIBADgBS-sqfcoZ2ksCmEn/view?usp=sharing)
-
 ## Quickstart
 
 ### 1. Install Rust
