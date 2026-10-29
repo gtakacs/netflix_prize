@@ -66,12 +66,14 @@ a public store, so the interesting part, blending, can be tried straight away:
 
 ```
 cargo build --release --bin preds
-./target/release/preds pull 'preds_*/*.qual.npy'   # 6.2 GB, the qual columns only
-./target/release/preds pull                        # everything, 8.9 GB
+./target/release/preds pull --ensemble cross3      # 6.0 GB, what the reference check reads
+./target/release/preds pull                        # everything, 16.5 GB
 ```
 
-The qual columns alone are enough for the reference check below; the full pull
-adds the probe-set predictions, which is what measuring a new column needs.
+`--ensemble NAME` fetches exactly the columns a stored blend of `ensembles.toml`
+reads (the qual side; a single-split blend such as `new` also its probe side);
+the full pull adds the probe-set predictions of every split, which is what
+measuring a new column needs.
 
 ### Check that it reproduces
 
@@ -87,16 +89,18 @@ cargo build --release --features blas --bin ridge
 row                   models       quiz       test   expected       delta
 old/integrated            48   0.865765   0.866673   0.865765    +2.71e-7  OK
 ...
-ensemble                 302   0.856716   0.857684   0.856716    -6.74e-8  OK
+ensemble                 522   0.856068   0.857004   0.856068    -1.90e-7  OK
 
-Reference check: PASS (13 rows within 1e-5)
+Reference check: PASS (25 rows within 1e-5)
 ```
 
 It takes about half a minute, exits non-zero if the numbers have drifted, and
 needs no dataset download: the qualifying-set labels ship with the repo
 (`data/qual_ratings/qual_ratings.csv.gz`), and the blend reads them directly
-when `data/qual/` has not been ingested. `--ensemble new` runs the single-split
-blend instead, which is fitted on the probe set and reports a probe number too.
+when `data/qual/` has not been ingested. The default blend, `cross3`, combines
+the three splits (old, new and split_3, `pipeline-3.toml`); `--ensemble cross`
+is the earlier two-split one, and `--ensemble new` runs the single-split blend,
+which is fitted on the probe set and reports a probe number too.
 
 ### Measure a column of your own
 

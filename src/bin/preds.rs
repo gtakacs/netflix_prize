@@ -3,6 +3,7 @@
 //! directories and that bucket in sync. `index` writes the md5 index that
 //! `pull` verifies every downloaded file against.
 
+use netflix_prize::blend::{flatten_groups, load_models_toml, select_groups};
 use netflix_prize::pipeline::{Pipeline, referenced_files, resolve_pipeline};
 use netflix_prize::remote::{self, BUCKET, FileEntry, INDEX_FILE, LocalState};
 use std::collections::{BTreeSet, HashMap};
@@ -10,20 +11,26 @@ use std::path::Path;
 use std::process::ExitCode;
 
 const DEFAULT_JOBS: usize = 8;
-/// Both manifests, because the store spans both splits.
-const DEFAULT_MANIFESTS: [&str; 2] = ["pipeline-old.toml", "pipeline-new.toml"];
+/// Every split's manifest, because the store spans all of them (and `prune`
+/// keeps only what these reference).
+const DEFAULT_MANIFESTS: [&str; 3] = ["pipeline-old.toml", "pipeline-new.toml", "pipeline-3.toml"];
+/// Where `ridge --ensemble` reads its stored blends from.
+const ENSEMBLES_TOML: &str = "ensembles.toml";
 /// Uploads go through one `hf` process each, so stay gentler than with GETs.
 const DEFAULT_UPLOAD_JOBS: usize = 4;
 
 fn print_help() {
     println!("Usage: preds [OPTIONS] index");
-    println!("       preds [OPTIONS] pull [PATTERN...]");
+    println!("       preds [OPTIONS] pull [PATTERN...] [--ensemble NAME]");
     println!("       preds [OPTIONS] push");
     println!("       preds [OPTIONS] prune --yes");
     println!();
     println!("  index                      write the md5 index of the bucket's contents");
     println!("  pull [PATTERN...]          download the files an index lists, verifying each");
     println!("                             md5; PATTERN globs the path ('*' matches anything)");
+    println!("  --ensemble NAME            pull: (also) the files the stored blend NAME of {ENSEMBLES_TOML}");
+    println!("                             reads, e.g. cross3: each column's qual predictions,");
+    println!("                             and its probe ones for a single-split ensemble");
     println!("  push                       upload what the manifests reference, then the index");
     println!("                             (needs 'hf auth login'; never deletes)");
     println!("  prune                      delete bucket objects outside that set, but only");
@@ -172,10 +179,65 @@ fn cmd_index(bucket: &str, out: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The files `ridge --ensemble NAME` reads: every column of the ensemble's
+/// sources (groups of `models-<split>.toml` plus its manual `models`, resolved
+/// as ridge resolves them) on the split's qual set, and on its probe set too
+/// when there is a single source (such an ensemble fits on the probe labels).
+fn ensemble_files(name: &str) -> Result<BTreeSet<String>, String> {
+    #[derive(serde::Deserialize)]
+    struct Source {
+        split: String,
+        #[serde(default)]
+        groups: Vec<String>,
+        #[serde(default)]
+        models: Vec<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Ensemble {
+        name: String,
+        #[serde(default)]
+        source: Vec<Source>,
+    }
+    #[derive(serde::Deserialize)]
+    struct File {
+        #[serde(default)]
+        ensemble: Vec<Ensemble>,
+    }
+    let text = std::fs::read_to_string(ENSEMBLES_TOML).map_err(|e| format!("read {ENSEMBLES_TOML}: {e}"))?;
+    let file: File = toml::from_str(&text).map_err(|e| format!("parse {ENSEMBLES_TOML}: {e}"))?;
+    let Some(ens) = file.ensemble.iter().find(|e| e.name == name) else {
+        let names: Vec<&str> = file.ensemble.iter().map(|e| e.name.as_str()).collect();
+        return Err(format!("no ensemble '{name}' in {ENSEMBLES_TOML} (have: {})", names.join(", ")));
+    };
+    let mut set = BTreeSet::new();
+    for src in &ens.source {
+        let manifest = format!("pipeline-{}.toml", src.split);
+        let p = Pipeline::load(&manifest)?;
+        let get = |k: &str| p.split.get(k).cloned().ok_or_else(|| format!("{manifest}: [split].{k} is missing"));
+        let preds_dir = get("preds")?;
+        let mut sets = vec![get("fulltrain_pr")?];
+        if ens.source.len() == 1 {
+            sets.push(get("pr")?);
+        }
+        let mut groups = select_groups(&load_models_toml(&format!("models-{}.toml", src.split)), &src.groups);
+        if !src.models.is_empty() {
+            groups.insert("manual".to_string(), src.models.clone());
+        }
+        for col in flatten_groups(&groups, &[]).names {
+            for ds in &sets {
+                // a name with a '/' is a path of its own, as in ridge
+                set.insert(if col.contains('/') { format!("{col}.{ds}.npy") } else { format!("{preds_dir}/{col}.{ds}.npy") });
+            }
+        }
+    }
+    Ok(set)
+}
+
 fn cmd_pull(
     bucket: &str,
     index_path: Option<&str>,
     patterns: &[String],
+    ensemble: Option<&str>,
     dry_run: bool,
     quick: bool,
     jobs: usize,
@@ -198,13 +260,29 @@ fn cmd_pull(
         index.meta.generated,
     );
 
-    let selected: Vec<FileEntry> = if patterns.is_empty() {
+    let wanted = match ensemble {
+        Some(name) => {
+            let set = ensemble_files(name)?;
+            let indexed: BTreeSet<&str> = index.file.iter().map(|e| e.path.as_str()).collect();
+            let absent: Vec<&String> = set.iter().filter(|f| !indexed.contains(f.as_str())).collect();
+            if !absent.is_empty() {
+                let shown = absent.iter().take(10).map(|s| s.as_str()).collect::<Vec<_>>().join("\n  ");
+                return Err(format!("ensemble '{name}' reads {} file(s) the index does not list:\n  {shown}",
+                                   absent.len()));
+            }
+            println!("Ensemble {}: {} file(s)", name, set.len());
+            Some(set)
+        }
+        None => None,
+    };
+    let selected: Vec<FileEntry> = if patterns.is_empty() && wanted.is_none() {
         index.file.clone()
     } else {
         index
             .file
             .iter()
-            .filter(|e| patterns.iter().any(|p| glob_match(p, &e.path)))
+            .filter(|e| patterns.iter().any(|p| glob_match(p, &e.path))
+                || wanted.as_ref().is_some_and(|w| w.contains(&e.path)))
             .cloned()
             .collect()
     };
@@ -468,6 +546,7 @@ fn main() -> ExitCode {
     let mut bucket = BUCKET.to_string();
     let mut out = INDEX_FILE.to_string();
     let mut index_path: Option<String> = None;
+    let mut ensemble: Option<String> = None;
     let mut dry_run = false;
     let mut quick = false;
     let mut assume_yes = false;
@@ -484,7 +563,7 @@ fn main() -> ExitCode {
             "-n" | "--dry-run" => { dry_run = true; i += 1; }
             "--quick" => { quick = true; i += 1; }
             "-y" | "--yes" => { assume_yes = true; i += 1; }
-            "--bucket" | "-o" | "--output" | "--index" | "-j" | "--jobs" | "-p" | "--pipeline" => {
+            "--bucket" | "-o" | "--output" | "--index" | "-j" | "--jobs" | "-p" | "--pipeline" | "--ensemble" => {
                 let Some(val) = args.get(i + 1).cloned() else {
                     eprintln!("error: {} requires an argument", flag);
                     return ExitCode::from(2);
@@ -493,6 +572,7 @@ fn main() -> ExitCode {
                     "--bucket" => bucket = val,
                     "-o" | "--output" => out = val,
                     "--index" => index_path = Some(val),
+                    "--ensemble" => ensemble = Some(val),
                     "-p" | "--pipeline" => manifests.push(val),
                     _ => match val.parse::<usize>() {
                         Ok(n) if n > 0 => jobs = Some(n),
@@ -529,6 +609,7 @@ fn main() -> ExitCode {
             &bucket,
             index_path.as_deref(),
             rest,
+            ensemble.as_deref(),
             dry_run,
             quick,
             jobs.unwrap_or(DEFAULT_JOBS),
