@@ -1,0 +1,226 @@
+# Base-predictor groups for SPLIT_3 (preds_3/), mirroring models-new.toml:
+# the 200 columns of the split_3 ridge blend of 2026-10-28 (probe_3 CV 0.864297,
+# quiz 0.862091): the first 200 of a forward selection from scratch over the union of
+# blend160u and the 100 best of 356 new lab columns (bipolar / NReLU / TruncExp / factored
+# RBMs, s3-tx300r, s3-bk1-120nb, user-kNN chains, ...), by model family; a chain or residual
+# model sits with the family of its root. `_epNN` are epoch snapshots (keep_epochs of the job).
+
+tx = [
+    "s3-tx100olm__dnn16p",
+    "s3-tx100olm__knn-m",
+    "s3-tx100r{_ep03}",
+    "s3-tx100r__attn32p__knn3",
+    "s3-tx100r__nlpp__kasym-p100-50",
+    "s3-tx100r__nlpp__knn-mr",
+    "s3-tx100r__nlpp__knn-w-k100",
+    "s3-tx100r__nlpp__knn3",
+    "s3-tx200dr{_ep02,_ep22}",
+    "s3-tx200h2",
+    "s3-tx200h2__nlpp__knn-m",
+    "s3-tx20b__knn3",
+    "s3-tx20d{_ep03}",
+    "s3-tx20d__dnn16p{_ep06}",
+    "s3-tx20f{_ep02,_ep05}",
+    "s3-tx20hr{_ep04}",
+    "s3-tx20s{_ep02,_ep05}",
+    "s3-tx20w__nlpp__knn-m",
+    "s3-tx300lm{,_ep05,_ep12}",
+    "s3-tx300lm__attn32p{,_ep01,_ep11}",
+    "s3-tx300lm__dnn16p{_ep04}",
+    "s3-tx300lm__nlpp__knn-c-g25-t10",
+    "s3-tx300lm__nlpp__knn-cr-g10-t0",
+    "s3-tx300lm__nlpp__knn-cr-g20-t0",
+    "s3-tx300lm__nlpp__knn-cr-g35-t0",
+    "s3-tx300lm__nlpp__knn-d",
+    "s3-tx300r{_ep05,_ep07,_ep10,_ep11,_ep12,_ep13,_ep14,_ep22,_ep23}",
+    "s3-tx300r__knn-w",
+    "s3-tx300r__nlpp",
+    "s3-tx5{_ep02,_ep10}",
+    "s3-tx50n__attn32p{,_ep01,_ep07,_ep12}",
+    "s3-tx50n__nlpp__kasym-s50-150",
+    "s3-tx50n__nlpp__knn-fp",
+    "s3-tx50n__nlpp__knn-s-g10-t0",
+    "s3-tx50n__nlpp__knn-s-g50-t5",
+    "s3-tx50n__nlpp__knn-w-k15",
+    "s3-tx5__nlpp__knn3",
+    "s3-tx60o{_ep02,_ep24}",
+    "s3-tx60o__attn32p{,_ep12}",
+    "s3-tx60o__dnn16p{_ep04}",
+    "s3-tx60o__knn3",
+    "s3-tx60o__nlpp",
+    "s3-tx60o__nlpp__kimp-c",
+    "s3-tx60o__nlpp__knn-m-k15",
+    "s3-tx60o__nlpp__knn-s",
+    "s3-txnsvd50{_ep07,_ep12,_ep13}",
+    "s3-txnsvd50y{_ep01,_ep03,_ep10,_ep18}",
+]
+
+rbm = [
+    "s3-rbm100p__knnf",
+    "s3-rbm10__knn-s",
+    "s3-rbm10__knn-w",
+    "s3-rbm200__asym-16__knn3",
+    "s3-rbm200__attn32p{,_ep01}",
+    "s3-rbm200__dnn16p{_ep02}",
+    "s3-rbm200__knnfd",
+    "s3-rbm200__nlpp",
+    "s3-rbm200__nlpp__knn-c",
+    "s3-rbm200__nlpp__knn-fp",
+    "s3-rbm200e{_ep01,_ep05,_ep10,_ep17}",
+    "s3-rbm200e__knn-fp",
+    "s3-rbm200e__nlpp__knn-w",
+    "s3-rbm200e__nlpp__uknn-rk",
+    "s3-rbm400__attn32p{_ep01}",
+    "s3-rbm400__attn32tp",
+    "s3-rbm400__nlpp__knn-cr-g10-t20",
+    "s3-rbm400__nlpp__knn-cr-g15-t10",
+    "s3-rbm400__nlpp__knn-cr-g25-t5",
+    "s3-rbm400__nlpp__knn-cr-g35-t0",
+    "s3-rbm400__nlpp__knn-w-k100",
+    "s3-rbm400__nlpp__uknn-rk",
+    "s3-rbm400p{,_ep03,_ep18,_ep23}",
+    "s3-rbm400p__knn-fp",
+    "s3-rbm400p__knn3",
+    "s3-rbm400pf{_ep01,_ep02,_ep03,_ep09,_ep10,_ep14}",
+    "s3-rbm400pf__knn-m",
+    "s3-rbm400pf__knn3",
+    "s3-rbm400pf__nlpp",
+    "s3-rbm400pf__nlpp__knn-m",
+    "s3-rbm400r{_ep06,_ep08,_ep22,_ep23,_ep24}",
+    "s3-rbm50b10{_ep09}",
+    "s3-rbm50b10__knn-m",
+    "s3-rbm50b10__nlpp__knn-m",
+    "s3-rbm50b10__nlpp__knn-w",
+    "s3-rbm50t{_ep06}",
+    "s3-rbm60r{_ep18}",
+    "s3-rbm800-l15{_ep01,_ep02}",
+    "s3-rbm800-l25__knn-fp",
+    "s3-rbm800-l25__knn-m",
+    "s3-rbm800-l25__knn-w",
+    "s3-rbm800-l25__knn3",
+    "s3-rbm800p{_ep01,_ep21}",
+    "s3-rbm800p__knn-fp",
+    "s3-rbm800p__nlpp",
+    "s3-rbm800p__nlpp__knn-w",
+]
+
+nn = [
+    "s3-attn16{_ep08}",
+    "s3-attn32{,_ep06}",
+    "s3-attn32__kimp-r",
+    "s3-attn32__kimp-rs",
+    "s3-attn32__nlpp__knn-s",
+    "s3-attn32__nlpp__knn-w",
+    "s3-attn32__nlpp__knn3",
+    "s3-attn64{_ep05}",
+    "s3-dnn16",
+    "s3-dnn16t",
+    "s3-dnn24{,_ep03}",
+    "s3-dnn24__knn-m",
+    "s3-dnn24__nlpp",
+    "s3-dnn24__nlpp__kimp-n",
+    "s3-dnn24__nlpp__kimp-r",
+    "s3-dnn24__nlpp__kimp-rs",
+    "s3-dnn24__nlpp__knn-s",
+    "s3-dnn24__nlpp__knns",
+    "s3-dnn32nm",
+    "s3-dnn32nm__knn3",
+    "s3-nade12s{,_ep01}",
+    "s3-nade12s__kimp-r",
+    "s3-nade12s__knn3",
+]
+
+other = [
+    "s3-als8",
+    "s3-als8__knn3",
+    "s3-als8__knn3b",
+    "s3-als8__knn3t",
+    "s3-bk1-120{_ep20,_ep28}",
+    "s3-bk1-120__knn-m",
+    "s3-bk1-120nb{_ep14,_ep21}",
+    "s3-bk1-120nb__knn-m",
+    "s3-bk1-120nb__nlpp__knn-m",
+    "s3-bk1-120nb__nlpp__knn-w",
+    "s3-bk1-60{,_ep01,_ep06}",
+    "s3-bk1-60n{_ep14}",
+    "s3-bk1-60n__knn-w",
+    "s3-bk3-20",
+    "s3-bk3-20__knns",
+    "s3-bknbrx-100w{_ep01}",
+    "s3-bknbrx-200t__knn-s",
+    "s3-bknbrx-30d{_ep15}",
+    "s3-integ40-pyuddf",
+    "s3-integ80-pyuddf",
+    "s3-mf60__nlpp",
+    "s3-mf60__nlpp__knn-s",
+    "s3-mfrbmx-50w{_ep08,_ep11}",
+    "s3-mfrbmx-60h{_ep06,_ep08}",
+    "s3-mfrbmx-60h__knn-s",
+    "s3-nsvd20-b",
+    "s3-nsvd20-b__knn-m",
+    "s3-nsvd20-b__nlpp",
+    "s3-nsvd20-b__nlpp__knn-c",
+    "s3-nsvd20-b__nlpp__knn-s",
+    "s3-nsvd20-b__nlpp__knn3",
+]
+
+# Second-level blends (pipeline-3.toml jobs), by round: part 1 = round 1 (the
+# inputs of fwls2x), part 2 = round 2 (more seeds / variants), part 3 = round 3
+# (2026-10-29: K-fold blends, --cv std --folds 4 for gbm / mlp, --folds 4/8/16 for
+# fwls). `gbmblend`, `mlpblend` and `fwlsblend` in [meta] are the unions of the
+# parts. The fwls jobs read the gbm / mlp blends as inputs by part (part 1-2), so
+# a new part does not change their inputs.
+gbmblend_part1 = [
+    "gbr2x-s1",
+    "gbc2x-s1",
+]
+
+gbmblend_part2 = [
+    "gbr4x-s1",
+]
+
+gbmblend_part3 = [
+    "gbc2k4-s1",
+]
+
+mlpblend_part1 = [
+    "mlpr2x-s1",
+    "mlpc3x-s1",
+]
+
+mlpblend_part2 = [
+    "mlpr2o-s2",
+    "mlpr2o-s3",
+    "mlpr2o-s4",
+    "mlpc3o-s2",
+    "mlpc3o-s3",
+    "mlpr3x-s1",
+]
+
+mlpblend_part3 = [
+    "mlpr3k4-s1",
+    "mlpr3k4-s2",
+    "mlpr3vk4-s1",
+    "mlpr3vk4-s3",
+]
+
+# fwls blends that go into the ensembles: fwls2xa reads every part-1/2 gbm / mlp
+# blend (fwls2x, the round-1-only variant, stays a pipeline job but is not used);
+# part 2 = the round-3 K-fold fwls.
+fwlsblend_part1 = [
+    "fwls2xa-s1",
+]
+
+fwlsblend_part2 = [
+    "fwlsb57k8-s1",
+    "fwls15k4-s1",
+    "fwls33k16-s2",
+]
+
+# Meta-groups: named unions of group (or other meta) names,
+# usable only via -g/--groups.
+[meta]
+blend200 = ["tx", "rbm", "nn", "other"]
+gbmblend = ["gbmblend_part1", "gbmblend_part2", "gbmblend_part3"]
+mlpblend = ["mlpblend_part1", "mlpblend_part2", "mlpblend_part3"]
+fwlsblend = ["fwlsblend_part1", "fwlsblend_part2"]

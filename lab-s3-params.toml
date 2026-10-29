@@ -1,0 +1,1290 @@
+# split_3 base predictors that paid in the probe_3 ridge blend (lambda 1000),
+# with the exact configuration they were trained with, so each can become a
+# pipeline job later. Every entry was run as
+#
+#   <env> ./target/release/<bin> <name> -p pipeline-3.toml --final
+#
+# (preds_lab/s3run.sh wraps that and logs it to preds_lab/s3-runs.log; the
+# full Debug-printed config is the first lines of preds_lab/<name>.out).
+# Chains name their base in the model name: `<base>__<stage>`, target
+# `W*<base>` with W = 1.0 unless given. Unlisted knobs are the binary defaults.
+#
+# `bin` is the `s3` dispatcher with its subcommand ("s3 tx", "s3 chain", ...; until
+# 2026-10-28 these were the binaries lab-s3-tx, lab-s3-chain, ..., and the
+# algorithm binaries lab-s3-integ, -nsvd, -uknn, -knnasym, -knnimp, which is how
+# preds_lab/s3-runs.log names the runs before that date).
+# Fields: bin, env (knobs), target (if not rtg / implied by the name),
+#         probe (probe_3 RMSE), note.
+
+# --- The 172-column blend (2026-10-22) ---
+# The 152-column blend of 2026-10-21 plus the "exotic" series of 2026-10-22
+# (tx ablations, NReLU RBM, NADE, transposed dnn/attention, dnn without the MF
+# branch, new stages on the strong bases): forward selection on probe_3 4-fold
+# CV (ridge lambda 1000) over 288 candidates, then backward elimination while
+# the CV stayed within 1e-5 of its best. ridge on these 172: CV 0.866478, quiz
+# 0.864134 (152 columns: CV 0.866770, quiz 0.864321). List:
+# preds_lab/s3-blend172.txt. `snapshots` = epochs whose probe/qual preds
+# (<name>_epNN, saved by EPSAVE=1) are blend columns too. Dropped columns sit
+# in preds_lab/useless/ (useless/invalid/: chains on transposed bases whose
+# qual side was built on misordered fulltrain preds).
+
+[s3-als8]
+bin = "s3 misc"
+env = "F=8"
+probe = 0.96375
+
+[s3-als8__knn3]
+bin = "s3 chain"
+probe = 0.954
+
+[s3-als8__knn3b]
+bin = "s3 chain"
+env = "K3_KMAX=150 K3_KMIN=20 K3_SHR=5000 K3_THR=0.10 K3_X=0.6"
+probe = 0.95421
+
+[s3-als8__knn3t]
+bin = "s3 chain"
+env = "K3_BLM=1.0 K3_BLU=5.5 K3_KMAX=106 K3_KMIN=9 K3_REG=0.53 K3_SHR=29774 K3_THR=0.5786969 K3_X=0.865"
+probe = 0.9536
+
+[s3-attn32]
+bin = "s3 attn"
+env = "EPSAVE=1"
+probe = 0.90871
+snapshots = [3, 6]
+
+[s3-attn32__nlpp__knn3]
+bin = "s3 chain"
+probe = 0.89764
+
+[s3-attn64]
+bin = "s3 attn"
+env = "D=64 EPSAVE=1 SEED=7"
+probe = 0.90879
+snapshots = [5, 7, 12]
+
+[s3-attn64__knn3]
+bin = "s3 chain"
+probe = 0.89865
+
+[s3-bk3-20]
+bin = "s3 misc"
+env = "F=20"
+probe = 0.92221
+
+[s3-bk3-20__knns]
+bin = "s3 chain"
+env = "KS_K=50 KS_SCALE=1.5 KS_TAU=0.05 W=0.8"
+probe = 0.91424
+
+[s3-dnn16]
+bin = "s3 dnn"
+env = "D=16 EPOCHS=7 NMF=64"
+probe = 0.91739
+
+[s3-dnn24]
+bin = "s3 dnn"
+env = "D=24 DECAY=0.87 EPOCHS=8 EPSAVE=1 H1=96 H2=64 NMF=256 SEED=43"
+probe = 0.92276
+snapshots = [3]
+
+[s3-dnn24__nlpp]
+bin = "s3 chain"
+probe = 0.9222
+
+[s3-dnn24__nlpp__knn3]
+bin = "s3 chain"
+probe = 0.91385
+
+[s3-dnn32nm__knn3]
+bin = "s3 chain"
+probe = 0.91153
+
+[s3-mf60]
+bin = "s3 misc"
+env = "EPOCHS=20 F=60"
+probe = 0.90144
+
+[s3-mf60__nlpp]
+bin = "s3 chain"
+probe = 0.90094
+
+[s3-nade12s]
+bin = "s3 nade"
+env = "EPOCHS=8 EPSAVE=1 H=40 RANK=12 SAVETR=1"
+probe = 0.92871
+snapshots = [1]
+
+[s3-rbm100__knn3]
+bin = "s3 chain"
+probe = 0.89159
+
+[s3-rbm100__knnf]
+bin = "s3 chain"
+probe = 0.89398
+
+[s3-rbm100p__knnf]
+bin = "s3 chain"
+probe = 0.89159
+
+[s3-rbm100p__nlpp]
+bin = "s3 chain"
+probe = 0.89903
+
+[s3-rbm100p__nlpp__knn3]
+bin = "s3 chain"
+probe = 0.88841
+
+[s3-rbm200__asym-16__knn3]
+bin = "s3 chain"
+probe = 0.88732
+
+[s3-rbm200__attn32p]
+bin = "s3 attn"
+env = "EPSAVE=1"
+target = "0.5*s3-rbm200"
+probe = 0.89872
+snapshots = [1, 2]
+
+[s3-rbm200__knnf]
+bin = "s3 chain"
+probe = 0.88969
+
+[s3-rbm200__knnfc]
+bin = "s3 chain"
+env = "KF_SCALE=1.5 KF_TAU=0.05"
+probe = 0.89042
+
+[s3-rbm200__knnfd]
+bin = "s3 chain"
+env = "KF_K=100"
+probe = 0.88938
+
+[s3-rbm200__knns]
+bin = "s3 chain"
+env = "KS_K=50 KS_SCALE=1.5 KS_TAU=0.05 W=0.8"
+probe = 0.8968
+
+[s3-rbm200__nlpp]
+bin = "s3 chain"
+probe = 0.89626
+
+[s3-rbm400]
+bin = "s3 rbm"
+env = "EPOCHS=25 EPSAVE=1 H=400 LR=0.025"
+probe = 0.89716
+snapshots = [1, 3, 8, 24, 25]
+
+[s3-rbm400__knn3]
+bin = "s3 chain"
+probe = 0.88925
+
+[s3-rbm400__knnf]
+bin = "s3 chain"
+env = "KF_K=50"
+probe = 0.88853
+
+[s3-rbm400__nlpp]
+bin = "s3 chain"
+probe = 0.89591
+
+[s3-tx100olm__knn3]
+bin = "s3 chain"
+probe = 0.88205
+
+[s3-tx100olm__nlpp]
+bin = "s3 chain"
+probe = 0.88492
+
+[s3-tx100r__attn32p]
+bin = "s3 attn"
+env = "EPSAVE=1"
+target = "0.5*s3-tx100r"
+probe = 0.894
+snapshots = [1, 2, 5]
+
+[s3-tx100r__attn32p__knn3]
+bin = "s3 chain"
+probe = 0.88507
+
+[s3-tx100r__dnn16p]
+bin = "s3 dnn"
+env = "D=16 EPOCHS=7 EPSAVE=1 NMF=192"
+target = "0.5*s3-tx100r"
+probe = 0.89327
+snapshots = [4]
+
+[s3-tx100r__nlpp]
+bin = "s3 chain"
+probe = 0.87892
+note = "target rtg; corrects the base's predictions"
+
+[s3-tx100r__nlpp__knn3]
+bin = "s3 chain"
+probe = 0.87503
+note = "best single column"
+
+[s3-tx20b__knn3]
+bin = "s3 chain"
+probe = 1.02357
+
+[s3-tx20hr__nlpp]
+bin = "s3 chain"
+probe = 0.89807
+
+[s3-tx20hr__nlpp__knn3]
+bin = "s3 chain"
+probe = 0.88539
+
+[s3-tx20w__nlpp]
+bin = "s3 chain"
+probe = 0.88645
+
+[s3-tx20w__nlpp__knn3]
+bin = "s3 chain"
+probe = 0.87902
+
+[s3-tx300lm]
+bin = "s3 tx"
+env = "EPOCHS=22 EPSAVE=1 F=300 LM=1 REG_I=0.012 REG_U=0.08"
+probe = 0.88475
+snapshots = [3, 4, 5, 12, 13]
+
+[s3-tx300lm__attn32p]
+bin = "s3 attn"
+env = "EPSAVE=1"
+target = "0.5*s3-tx300lm"
+probe = 0.89776
+snapshots = [1, 4, 6, 10, 11, 12]
+
+[s3-tx300lm__knn3]
+bin = "s3 chain"
+probe = 0.87843
+
+[s3-tx300lm__nlpp]
+bin = "s3 chain"
+probe = 0.88234
+
+[s3-tx300lm__nlpp__knn3]
+bin = "s3 chain"
+probe = 0.87678
+
+[s3-tx50n]
+bin = "s3 tx"
+env = "EPOCHS=22 EPSAVE=1 F=50 IFEAT=1 NBR=100"
+probe = 0.88137
+snapshots = [2, 12, 21]
+note = "IFEAT=1 saves the .ifeat that knnf reads"
+
+[s3-tx50n__attn32p]
+bin = "s3 attn"
+env = "EPSAVE=1"
+target = "0.5*s3-tx50n"
+probe = 0.8915
+snapshots = [1, 7, 10, 11, 12]
+
+[s3-tx50n__knnf]
+bin = "s3 chain"
+probe = 0.88865
+
+[s3-tx50n__nlpp]
+bin = "s3 chain"
+probe = 0.88021
+
+[s3-tx5__nlpp__knn3]
+bin = "s3 chain"
+probe = 0.89331
+
+[s3-tx60d12]
+bin = "s3 tx"
+env = "EPOCHS=12 EPSAVE=1 F=60 LR_WD=0.001 NBR=100 REG_WD=0.002"
+probe = 0.88175
+snapshots = [1, 12]
+
+[s3-tx60d12__attn32tp]
+bin = "s3 attn"
+env = "EPSAVE=1 TRANSPOSE=1"
+target = "0.5*s3-tx60d12"
+probe = 0.89901
+snapshots = [2]
+
+[s3-tx60d12__knn3]
+bin = "s3 chain"
+probe = 0.87821
+
+[s3-tx60d12__knns]
+bin = "s3 chain"
+env = "KS_K=50 KS_SCALE=1.5 KS_TAU=0.05 W=0.8"
+probe = 0.88933
+
+[s3-tx60o__attn32p]
+bin = "s3 attn"
+env = "EPSAVE=1"
+target = "0.5*s3-tx60o"
+probe = 0.89598
+snapshots = [12]
+
+[s3-tx60o__knn3]
+bin = "s3 chain"
+probe = 0.87738
+
+[s3-tx60o__nlpp]
+bin = "s3 chain"
+probe = 0.87969
+
+# --- Bases of chains / snapshots above that are not blend columns themselves ---
+# Needed to regenerate those, so their files stay in preds_lab/.
+
+[s3-attn16]
+bin = "s3 attn"
+env = "D=16 EPSAVE=1 SEED=11"
+probe = 0.90875
+snapshots = [8, 11]
+
+[s3-attn32__nlpp]
+bin = "s3 chain"
+probe = 0.90734
+
+[s3-attn32t]
+bin = "s3 attn"
+env = "EPSAVE=1 TRANSPOSE=1"
+probe = 0.91556
+snapshots = [1, 3, 7]
+note = "add TR_LEGACY=1 to regenerate s3-attn32t__knn3 exactly"
+
+[s3-attn32t2]
+bin = "s3 attn"
+env = "EPSAVE=1 TRANSPOSE=1"
+probe = 0.91556
+snapshots = [3, 8, 12]
+
+[s3-dnn16t]
+bin = "s3 dnn"
+env = "D=16 EPOCHS=7 EPSAVE=1 NMF=192 TRANSPOSE=1"
+probe = 0.92555
+snapshots = [3]
+
+[s3-dnn32nm]
+bin = "s3 dnn"
+env = "D=32 EPOCHS=7 EPSAVE=1 NMF=0"
+probe = 0.92036
+snapshots = [2, 5, 7]
+
+[s3-rbm10]
+bin = "s3 rbm"
+env = "EPOCHS=20 EPSAVE=1 H=10"
+probe = 0.93357
+snapshots = [1]
+
+[s3-rbm100]
+bin = "s3 rbm"
+env = "EPOCHS=20 H=100"
+probe = 0.90386
+
+[s3-rbm100p]
+bin = "s3 rbm"
+env = "EPOCHS=25 EPSAVE=1 H=100 HT=p"
+probe = 0.90057
+snapshots = [1, 18, 20, 23]
+
+[s3-rbm200]
+bin = "s3 rbm"
+env = "EPOCHS=25 EPSAVE=1 H=200 LR=0.025"
+probe = 0.89777
+snapshots = [9, 17, 21, 23]
+
+[s3-rbm200__asym-16]
+bin = "s3 chain"
+probe = 0.89608
+
+[s3-rbm200__dnn16p]
+bin = "s3 dnn"
+env = "D=16 EPOCHS=7 EPSAVE=1 NMF=192"
+target = "0.5*s3-rbm200"
+probe = 0.90018
+snapshots = [2]
+
+[s3-rbm40]
+bin = "s3 rbm"
+env = "EPOCHS=20 EPSAVE=1 H=40"
+probe = 0.91342
+snapshots = [11]
+
+[s3-rbm400__attn32p]
+bin = "s3 attn"
+env = "EPSAVE=1"
+target = "0.5*s3-rbm400"
+probe = 0.89838
+snapshots = [1, 3]
+
+[s3-rbm400__attn32tp]
+bin = "s3 attn"
+env = "EPSAVE=1 TRANSPOSE=1"
+target = "0.5*s3-rbm400"
+probe = 0.90329
+snapshots = [1, 2]
+
+[s3-rbm50t]
+bin = "s3 rbm"
+env = "EPOCHS=20 EPSAVE=1 H=50 TRANSPOSE=1"
+probe = 1.26253
+snapshots = [6]
+
+[s3-rbm60r]
+bin = "s3 rbm"
+env = "EPOCHS=20 EPSAVE=1 H=60 HT=r"
+probe = 0.91371
+snapshots = [4, 10, 18, 19]
+
+[s3-tx100olm]
+bin = "s3 tx"
+env = "EPOCHS=25 EPSAVE=1 F=100 LM=1 NBR=100 ORD=1"
+probe = 0.88848
+snapshots = [21, 23]
+
+[s3-tx100olm__dnn16p]
+bin = "s3 dnn"
+env = "D=16 EPOCHS=7 EPSAVE=1 NMF=192"
+target = "0.5*s3-tx100olm"
+probe = 0.90152
+snapshots = [7]
+
+[s3-tx100r]
+bin = "s3 tx"
+env = "EPOCHS=22 EPSAVE=1 F=100 REG_I=0.012 REG_U=0.08"
+probe = 0.88052
+snapshots = [3, 4, 15]
+
+[s3-tx20b]
+bin = "s3 tx"
+env = "EPOCHS=22 EPSAVE=1 F=20 WF=0"
+probe = 1.12693
+
+[s3-tx20d]
+bin = "s3 tx"
+env = "EPOCHS=14 EPSAVE=1 F=20 LR_WD=0.001 NBR=50 REG_WD=0.002"
+probe = 0.88324
+snapshots = [3, 10, 13]
+
+[s3-tx20d__dnn16p]
+bin = "s3 dnn"
+env = "D=16 EPOCHS=7 EPSAVE=1 NMF=192"
+target = "0.5*s3-tx20d"
+probe = 0.8963
+snapshots = [2, 6]
+
+[s3-tx20f]
+bin = "s3 tx"
+env = "EPOCHS=22 EPSAVE=1 F=20 FBINS=1"
+probe = 0.89352
+snapshots = [1, 2, 5, 19]
+
+[s3-tx20hr]
+bin = "s3 tx"
+env = "EPOCHS=22 EPSAVE=1 F=20 REG_I=0.037 REG_U=0.25"
+probe = 0.90013
+snapshots = [1, 2, 4, 13, 14, 15, 19]
+
+[s3-tx20s]
+bin = "s3 tx"
+env = "EPOCHS=22 EPSAVE=1 F=20 LR_TA=0 LR_TI=0 LR_U2=0 LR_UBD=0 LR_UD=0 TBINS=1"
+probe = 0.89711
+snapshots = [1, 2, 5, 7, 8]
+
+[s3-tx20w]
+bin = "s3 tx"
+env = "EPOCHS=22 EPSAVE=1 F=20 WF=0.7"
+probe = 0.88817
+
+[s3-tx300lm__dnn16p]
+bin = "s3 dnn"
+env = "D=16 EPOCHS=7 EPSAVE=1 NMF=192"
+target = "0.5*s3-tx300lm"
+probe = 0.89805
+snapshots = [4]
+
+[s3-tx5]
+bin = "s3 tx"
+env = "EPOCHS=22 EPSAVE=1 F=5"
+probe = 0.90649
+snapshots = [2, 8, 10]
+
+[s3-tx50n__dnn16p]
+bin = "s3 dnn"
+env = "D=16 EPOCHS=7 EPSAVE=1 NMF=192"
+target = "0.5*s3-tx50n"
+probe = 0.89014
+snapshots = [5]
+
+[s3-tx5__nlpp]
+bin = "s3 chain"
+probe = 0.9053
+
+[s3-tx60o]
+bin = "s3 tx"
+env = "EPOCHS=25 EPSAVE=1 F=60 NBR=100 ORD=1"
+probe = 0.88219
+snapshots = [2, 24]
+
+[s3-tx60o__dnn16p]
+bin = "s3 dnn"
+env = "D=16 EPOCHS=7 EPSAVE=1 NMF=192"
+target = "0.5*s3-tx60o"
+probe = 0.89752
+snapshots = [3, 4]
+
+# --- Added 2026-10-24 (175 columns) ---
+# Greedy on the 172-column blend: +ep39 0.866347, +ep36 0.866340, +ep12 0.866334
+# (CV); quiz 0.864134 -> 0.863953. Probe side: a 40-epoch probe-only run (best
+# ep25 0.87955); qual side: a 39-epoch QUAL_ONLY=1 rerun (preds_lab/s3-tx200dr.probe.log
+# is the probe run). The bare column is not used (its sides were ep40 / ep39).
+
+[s3-tx200dr]
+bin = "s3 tx"
+env = "EPOCHS=39 EPSAVE=1 F=200 LR_WD=0.001 NBR=100 REG_I=0.012 REG_U=0.08 REG_WD=0.002"
+probe = 0.88206
+snapshots = [12, 36, 39]
+
+# --- Added 2026-10-24, then the cut to 143 columns ---
+# 14 columns added by forward selection on the 175 (CV 0.866334 -> 0.865719): new
+# model families on split_3 (bk1, mfrbmx) and knn-<tag> chains (the stat-matrix item
+# kNN of knn.rs; sims by lab-s3-nbstats, jobs of type s3sim in pipeline-3.toml). Then
+# a forward selection from scratch over the 189 kept the first 143 (CV 0.865737, quiz
+# 0.863471); the entries above that are no longer columns stay as a record.
+
+[s3-bk1-60]
+bin = "s3 misc"
+env = "EPOCHS=30 EPSAVE=1 F=60 LR_DECAY=0.05"
+probe = 0.88552
+snapshots = [6, 13]
+# snapshot probe: ep06 0.89787, ep13 0.88750
+
+[s3-mfrbmx-60h]
+bin = "s3 misc"
+env = "EPOCHS=12 EPSAVE=1 F=60 H=100"
+probe = 0.94315
+snapshots = [8]
+# snapshot probe: ep08 0.91281
+
+[s3-attn32__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.90135
+
+[s3-rbm400__nlpp__knn-cr]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0.05"
+probe = 0.90968
+
+[s3-rbm400__nlpp__knn-d]
+bin = "s3 chain"
+env = "KN_K=15 KN_SCALE=3.5 KN_SIM=support KN_STAT0=rtg_supp KN_STAT1=s3-rbm400__nlpp_diff1 KN_TAU=0 KN_USE1=1"
+probe = 0.89584
+
+[s3-rbm400__nlpp__knn-fp]
+bin = "s3 chain"
+env = "KN_FACT=s3-rbm400.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+probe = 0.89037
+
+[s3-tx100r__nlpp__knn-cr]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-tx100r__nlpp_prod KN_TAU=0.05"
+probe = 0.89217
+
+[s3-tx100r__nlpp__knn-r]
+bin = "s3 chain"
+env = "KN_K=30 KN_REG=1 KN_RLAM=0.1 KN_SCALE=1.5 KN_SIM=support KN_STAT0=rtg_supp KN_STAT2=s3-tx100r__nlpp_prod KN_TAU=0.05"
+probe = 0.87822
+
+[s3-tx300lm__nlpp__knn-c]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
+probe = 0.88324
+
+[s3-tx300lm__nlpp__knn-d]
+bin = "s3 chain"
+env = "KN_K=15 KN_SCALE=3.5 KN_SIM=support KN_STAT0=rtg_supp KN_STAT1=s3-tx300lm__nlpp_diff1 KN_TAU=0 KN_USE1=1"
+probe = 0.88230
+
+[s3-tx50n__nlpp__knn-fp]
+bin = "s3 chain"
+env = "KN_FACT=s3-tx50n.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+probe = 0.89322
+
+[s3-tx50n__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.88053
+
+[s3-tx50n__nlpp__knn-s]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
+probe = 0.88877
+
+# --- Added by the 160-column blend (2026-10-25) ---
+# Forward selection from scratch over all 779 lab columns with qual preds (probe_3 4-fold
+# CV, ridge lambda 1000); the first 160 (CV 0.865293, quiz 0.863013) became the base.
+# knn-<v>-g<scale*10>-t<tau*100>: knn-<v> with KN_SCALE / KN_TAU from the grid;
+# kimp-<tag>: s3 chain (knnimp.rs, implicit neighbors), kasym-<tag>: s3 chain
+# (knn.rs SimType::Asym); lab-s3-knnimp / lab-s3-knnasym before 2026-10-28.
+
+[s3-rbm400__nlpp__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.89303
+
+[s3-rbm200__nlpp__knn-fp]
+bin = "s3 chain"
+env = "KN_FACT=s3-rbm200.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+probe = 0.89046
+
+[s3-dnn24__nlpp__knn-s]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
+probe = 0.92839
+
+[s3-bk1-60n]
+bin = "s3 misc"
+env = "EPOCHS=30 EPSAVE=1 F=60 LR_DECAY=0.05 NBR=50"
+probe = 0.88337
+snapshots = [22, 27]
+
+[s3-attn32__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.90752
+
+[s3-rbm400__nlpp__knn-cr-g25-t0]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0"
+probe = 0.92251
+
+[s3-nade12s__knn3]
+bin = "s3 chain"
+probe = 0.90651
+
+[s3-bk1-120]
+bin = "s3 misc"
+env = "EPOCHS=30 EPSAVE=1 F=120 LR_DECAY=0.05"
+probe = 0.88361
+snapshots = [20, 28]
+
+[s3-tx100r__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.87861
+
+[s3-tx50n__nlpp__kasym-s50-150]
+bin = "s3 chain"
+env = "KA_A=0.5 KA_B=1.5 KA_K=30 KA_SCALE=2.5 KA_SIM=supp KA_STAT0=rtg_supp KA_TAU=0.05"
+probe = 0.92849
+
+[s3-tx300lm__nlpp__knn-c-g25-t10]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.1"
+probe = 0.8855
+
+[s3-bknbrx-30d]
+bin = "s3 misc"
+env = "EPOCHS=20 EPSAVE=1 LR_WD=0.008 NBR=30"
+probe = 0.91246
+snapshots = [7]
+
+[s3-mf60__nlpp__kimp-a]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=1.5 KI_SIM=supp KI_STAT0=bin_wsupp KI_TAU=0.05"
+probe = 0.90039
+
+[s3-tx300lm__nlpp__kasym-p100-50]
+bin = "s3 chain"
+env = "KA_A=1 KA_B=0.5 KA_K=40 KA_SCALE=2 KA_SIM=prod KA_STAT0=rtg_supp KA_STAT2=s3-tx300lm__nlpp_prod KA_TAU=0.05"
+probe = 0.90025
+
+[s3-tx300lm__nlpp__knn-cr-g10-t0]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=1 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-tx300lm__nlpp_prod KN_TAU=0"
+probe = 0.88303
+
+[s3-attn32__kimp-a]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=1.5 KI_SIM=supp KI_STAT0=bin_wsupp KI_TAU=0.05"
+probe = 0.90774
+
+[s3-tx300lm__nlpp__knn-cr-g15-t0]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=1.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-tx300lm__nlpp_prod KN_TAU=0"
+probe = 0.88842
+
+[s3-bknbrx-200t]
+bin = "s3 misc"
+env = "EPOCHS=15 EPSAVE=1 LR_BETA=1e-6 NBR=200"
+probe = 0.8967
+snapshots = [1]
+
+[s3-tx50n__nlpp__knn-s-g10-t0]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=1 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0"
+probe = 0.88188
+
+[s3-tx60o__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.87874
+
+[s3-tx300lm__nlpp__knn-cr-g35-t5]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=3.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-tx300lm__nlpp_prod KN_TAU=0.05"
+probe = 0.93512
+
+[s3-tx300lm__nlpp__knn-cr-g10-t20]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=1 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-tx300lm__nlpp_prod KN_TAU=0.2"
+probe = 0.88786
+
+[s3-rbm400__nlpp__knn-cr-g10-t0]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=1 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0"
+probe = 0.8923
+
+[s3-tx300lm__nlpp__knn-r]
+bin = "s3 chain"
+env = "KN_K=30 KN_REG=1 KN_RLAM=0.1 KN_SCALE=1.5 KN_SIM=support KN_STAT0=rtg_supp KN_STAT2=s3-tx300lm__nlpp_prod KN_TAU=0.05"
+probe = 0.88089
+
+[s3-bk1-30nb]
+bin = "s3 misc"
+env = "EPOCHS=30 EPSAVE=1 F=30 NBR=100"
+probe = 0.88331
+snapshots = [27]
+
+[s3-dnn24__nlpp__knns]
+bin = "s3 chain"
+probe = 0.92187
+
+[s3-dnn24__nlpp__kimp-a]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=1.5 KI_SIM=supp KI_STAT0=bin_wsupp KI_TAU=0.05"
+probe = 0.92135
+
+[s3-tx50n__nlpp__knn-s-g50-t10]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
+probe = 0.90417
+
+[s3-tx300lm__nlpp__knn-s-g20-t5]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=2 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.05"
+probe = 0.88852
+
+[s3-tx100r__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.88369
+
+[s3-attn32__nlpp__kimp-a]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=1.5 KI_SIM=supp KI_STAT0=bin_wsupp KI_TAU=0.05"
+probe = 0.90644
+
+[s3-dnn24__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.9186
+
+[s3-tx100r__nlpp__knn-mr]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=s3-tx100r__nlpp_diff2 KN_TAU=0.05"
+probe = 0.87959
+
+[s3-tx60o__nlpp__knn-mr]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=s3-tx60o__nlpp_diff2 KN_TAU=0.05"
+probe = 0.8806
+
+[s3-rbm400__nlpp__knn-mr]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_diff2 KN_TAU=0.05"
+probe = 0.89231
+
+[s3-rbm200__nlpp__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.8933
+
+[s3-bknbrx-100w]
+bin = "s3 misc"
+env = "EPOCHS=12 EPSAVE=1 LR_BETA=1e-6 LR_W=0.003 NBR=100 REG_W=0.004"
+probe = 0.90081
+snapshots = [11]
+
+[s3-rbm400__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.8935
+
+[s3-mfrbmx-50w]
+bin = "s3 misc"
+env = "EPOCHS=12 EPSAVE=1 F=50 H=50 W_MF=1.0 W_RBM=0.5"
+probe = 0.90406
+snapshots = [8, 11]
+
+[s3-rbm400__nlpp__knn-cr-g15-t0]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=1.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0"
+probe = 0.89784
+
+[s3-tx60o__nlpp__knn-s]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
+probe = 0.89107
+
+# --- Added by the blend160u promotion ---
+
+[s3-rbm400__nlpp__knn-w-k100]
+bin = "s3 chain"
+env = "KN_K=100 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.89255
+
+[s3-tx200h2__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.88279
+
+[s3-tx200h2__nlpp]
+bin = "s3 chain"
+probe = 0.88189
+
+[s3-tx200h2]
+bin = "s3 tx"
+env = "EPOCHS=29 EPSAVE=1 F=200 LR_I=0.008 LR_U=0.0045 LR_W=0.001 LR_WD=0.0005 LR_Y=0.00075 NBR=100 REG_I=0.012 REG_U=0.04 REG_WD=0.002"
+snapshots = [12]
+
+[s3-nade12s__kimp-r]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=2 KI_SIM=supp KI_STAT0=rtg_supp KI_TAU=0.05"
+probe = 0.92795
+
+[s3-rbm400__nlpp__knn-cr-g25-t5]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0.05"
+probe = 0.92358
+
+[s3-bk1-120__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.88766
+
+[s3-nsvd20-b__nlpp]
+bin = "s3 chain"
+probe = 0.93656
+
+[s3-nsvd20-b]
+bin = "s3 integ"
+env = "EPOCHS=10 F=20 REG_Q=30 REG_Y=30 SORT=0 TERMS=y"
+probe = 0.93695
+
+[s3-tx200h2__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.88448
+
+[s3-rbm200__nlpp__knn-c]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
+probe = 0.8904
+
+[s3-tx100olm__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.88345
+
+[s3-tx60o__nlpp__knn-m-k15]
+bin = "s3 chain"
+env = "KN_K=15 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.88419
+
+[s3-tx20hr__nlpp__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.89682
+
+[s3-attn32__nlpp__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.90651
+
+[s3-tx300lm__nlpp__knn-cr-g20-t0]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-tx300lm__nlpp_prod KN_TAU=0"
+probe = 0.89811
+
+[s3-nade12s__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.91476
+
+[s3-bk1-60n__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.8919
+
+[s3-tx60o__nlpp__kimp-c]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=1 KI_SIM=conf KI_TAU=0.05 KI_WSHR=100"
+probe = 0.8797
+
+[s3-tx300lm__nlpp__knn-cr-g35-t0]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=3.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-tx300lm__nlpp_prod KN_TAU=0"
+probe = 0.93305
+
+[s3-tx20w__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.88458
+
+[s3-tx50n__nlpp__knn-w-k15]
+bin = "s3 chain"
+env = "KN_K=15 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.88749
+
+[s3-bk1-120__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.88349
+
+[s3-attn32__kimp-rs]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=2.5 KI_SIM=supp KI_STAT0=rtg_supp KI_TAU=0.05"
+probe = 0.90753
+
+[s3-rbm400__nlpp__knn-cr-g10-t20]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=1 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0.2"
+probe = 0.8947
+
+[s3-tx100r__nlpp__kasym-p100-50]
+bin = "s3 chain"
+env = "KA_A=1 KA_B=0.5 KA_K=40 KA_SCALE=2 KA_SIM=prod KA_STAT0=rtg_supp KA_STAT2=s3-tx100r__nlpp_prod KA_TAU=0.05"
+probe = 0.89217
+
+[s3-tx100r__nlpp__knn-w-k100]
+bin = "s3 chain"
+env = "KN_K=100 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.88172
+
+[s3-bknbrx-200t__knn-s]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
+probe = 0.90459
+
+[s3-mfrbmx-60h__knn-s]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
+probe = 0.9392
+
+[s3-tx50n__nlpp__knn-s-g50-t5]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.05"
+probe = 0.90307
+
+[s3-dnn24__nlpp__kimp-rs]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=2.5 KI_SIM=supp KI_STAT0=rtg_supp KI_TAU=0.05"
+probe = 0.92109
+
+[s3-dnn24__nlpp__kimp-n]
+bin = "s3 chain"
+env = "KI_CENTER=0 KI_K=50 KI_SCALE=1.5 KI_SIM=supp KI_STAT0=bin_wsupp KI_TAU=0.05"
+probe = 0.92133
+
+[s3-attn32__kimp-r]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=2 KI_SIM=supp KI_STAT0=rtg_supp KI_TAU=0.05"
+probe = 0.90762
+
+[s3-tx300lm__nlpp__knn-s-g50-t0]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0"
+probe = 0.91057
+
+[s3-dnn24__nlpp__kimp-r]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=2 KI_SIM=supp KI_STAT0=rtg_supp KI_TAU=0.05"
+probe = 0.92116
+
+[s3-rbm400__nlpp__knn-cr-g15-t10]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=1.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0.1"
+probe = 0.89933
+
+[s3-rbm400__nlpp__knn-cr-g35-t0]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=3.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0"
+probe = 0.94954
+
+[s3-rbm400__nlpp__kimp-a]
+bin = "s3 chain"
+env = "KI_K=50 KI_SCALE=1.5 KI_SIM=supp KI_STAT0=bin_wsupp KI_TAU=0.05"
+probe = 0.89513
+
+[s3-nade12s__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.91117
+
+[s3-dnn24__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.91868
+
+[s3-attn32__nlpp__knn-s]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
+probe = 0.91375
+
+[s3-mf60__nlpp__knn-s]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
+probe = 0.91043
+
+# --- Added by the blend200 promotion ---
+
+[s3-tx300r__nlpp]
+bin = "s3 chain"
+probe = 0.87691
+
+[s3-tx300r]
+bin = "s3 tx"
+env = "EPOCHS=24 EPSAVE=1 F=300 LR_I=0.006 LR_U=0.0045 LR_W=0.001 LR_WD=0.0005 LR_Y=0.00075 NBR=100 REG_I=0.015 REG_U=0.06 REG_WD=0.002 RESET=12"
+probe = 0.87834
+snapshots = [5, 7, 10, 11, 12, 13, 14, 22, 23]
+
+[s3-rbm400p__knn3]
+bin = "s3 chain"
+probe = 0.8948
+
+[s3-rbm400p]
+bin = "s3 rbm"
+env = "EPOCHS=25 EPSAVE=1 H=400 HT=p LR=0.02"
+probe = 0.90137
+snapshots = [3, 18, 23]
+
+[s3-rbm800p__knn-fp]
+bin = "s3 chain"
+env = "KN_FACT=s3-rbm800p.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+probe = 0.89986
+
+[s3-rbm800p]
+bin = "s3 rbm"
+env = "EPOCHS=25 EPSAVE=1 H=800 HT=p LR=0.015 WD=0.0015"
+probe = 0.90548
+snapshots = [1, 21]
+
+[s3-rbm400r]
+bin = "s3 rbm"
+env = "EPOCHS=25 EPSAVE=1 H=400 HT=r LR=0.02"
+probe = 0.90542
+snapshots = [6, 8, 22, 23, 24]
+
+[s3-rbm400pf__knn3]
+bin = "s3 chain"
+probe = 0.89502
+
+[s3-rbm400pf]
+bin = "s3 rbm"
+env = "EPOCHS=15 EPSAVE=1 H=400 HT=p LR=0.02 NFACT=50"
+probe = 0.90872
+snapshots = [1, 2, 3, 9, 10, 14]
+
+[s3-rbm800-l25__knn-fp]
+bin = "s3 chain"
+env = "KN_FACT=s3-rbm800-l25.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+probe = 0.89161
+
+[s3-rbm800-l25]
+bin = "s3 rbm"
+env = "H=800 EPOCHS=12 EPSAVE=1 WD=0.002 CD_EVERY=8 LR=0.025"
+
+[s3-rbm200e__nlpp__uknn-rk]
+bin = "s3 chain"
+env = "UK_K=1000 UK_KP=200 UK_VEC=res"
+probe = 0.89782
+
+[s3-rbm200e__nlpp]
+bin = "s3 chain"
+probe = 0.90072
+
+[s3-rbm200e]
+bin = "s3 rbm"
+env = "EA=0 EB=1 EPOCHS=25 EPSAVE=1 H=200 HT=e LR=0.02"
+probe = 0.90315
+snapshots = [1, 5, 10, 17]
+
+[s3-integ80-pyuddf]
+bin = "s3 integ"
+env = "EPOCHS=10 F=80 IMPL=1 REG_DR=1000 REG_FQ=10 REG_P=30 REG_Q=30 REG_UD=10 REG_Y=30 TERMS=p+y+ud+dr+fq"
+probe = 0.9389
+
+[s3-nsvd20-b__nlpp__knn3]
+bin = "s3 chain"
+probe = 0.91146
+
+[s3-bk1-120nb]
+bin = "s3 misc"
+env = "EPOCHS=30 EPSAVE=1 F=120 NBR=100 REG_FACT=0.02"
+probe = 0.88286
+snapshots = [14, 21]
+
+[s3-bk1-120nb__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.88218
+
+[s3-bk1-120nb__nlpp]
+bin = "s3 chain"
+probe = 0.88151
+
+[s3-txnsvd50]
+bin = "s3 tx"
+env = "EPOCHS=20 EPSAVE=1 F=50 LM=1 LR_U=0 LR_U2=0 SIGMA_U=0"
+probe = 0.91517
+snapshots = [7, 12, 13]
+
+[s3-txnsvd50y]
+bin = "s3 tx"
+env = "EPOCHS=20 EPSAVE=1 F=50 LM=1 LR_U=0 LR_U2=0 LR_Y=0.001 SIGMA_U=0"
+probe = 0.91507
+snapshots = [1, 3, 10, 18]
+
+[s3-bk1-120nb__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.88306
+
+[s3-bk1-120nb__nlpp__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.89012
+
+[s3-rbm50b10__nlpp__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.90163
+
+[s3-rbm50b10__nlpp]
+bin = "s3 chain"
+probe = 0.90842
+
+[s3-rbm50b10]
+bin = "s3 rbm"
+env = "BATCH=10 EPOCHS=20 EPSAVE=1 H=50 LR=0.0004"
+probe = 0.91189
+snapshots = [9]
+
+[s3-rbm800p__nlpp__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.90255
+
+[s3-rbm800p__nlpp]
+bin = "s3 chain"
+probe = 0.905
+
+[s3-rbm50b10__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.8977
+
+[s3-rbm400pf__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.89481
+
+[s3-rbm400pf__nlpp]
+bin = "s3 chain"
+probe = 0.90461
+
+[s3-rbm800-l25__knn3]
+bin = "s3 chain"
+probe = 0.89305
+
+[s3-tx300r__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.88369
+
+[s3-rbm10__knn-s]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
+probe = 0.92841
+
+[s3-rbm800-l15]
+bin = "s3 rbm"
+env = "H=800 EPOCHS=6 EPSAVE=1 WD=0.002 CD_EVERY=8 LR=0.015"
+snapshots = [1, 2]
+
+[s3-rbm10__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.9167
+
+[s3-rbm400pf__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.89575
+
+[s3-rbm400__nlpp__uknn-rk]
+bin = "s3 chain"
+env = "UK_K=1000 UK_KP=200 UK_VEC=res"
+probe = 0.89682
+
+[s3-rbm200e__knn-fp]
+bin = "s3 chain"
+env = "KN_FACT=s3-rbm200e.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+probe = 0.89506
+
+[s3-rbm200e__nlpp__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.89606
+
+[s3-rbm800-l25__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.8914
+
+[s3-rbm800-l25__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.89541
+
+[s3-rbm50b10__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.89725
+
+[s3-rbm400p__knn-fp]
+bin = "s3 chain"
+env = "KN_FACT=s3-rbm400p.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+probe = 0.89495
+
+[s3-nsvd20-b__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.91388
+
+[s3-nsvd20-b__nlpp__knn-s]
+bin = "s3 chain"
+env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
+probe = 0.92791
+
+[s3-nsvd20-b__nlpp__knn-c]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
+probe = 0.91726
+
+[s3-integ40-pyuddf]
+bin = "s3 integ"
+env = "EPOCHS=10 F=40 IMPL=1 REG_DR=1000 REG_FQ=10 REG_P=30 REG_Q=30 REG_UD=10 REG_Y=30 TERMS=p+y+ud+dr+fq"
+probe = 0.92414
