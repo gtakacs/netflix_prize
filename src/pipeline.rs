@@ -97,6 +97,11 @@ pub struct JobConfig {
     /// should gate the job must still come from the models/voting TOMLs.
     #[serde(default)]
     pub extra_args: Vec<String>,
+    /// Environment assignments (`F=60 EPOCHS=12`) exposed to the `cmd` as
+    /// `{env}` (empty string when unset), for binaries that take their knobs
+    /// from the environment, like the split_3 lab-s3-* jobs.
+    #[serde(default)]
+    pub env: String,
 }
 
 #[derive(Debug)]
@@ -331,6 +336,7 @@ fn build_subst_vars(job_name: &str, job: &JobConfig, pipeline: &Pipeline) -> Has
         .join(" ");
     vars.insert("exclude".to_string(), exclude_flags);
     vars.insert("extra".to_string(), job.extra_args.join(" "));
+    vars.insert("env".to_string(), job.env.clone());
     vars
 }
 

@@ -29,6 +29,12 @@ pub enum SimType {
     FactorMse,
     /// Raw dot product over external factor vectors.
     FactorDot,
+    /// Asymmetric: stat0 = support n (diagonal = item counts),
+    /// `sim = x[i,j] / (d[i]^a * d[j]^b) * n / (n + shrinkage)` with x, d = n and
+    /// stat0's diagonal (scaled by N^(a+b-1), N = 480189 users, to stay near 1),
+    /// or with `prod`, |stat2[i,j]| and stat2's diagonal (stat2 = `*_prod`; pairs
+    /// with n < 2 dropped). a = b = 1 is Support, a = 1, b = 0 is P(j | i).
+    Asym { a: f32, b: f32, prod: bool },
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +104,11 @@ pub struct KnnModel {
     factor_norms: Vec<f32>,
     factor_means: Vec<f32>,
     factor_cnorms: Vec<f32>,
+
+    // Asym: per-item diag^a (as target) and diag^b (as neighbor), N^(a+b-1) or 1
+    den_a: Vec<f32>,
+    den_b: Vec<f32>,
+    asym_norm: f32,
 }
 
 impl KnnModel {
@@ -168,6 +179,21 @@ impl KnnModel {
         phi.max(0.0)
     }
 
+    // stat0: rtg_supp (+ stat2: *_prod with prod)
+    fn asym_sim(&self, i: usize, j: usize) -> f32 {
+        let n = self.stat0.as_ref().unwrap()[[i, j]];
+        let den = self.den_a[i] * self.den_b[j];
+        if den <= 0.0 { return 0.0; }
+        let raw = match self.cfg.sim_type {
+            SimType::Asym { prod: true, .. } => {
+                if n < 2.0 { return 0.0; }
+                self.stat2.as_ref().unwrap()[[i, j]].abs()
+            }
+            _ => n * self.asym_norm,
+        };
+        raw / den * n / (n + self.cfg.shrinkage)
+    }
+
     fn sim(&self, i: usize, j: usize) -> f32 {
         match self.cfg.sim_type {
             SimType::Support => self.support_sim(i, j),
@@ -177,6 +203,7 @@ impl KnnModel {
             SimType::FactorPearson => self.factor_pearson_sim(i, j),
             SimType::FactorMse => self.factor_mse_sim(i, j),
             SimType::FactorDot => self.factor_dot_sim(i, j),
+            SimType::Asym { .. } => self.asym_sim(i, j),
         }
     }
 }
@@ -253,7 +280,20 @@ impl Regressor for KnnModel {
             (None, Vec::new(), Vec::new(), Vec::new())
         };
 
-        Self { cfg, stat0, stat1, stat2, ur, mse, factors, factor_norms, factor_means, factor_cnorms }
+        let (den_a, den_b, asym_norm) = if let SimType::Asym { a, b, prod } = cfg.sim_type {
+            let dm = if prod { stat2.as_ref().expect("Asym prod needs stat2") } else { stat0.as_ref().unwrap() };
+            let diag = |i: usize| dm[[i, i]].max(0.0);
+            let den_a = (0..tr.n_items).map(|i| diag(i).powf(a)).collect();
+            let den_b = (0..tr.n_items).map(|i| diag(i).powf(b)).collect();
+            (den_a, den_b, if prod { 1.0 } else { 480189f32.powf(a + b - 1.0) })
+        } else {
+            (Vec::new(), Vec::new(), 0.0)
+        };
+
+        Self {
+            cfg, stat0, stat1, stat2, ur, mse, factors, factor_norms, factor_means, factor_cnorms,
+            den_a, den_b, asym_norm,
+        }
     }
 
     fn n_epochs(&self) -> usize { 0 }

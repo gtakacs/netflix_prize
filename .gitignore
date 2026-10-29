@@ -4,3 +4,14 @@ preds_new/
 preds_old/
 preds_lab/
 meetup/
+preds_3/
+sim/
+data/fulltrain/
+data/probe/
+data/probe_3/
+data/probex/
+data/qual/
+data/raw/
+data/train/
+data/train_3/
+data/trainx/

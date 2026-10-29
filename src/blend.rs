@@ -692,6 +692,90 @@ pub fn cvk_blend<B: Blender>(
     (Array1::from(yhat_pr), Array1::from(yhat_ql))
 }
 
+/// Cross-fit scheme of `gbm` / `mlp` (`--cv`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CrossFit {
+    /// `cvk_blend`: fold k trains on 1/K of probe and predicts the rest.
+    Inv,
+    /// `cvk_blend_std`: the usual K-fold, fold k trains on the other K-1 folds.
+    Std,
+}
+
+impl CrossFit {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s { "inv" => Some(Self::Inv), "std" => Some(Self::Std), _ => None }
+    }
+}
+
+/// `cvk_blend` or `cvk_blend_std`, by `mode`.
+#[allow(clippy::too_many_arguments)]
+pub fn cross_fit<B: Blender>(
+    mode: CrossFit,
+    x_pr: &Array2<f32>,
+    y_pr: &[f32],
+    x_ql: &Array2<f32>,
+    y_ql: &[f32],
+    qz: &[bool],
+    n_folds: usize,
+    seed: u64,
+    cfg: &B::Cfg,
+) -> (Array1<f32>, Array1<f32>) {
+    match mode {
+        CrossFit::Inv => cvk_blend::<B>(x_pr, y_pr, x_ql, y_ql, qz, n_folds, seed, cfg),
+        CrossFit::Std => cvk_blend_std::<B>(x_pr, y_pr, x_ql, y_ql, qz, n_folds, seed, cfg),
+    }
+}
+
+/// The usual K-fold cross-fit (counterpart of `cvk_blend`, same folds from
+/// `permuted_folds`): fold k trains on the other K-1 folds (in fold order) and
+/// predicts fold k, so every probe row gets one out-of-fold prediction; qual
+/// predictions are the mean of the K fold models. Prints per-fold, probe and quiz
+/// RMSE; returns `(probe_oof_preds, qual_avg_preds)`.
+#[allow(clippy::too_many_arguments)]
+pub fn cvk_blend_std<B: Blender>(
+    x_pr: &Array2<f32>,
+    y_pr: &[f32],
+    x_ql: &Array2<f32>,
+    y_ql: &[f32],
+    qz: &[bool],
+    n_folds: usize,
+    seed: u64,
+    cfg: &B::Cfg,
+) -> (Array1<f32>, Array1<f32>) {
+    let n = y_pr.len();
+    let d = x_pr.ncols();
+    assert_eq!(x_ql.ncols(), d, "probe/qual feature dim mismatch");
+
+    let folds = permuted_folds(n, n_folds, seed);
+    let mut yhat_pr = vec![0.0f32; n];
+    let mut yhat_ql = vec![0.0f32; y_ql.len()];
+    for k in 0..n_folds {
+        let te = &folds[k];
+        let tr: Vec<usize> = (0..n_folds)
+            .filter(|&j| j != k)
+            .flat_map(|j| folds[j].iter().copied())
+            .collect();
+        let model = B::fit(gather_rows(x_pr, &tr).as_slice().unwrap(), &gather(y_pr, &tr), d, cfg);
+        let p_te = model.predict(gather_rows(x_pr, te).as_slice().unwrap(), d);
+        for (&i, &p) in te.iter().zip(&p_te) {
+            yhat_pr[i] = p;
+        }
+        crate::teeln!(
+            "  fold {}/{}: train {} predict {} RMSE {:.6}",
+            k + 1, n_folds, tr.len(), te.len(), rmse(&p_te, &gather(y_pr, te)),
+        );
+        let p_ql = model.predict(x_ql.as_slice().unwrap(), d);
+        for (acc, &p) in yhat_ql.iter_mut().zip(&p_ql) {
+            *acc += p / n_folds as f32;
+        }
+    }
+
+    crate::teeln!(" ProbeRMSE: {:.6}", rmse(&yhat_pr, y_pr));
+    crate::teeln!("  QuizRMSE: {:.6}", rmse_masked(&yhat_ql, y_ql, qz));
+
+    (Array1::from(yhat_pr), Array1::from(yhat_ql))
+}
+
 // ---------------------------------------------------------------------------
 // LightGBM blender (feature = "lgbm")
 // ---------------------------------------------------------------------------

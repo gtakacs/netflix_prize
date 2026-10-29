@@ -37,6 +37,8 @@ const PIPELINE_OLD: &str = "pipeline-old.toml";
 const PIPELINE_NEW: &str = "pipeline-new.toml";
 const MODELS_OLD: &str = "models-old.toml";
 const MODELS_NEW: &str = "models-new.toml";
+const PIPELINE_3: &str = "pipeline-3.toml";
+const MODELS_3: &str = "models-3.toml";
 const ENSEMBLES_TOML: &str = "ensembles.toml";
 const QUAL_RATINGS_CSV_GZ: &str = "data/qual_ratings/qual_ratings.csv.gz";
 const N_QUAL: usize = 2_817_131;
@@ -141,6 +143,8 @@ struct Args {
     /// Calibration lines printed next to a measured delta.
     scale: Vec<String>,
     update_expected: bool,
+    /// Skip the per-column residual correlation of the added columns (`--no-corr`).
+    no_corr: bool,
 }
 
 fn print_help() {
@@ -187,8 +191,8 @@ fn print_help() {
     println!("                             defaults to [{QUIZ_IN_CLIP_MIN}, {QUIZ_IN_CLIP_MAX}] instead of [{IN_CLIP_MIN}, {IN_CLIP_MAX}].");
     println!("    --raw-probes             opt out of both: keep '>' columns and probe them raw");
     println!();
-    println!("  Cross-split quiz blending (combine qual.npy predictors from BOTH splits):");
-    println!("    --from SPLIT             open a source scope for SPLIT (old|new); the models");
+    println!("  Cross-split quiz blending (combine qual.npy predictors from several splits):");
+    println!("    --from SPLIT             open a source scope for SPLIT (old|new|3); the models");
     println!("                             flags -t/-g/-m/-x after it apply to that source.");
     println!("                             -t defaults to models-<split>.toml. Repeat --from to");
     println!("                             mix splits. Implies --quiz-blend; the Gram is built");
@@ -207,6 +211,8 @@ fn print_help() {
     println!("                             dir/name path, e.g. -m preds_lab/lab-foo.");
     println!("                             Exits non-zero if the reference does not reproduce.");
     println!("    --update-expected        write this run's numbers back into {}", ENSEMBLES_TOML);
+    println!("    --no-corr                skip the residual correlation of each -m column (one pass");
+    println!("                             over the scored rows per column; slow with many columns)");
     println!();
     println!("    -h, --help               show this help");
 }
@@ -247,6 +253,7 @@ fn parse_args() -> Args {
     let mut decimals = 4;
     let mut ensemble_name: Option<String> = None;
     let mut update_expected = false;
+    let mut no_corr = false;
 
     // Legacy single-source accumulator (used when no --from is given), plus the
     // list of --from sources. The two are mutually exclusive.
@@ -268,7 +275,8 @@ fn parse_args() -> Args {
                 let pipeline = match s.as_str() {
                     "old" => PIPELINE_OLD,
                     "new" => PIPELINE_NEW,
-                    _ => { eprintln!("error: --from expects 'old' or 'new' (got '{}')", s); std::process::exit(2); }
+                    "3" => PIPELINE_3,
+                    _ => { eprintln!("error: --from expects 'old', 'new' or '3' (got '{}')", s); std::process::exit(2); }
                 };
                 if legacy_touched {
                     eprintln!("error: cannot mix top-level model/split flags with --from");
@@ -343,6 +351,7 @@ fn parse_args() -> Args {
                 i += 1;
             }
             "--update-expected" => { update_expected = true; i += 1; }
+            "--no-corr" => { no_corr = true; i += 1; }
             "--lambda" => { lambda = need(&argv, i).parse().expect("bad --lambda value"); i += 2; }
             "--forward" => { forward = true; i += 1; }
             "--max-features" => {
@@ -488,6 +497,7 @@ fn parse_args() -> Args {
         extras,
         scale,
         update_expected,
+        no_corr,
     }
 }
 
@@ -717,6 +727,7 @@ fn build_registry(
             if args.cross_split {
                 Some(match src.label.as_str() {
                     "new" => MODELS_NEW.to_string(),
+                    "3" => MODELS_3.to_string(),
                     _ => MODELS_OLD.to_string(),
                 })
             } else {
@@ -1432,6 +1443,7 @@ fn main() -> ExitCode {
         for src in &args.sources {
             let mt = src.models_toml.clone().unwrap_or_else(|| match src.label.as_str() {
                 "new" => MODELS_NEW.to_string(),
+                "3" => MODELS_3.to_string(),
                 _ => MODELS_OLD.to_string(),
             });
             let g = if src.groups.is_empty() { "all".to_string() } else { src.groups.join(",") };
@@ -1758,7 +1770,7 @@ fn main() -> ExitCode {
     // the rows the delta was measured on. This is the triage number: a column
     // pays when it is wrong in different places, not when it is merely accurate.
     let extra_corr: Vec<f64> = match (&args.ensemble, fits.iter().position(|(n, _, _)| n == ENSEMBLE_ROW)) {
-        (Some(_), Some(ens_i)) if m > ref_m => {
+        (Some(_), Some(ens_i)) if m > ref_m && !args.no_corr => {
             let fit = &fits[ens_i];
             (ref_m..m).map(|j| {
                 if need_probe {

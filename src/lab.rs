@@ -44,6 +44,9 @@ pub struct LabArgs {
     pub final_run: bool,
     /// Fraction of users kept; 1.0 = all of them.
     pub sample: f64,
+    /// Preds dir written to (and read from first): `preds_lab` unless `--preds`
+    /// names another, e.g. the manifest's own when a pipeline job runs the binary.
+    pub preds: String,
 }
 
 impl LabArgs {
@@ -54,6 +57,7 @@ impl LabArgs {
         let mut target = "rtg".to_string();
         let mut final_run = false;
         let mut sample = 1.0;
+        let mut preds = LAB_PREDS_DIR.to_string();
 
         let mut i = 1;
         while i < argv.len() {
@@ -62,6 +66,7 @@ impl LabArgs {
                 "-p" | "--pipeline" => { manifest = need(&argv, i); i += 2; }
                 "--target" => { target = need(&argv, i); i += 2; }
                 "--final" => { final_run = true; i += 1; }
+                "--preds" => { preds = need(&argv, i); i += 2; }
                 "--smoke" => { sample = SMOKE_SAMPLE; i += 1; }
                 "--sample" => {
                     sample = need(&argv, i).parse().expect("bad --sample value");
@@ -78,7 +83,7 @@ impl LabArgs {
         }
         if sample < 1.0 { name.push_str("-smoke"); }
 
-        Self { name, manifest, target, final_run, sample }
+        Self { name, manifest, target, final_run, sample, preds }
     }
 
     /// True if the datasets are subsampled, i.e. the run is a sanity check and
@@ -86,14 +91,16 @@ impl LabArgs {
     pub fn sampled(&self) -> bool { self.sample < 1.0 }
 
     /// The sandbox split: datasets from the manifest, predictions into
-    /// `preds_lab/`, and reads that miss there served from the manifest's own
-    /// preds dir. Also installs the subsample, so call it before `fit2!`.
+    /// `preds_lab/` (or `--preds`), and reads that miss there served from the
+    /// manifest's own preds dir. Also installs the subsample, so call it before
+    /// `fit2!`.
     pub fn split(&self) -> Split {
         let base = Split::from_pipeline(&self.manifest);
-        crate::set_preds_fallback(LAB_PREDS_DIR, base.preds_dir);
+        let preds: &'static str = self.preds.clone().leak();
+        crate::set_preds_fallback(preds, base.preds_dir);
         set_sample(self.sample);
-        std::fs::create_dir_all(LAB_PREDS_DIR).unwrap();
-        Split { preds_dir: LAB_PREDS_DIR, ..base }
+        std::fs::create_dir_all(preds).unwrap();
+        Split { preds_dir: preds, ..base }
     }
 }
 
@@ -115,11 +122,12 @@ fn print_help(name: &str) {
     println!("  -p, --pipeline FILE  manifest the datasets come from (default: {DEFAULT_MANIFEST})");
     println!("  --target SPEC        training target: 'rtg' or 'w*model + ...' (default: rtg)");
     println!("  --final              also run the fulltrain -> qual phase");
+    println!("  --preds DIR          preds dir to write (default: {LAB_PREDS_DIR})");
     println!("  --smoke              sanity run on {}% of the users", (SMOKE_SAMPLE * 100.0) as u32);
     println!("  --sample FRAC        subsample the users by FRAC (0 < FRAC <= 1)");
     println!("  -h, --help           show this help");
     println!();
-    println!("Predictions go to {LAB_PREDS_DIR}/; a subsampled run appends '-smoke' to NAME.");
+    println!("Predictions go to {LAB_PREDS_DIR}/ unless --preds; a subsampled run appends '-smoke' to NAME.");
 }
 
 /// Keep `frac` of the users in every dataset loaded from here on.

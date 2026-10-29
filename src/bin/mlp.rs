@@ -7,7 +7,7 @@
 extern crate blas_src;
 
 use netflix_prize::blend::{
-    build_xy, close_log, cvk_blend, flatten_groups, load_models_toml, load_quiz_mask, log_columns,
+    build_xy, close_log, cross_fit, flatten_groups, CrossFit, load_models_toml, load_quiz_mask, log_columns,
     open_log, resolve_voting, save_preds, select_groups, CLIP_MAX, CLIP_MIN,
 };
 use netflix_prize::mlp::{MlpBlender, MlpCfg, MlpHead};
@@ -26,6 +26,8 @@ struct Args {
     voting_models: String,
     voting: Vec<String>,
     seeds: Vec<u64>,
+    cv: CrossFit,
+    folds: Option<usize>,
 }
 
 /// MLP + cross-fit parameters for a named blend. Add a branch per blend.
@@ -79,7 +81,8 @@ fn blend_config(name: &str) -> BlendParams {
 
         // Wider net for blend diversity: 128x64 with proportionally more
         // weight decay and a bigger batch.
-        "mlpr3x" => BlendParams {
+        // mlpr3k4 / mlpr3vk4: the same net, run with --cv std --folds 4 (round 3).
+        "mlpr3x" | "mlpr3k4" | "mlpr3vk4" => BlendParams {
             hidden: vec![128, 64], alpha: 0.5, lr: 0.0004, iters: 100, batch: 400,
             tol: 1e-5, n_iter_no_change: 10, ..Default::default()
         },
@@ -109,6 +112,8 @@ fn print_help() {
     println!("  --voting G,G,...           voting-feature groups to use (required; 'all' if the TOML defines it)");
     println!("  --seeds N,N,...            net+fold seeds; one output NAME-s<N> per seed (data loaded once)");
     println!("  --seed N                   add a single seed (repeatable)");
+    println!("  --cv inv|std               cross-fit: inv = fold k trains on 1/K (default), std = on the other K-1 folds");
+    println!("  --folds K                  number of folds (default: the preset's)");
     println!("  -h, --help                 show this help");
 }
 
@@ -132,6 +137,8 @@ fn parse_args() -> Args {
         voting_models: String::new(),
         voting: Vec::new(),
         seeds: Vec::new(),
+        cv: CrossFit::Inv,
+        folds: None,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -168,6 +175,13 @@ fn parse_args() -> Args {
                 i += 2;
             }
             "--seed" => { a.seeds.push(need(&argv, i).parse().expect("bad --seed")); i += 2; }
+        "--folds" => { a.folds = Some(need(&argv, i).parse().expect("bad --folds value")); i += 2; }
+        "--cv" => {
+            a.cv = CrossFit::parse(&need(&argv, i)).unwrap_or_else(|| {
+                eprintln!("error: --cv must be inv or std"); std::process::exit(2)
+            });
+            i += 2;
+        }
             "--seeds" => {
                 for tok in need(&argv, i).split(',') {
                     a.seeds.push(tok.trim().parse().expect("bad --seeds value"));
@@ -271,6 +285,7 @@ fn main() -> ExitCode {
     teeln!("Voting:    {} ({} features, groups: {})", args.voting_models, voting.len(), voting_str);
     teeln!("Seeds:     {} (net init + fold permutation)", seeds_str);
     teeln!("Params:    {:?}", p);
+    teeln!("Cross-fit: {:?}, {} folds", args.cv, args.folds.unwrap_or(p.folds));
     log_columns(&base, &voting);
     teeln!();
 
@@ -298,13 +313,14 @@ fn main() -> ExitCode {
             head: p.head,
             ..Default::default()
         };
-        let (p_pr, p_ql) = cvk_blend::<MlpBlender>(
+        let (p_pr, p_ql) = cross_fit::<MlpBlender>(
+            args.cv,
             &x_pr,
             y_pr.as_slice().unwrap(),
             &x_ql,
             y_ql.as_slice().unwrap(),
             qz.as_slice().unwrap(),
-            p.folds,
+            args.folds.unwrap_or(p.folds),
             seed,
             &cfg,
         );

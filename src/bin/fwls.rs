@@ -1,8 +1,14 @@
 //! FWLS (Feature-Weighted Linear Stacking) cross-fit blend: ridge regression on
-//! the interaction features (model prediction × voting feature) with a 2-fold
-//! split, mirroring `blending/fwls.py`. The Gram matrix over the `D = M·P + 1`
-//! interaction columns is accumulated in row blocks via BLAS `dsyrk`. Dispatcher
-//! shape matches `gbm`/`mlp`; requires the `blas` feature (OpenBLAS).
+//! the interaction features (model prediction × voting feature) with a K-fold
+//! split (`--folds`, default 2, mirroring `blending/fwls.py`). The Gram matrix over
+//! the `D = M·P + 1` interaction columns is accumulated in row blocks via BLAS
+//! `dsyrk`. With K = 2 each fold's Gram is built from its training half; with
+//! K > 2 the K per-fold Grams are built once and each fold model solves
+//! `ΣG − G_k + λI` (K matrices of D × D f64 in memory). The qual prediction is the
+//! mean of the K fold models' clipped predictions. The ridge system is solved by
+//! nalgebra's Cholesky (default) or LAPACK `dpotrf`/`dpotrs` (`--solver lapack`,
+//! multithreaded, for large D). Dispatcher shape matches `gbm`/`mlp`; requires the
+//! `blas` feature (OpenBLAS).
 
 extern crate blas;
 extern crate blas_src;
@@ -104,6 +110,17 @@ struct Args {
     lambda: Option<f64>,
     in_clip: (f32, f32),
     seeds: Vec<u64>,
+    folds: usize,
+    solver: Solver,
+}
+
+/// Linear solver for the ridge system.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Solver {
+    /// nalgebra Cholesky (single-threaded; what every job used before `--solver`).
+    Nalgebra,
+    /// LAPACK `dpotrf` + `dpotrs` from the BLAS library (multithreaded).
+    Lapack,
 }
 
 /// FWLS parameters for a named blend. Add a branch per blend.
@@ -139,6 +156,8 @@ fn print_help() {
     println!("                             use 0,6 to match an fwls-fs selection run");
     println!("  --seeds N,N,...            fold seeds; one output NAME-s<N> per seed (data loaded once)");
     println!("  --seed N                   add a single fold seed (repeatable)");
+    println!("  --folds K                  K-fold cross-fit (default 2); K > 2 keeps K D×D Grams in memory");
+    println!("  --solver nalgebra|lapack   ridge solver (default nalgebra; lapack is multithreaded)");
     println!("  -h, --help                 show this help");
     println!();
     println!("  Context (voting) features come from the --voting-models TOML (names relative");
@@ -167,6 +186,8 @@ fn parse_args() -> Args {
         lambda: None,
         in_clip: (CLIP_MIN, CLIP_MAX),
         seeds: Vec::new(),
+        folds: 2,
+        solver: Solver::Nalgebra,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -204,6 +225,15 @@ fn parse_args() -> Args {
                 i += 2;
             }
             "--seed" => { a.seeds.push(need(&argv, i).parse().expect("bad --seed")); i += 2; }
+            "--folds" => { a.folds = need(&argv, i).parse().expect("bad --folds value"); i += 2; }
+            "--solver" => {
+                a.solver = match need(&argv, i).as_str() {
+                    "nalgebra" => Solver::Nalgebra,
+                    "lapack" => Solver::Lapack,
+                    s => { eprintln!("error: --solver must be nalgebra or lapack (got '{s}')"); std::process::exit(2) }
+                };
+                i += 2;
+            }
             "--seeds" => {
                 for tok in need(&argv, i).split(',') {
                     a.seeds.push(tok.trim().parse().expect("bad --seeds value"));
@@ -233,6 +263,10 @@ fn parse_args() -> Args {
     if a.seeds.is_empty() {
         eprintln!("error: provide --seeds N,N,... or --seed N");
         print_help();
+        std::process::exit(2);
+    }
+    if a.folds < 2 {
+        eprintln!("error: --folds must be at least 2");
         std::process::exit(2);
     }
     if a.voting.is_empty() && a.feature_manual.is_empty() {
@@ -296,7 +330,6 @@ fn load_ratings_f64(dataset: &str) -> Vec<f64> {
 /// Accumulate the ridge system over the interaction features for `rows`:
 /// `A = ZᵀZ + λI` (bias unregularized), `b = Zᵀy`, where each `Z` column is the
 /// per-rating outer product `flatten(X[:,k] ⊗ F[:,k])` plus a 1.0 bias entry.
-/// Built in row blocks; `dsyrk` fills the column-major lower triangle.
 fn build_gram_fold(
     rows: &[usize],
     xpr: &[Vec<f32>],
@@ -305,6 +338,21 @@ fn build_gram_fold(
     m: usize,
     p: usize,
     lambda: f64,
+) -> (DMatrix<f64>, DVector<f64>) {
+    let (mut amat, b) = gram_lower(rows, xpr, fpr, y, m, p);
+    finish_gram(&mut amat, lambda);
+    (amat, b)
+}
+
+/// `ZᵀZ` (column-major lower triangle only) and `Zᵀy` over `rows`, built in row
+/// blocks with `dsyrk`.
+fn gram_lower(
+    rows: &[usize],
+    xpr: &[Vec<f32>],
+    fpr: &[Vec<f32>],
+    y: &[f64],
+    m: usize,
+    p: usize,
 ) -> (DMatrix<f64>, DVector<f64>) {
     let d = m * p + 1;
     let mut amat = DMatrix::<f64>::zeros(d, d);
@@ -357,9 +405,13 @@ fn build_gram_fold(
         eprint!("\r    gram block {}/{}", bi, nb);
     }
     eprintln!();
+    (amat, b)
+}
 
-    // Mirror the lower triangle into the upper so the matrix is fully symmetric,
-    // then ridge-regularize all but the bias diagonal entry.
+/// Mirror the lower triangle into the upper so the matrix is fully symmetric,
+/// then ridge-regularize all but the bias diagonal entry.
+fn finish_gram(amat: &mut DMatrix<f64>, lambda: f64) {
+    let d = amat.nrows();
     for c in 0..d {
         for r in (c + 1)..d {
             amat[(c, r)] = amat[(r, c)];
@@ -368,12 +420,26 @@ fn build_gram_fold(
     for i in 0..(d - 1) {
         amat[(i, i)] += lambda;
     }
-    (amat, b)
 }
 
-fn solve_fold(amat: DMatrix<f64>, b: DVector<f64>) -> Vec<f64> {
-    let chol = amat.cholesky().expect("FWLS Gram matrix is not positive definite");
-    chol.solve(&b).iter().copied().collect()
+fn solve_fold(amat: DMatrix<f64>, b: DVector<f64>, solver: Solver) -> Vec<f64> {
+    match solver {
+        Solver::Nalgebra => {
+            let chol = amat.cholesky().expect("FWLS Gram matrix is not positive definite");
+            chol.solve(&b).iter().copied().collect()
+        }
+        Solver::Lapack => {
+            let n = amat.nrows() as i32;
+            let mut a = amat; // column-major, symmetric: the lower triangle is used
+            let mut x: Vec<f64> = b.iter().copied().collect();
+            let mut info = 0;
+            unsafe { lapack::dpotrf(b'L', n, a.as_mut_slice(), n, &mut info) };
+            assert_eq!(info, 0, "FWLS Gram matrix is not positive definite (dpotrf info {info})");
+            unsafe { lapack::dpotrs(b'L', n, 1, a.as_slice(), n, &mut x, n, &mut info) };
+            assert_eq!(info, 0, "dpotrs info {info}");
+            x
+        }
+    }
 }
 
 /// Predict in-memory `rows` from fitted weights `w` (length `D`), optionally
@@ -544,7 +610,12 @@ fn main() -> ExitCode {
     teeln!("Interact:  D = M·P + 1 = {}·{} + 1 = {}", m, p, d);
     teeln!("Lambda:    {}", params.lambda);
     teeln!("In-clip:   [{}, {}] (clipped model columns)", args.in_clip.0, args.in_clip.1);
-    teeln!("Seeds:     {} (2-fold split per seed)", seeds_str);
+    teeln!("Seeds:     {} ({}-fold split per seed)", seeds_str, args.folds);
+    teeln!("Solver:    {:?}", args.solver);
+    if args.folds > 2 {
+        teeln!("Memory:    {} per-fold Grams of {}×{} f64 = {:.1} GB", args.folds, d, d,
+               (args.folds * d * d * 8) as f64 / 1e9);
+    }
     log_columns(&model_names, &voting);
     teeln!();
 
@@ -583,10 +654,11 @@ fn main() -> ExitCode {
         teeln!();
         teeln!("=== seed {} ===", seed);
 
+        // Folds: K contiguous slices of one shuffle (K = 2: the two halves).
+        let kf = args.folds;
         let mut idxs: Vec<usize> = (0..n).collect();
         idxs.shuffle(&mut StdRng::seed_from_u64(seed));
-        let half = n / 2;
-        let folds = [idxs[..half].to_vec(), idxs[half..].to_vec()];
+        let folds: Vec<Vec<usize>> = (0..kf).map(|k| idxs[k * n / kf..(k + 1) * n / kf].to_vec()).collect();
 
         let mut yhat_pr = vec![0.0f64; n];
         let mut yhat_ql = vec![0.0f64; n_q];
@@ -595,13 +667,39 @@ fn main() -> ExitCode {
         let mut xr = open_readers(&model_names, &preds);
         let mut fr = open_readers(&voting, &preds);
 
-        for (k, &(tr, te)) in [(0usize, 1usize), (1, 0)].iter().enumerate() {
-            let train = &folds[tr];
-            let test = &folds[te];
-            teeln!("  fold {}/2: train {} predict {}", k + 1, train.len(), test.len());
+        // K > 2: every fold's Gram once; fold k trains on the sum of the others.
+        let parts: Vec<(DMatrix<f64>, DVector<f64>)> = if kf > 2 {
+            folds.iter().enumerate().map(|(k, rows)| {
+                teeln!("  gram {}/{}: {} rows", k + 1, kf, rows.len());
+                gram_lower(rows, &xpr, &fpr, &y_pr, m, p)
+            }).collect()
+        } else {
+            Vec::new()
+        };
+        let total = if kf > 2 {
+            let mut a = DMatrix::<f64>::zeros(d, d);
+            let mut b = DVector::<f64>::zeros(d);
+            for (ak, bk) in &parts { a += ak; b += bk; }
+            Some((a, b))
+        } else {
+            None
+        };
 
-            let (amat, b) = build_gram_fold(train, &xpr, &fpr, &y_pr, m, p, params.lambda);
-            let w = solve_fold(amat, b);
+        for k in 0..kf {
+            let test = &folds[k];
+            let n_train = n - test.len();
+            teeln!("  fold {}/{}: train {} predict {}", k + 1, kf, n_train, test.len());
+
+            let (amat, b) = match &total {
+                // K = 2: the training half directly (bit-identical to the 2-fold code).
+                None => build_gram_fold(&folds[1 - k], &xpr, &fpr, &y_pr, m, p, params.lambda),
+                Some((at, bt)) => {
+                    let mut a = at - &parts[k].0;
+                    finish_gram(&mut a, params.lambda);
+                    (a, bt - &parts[k].1)
+                }
+            };
+            let w = solve_fold(amat, b, args.solver);
 
             let p_te = predict_rows(test, &xpr, &fpr, &w, m, p, true);
             teeln!("    fold RMSE {:.6}", rmse_sel(&p_te, &y_pr, test));
@@ -612,8 +710,9 @@ fn main() -> ExitCode {
             predict_qual_acc(&mut xr, &mut fr, &model_clip, xlo, xhi, &w, m, p, n_q, &mut yhat_ql);
         }
 
+        let inv = 1.0 / kf as f64;
         for v in yhat_ql.iter_mut() {
-            *v *= 0.5;
+            *v *= inv;
         }
 
         // Metrics

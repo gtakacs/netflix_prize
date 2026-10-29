@@ -190,9 +190,11 @@ pub mod bknbrx;
 pub mod blend;
 pub mod cfnade;
 pub mod dnn;
+pub mod integ;
 pub mod knn;
 pub mod knn3;
 pub mod knnf;
+pub mod knnimp;
 pub mod knns;
 pub mod lab;
 pub mod mf;
@@ -209,6 +211,7 @@ pub mod tsvdx4p;
 pub mod tsvdx5;
 pub mod tsvdx6;
 pub mod tx;
+pub mod uknn;
 pub mod vfeat1;
 
 // ---------------------------------------------------------------------------
@@ -807,6 +810,7 @@ pub fn fit<M: Regressor + Sync>(
     save_probe_each_epoch: bool,
     preds_dir: &str,
     transpose: bool,
+    train_in_rating_order: bool,
 ) {
     teeln!("{} => {}{}", tr_set, pr_set, if transpose { " (transposed)" } else { "" });
     let tr = Dataset::load(tr_set, target, preds_dir);
@@ -843,7 +847,13 @@ pub fn fit<M: Regressor + Sync>(
 
     if save_train {
         let path = format!("{}/{}.{}.npy", preds_dir, model_name, tr_set);
-        save_preds_parallel(&model, &tr, &path);
+        if transpose && train_in_rating_order {
+            // See the same branch in fit2_inner.
+            let tr_orig = Dataset::load(tr_set, target, preds_dir).transpose(false);
+            save_preds_parallel(&model, &tr_orig, &path);
+        } else {
+            save_preds_parallel(&model, &tr, &path);
+        }
     }
 
     model.save_artifacts(model_name, tr_set, preds_dir);
@@ -856,6 +866,7 @@ pub fn fit<M: Regressor + Sync>(
 /// Train/probe/qual split convention. Constants:
 /// - `SPLIT_OLD` = train → probe, fulltrain → qual, preds_dir = "preds_old"
 /// - `SPLIT_NEW` = trainx → probex, fulltrain → qual, preds_dir = "preds_new"
+/// - `SPLIT_3` = train_3 → probe_3, fulltrain → qual, preds_dir = "preds_3"
 #[derive(Debug, Clone, Copy)]
 pub struct Split {
     pub tr: &'static str,
@@ -877,6 +888,13 @@ pub const SPLIT_NEW: Split = Split {
     tr: "trainx", pr: "probex",
     fulltrain_tr: "fulltrain", fulltrain_pr: "qual",
     preds_dir: "preds_new",
+    sim_dir: "sim",
+};
+
+pub const SPLIT_3: Split = Split {
+    tr: "train_3", pr: "probe_3",
+    fulltrain_tr: "fulltrain", fulltrain_pr: "qual",
+    preds_dir: "preds_3",
     sim_dir: "sim",
 };
 
@@ -920,6 +938,12 @@ pub struct Fit2Opts {
     /// another split's preds dir. Unlike `no_fulltrain`, no prediction is made.
     pub skip_fulltrain: bool,
     pub transpose: bool,
+    /// With `transpose`, save the train predictions (train and fulltrain) in
+    /// the original rating order, the one every reader of those files expects.
+    /// Off, they come out in the transposed (reordered) order, as fit2 always
+    /// did before 2026-10-22; that stays the default so the existing jobs and
+    /// the chains built on them reproduce exactly.
+    pub train_in_rating_order: bool,
 }
 
 /// Call `fit2_inner` with named optional parameters.
@@ -949,6 +973,7 @@ pub fn fit2_inner<M: Regressor + Sync>(
 ) {
     let Fit2Opts {
         save_train, save_probe_each_epoch, save_subscores, no_fulltrain, skip_fulltrain, transpose,
+        train_in_rating_order,
     } = opts;
     let preds_dir = split.preds_dir;
 
@@ -1015,7 +1040,14 @@ pub fn fit2_inner<M: Regressor + Sync>(
 
         if save_train {
             let path = format!("{}/{}.{}.npy", preds_dir, model_name, split.tr);
-            save_preds_parallel(&model, &tr, &path);
+            if transpose && train_in_rating_order {
+                // `tr` was reordered by the transpose; predict on a copy that
+                // keeps the original rating order, as every reader expects.
+                let tr_orig = Dataset::load(split.tr, target, preds_dir).transpose(false);
+                save_preds_parallel(&model, &tr_orig, &path);
+            } else {
+                save_preds_parallel(&model, &tr, &path);
+            }
         }
 
         model.save_artifacts(model_name, split.tr, preds_dir);
@@ -1050,7 +1082,8 @@ pub fn fit2_inner<M: Regressor + Sync>(
                split.fulltrain_tr, split.fulltrain_pr);
     } else if !no_fulltrain {
         fit::<M>(cfg, target, split.fulltrain_tr, split.fulltrain_pr, model_name,
-                 save_subscores, save_train, save_probe_each_epoch, preds_dir, transpose);
+                 save_subscores, save_train, save_probe_each_epoch, preds_dir, transpose,
+                 train_in_rating_order);
     }
 
     teeln!();

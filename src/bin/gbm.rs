@@ -17,7 +17,7 @@ fn main() {
 #[cfg(feature = "lgbm")]
 mod real {
     use netflix_prize::blend::{
-        build_xy, close_log, cvk_blend, flatten_groups, load_models_toml, load_quiz_mask, log_columns,
+        build_xy, close_log, cross_fit, flatten_groups, CrossFit, load_models_toml, load_quiz_mask, log_columns,
         open_log, resolve_voting, save_preds, select_groups, LgbmBlender, LgbmCfg, LgbmMode,
         CLIP_MAX, CLIP_MIN,
     };
@@ -36,6 +36,8 @@ mod real {
         voting_models: String,
         voting: Vec<String>,
         seeds: Vec<u64>,
+        cv: CrossFit,
+        folds: Option<usize>,
     }
 
     /// LightGBM + cross-fit parameters for a named blend. Add a branch per blend
@@ -101,7 +103,8 @@ mod real {
             "gbc1" | "gbc1x" | "gbc1y" => BlendParams { multiclass: true, ..Default::default() },
 
             // Bayesian-optimized multiclass classifier GBC.
-            "gbc2o" | "gbc2x" => BlendParams {
+            // gbc2k4: the same model, run with --cv std --folds 4 (round 3).
+            "gbc2o" | "gbc2x" | "gbc2k4" => BlendParams {
                 num_leaves: 191, iters: 400, lr: 0.019929113104398585,
                 min_data_in_leaf: 527, feature_fraction: 0.6706351917324398,
                 bagging_fraction: 0.9755609862783436, bagging_freq: 3,
@@ -127,6 +130,8 @@ mod real {
         println!("  --voting G,G,...           voting-feature groups to use (required; 'all' if the TOML defines it)");
         println!("  --seeds N,N,...            fold seeds; one output NAME-s<N> per seed (data loaded once)");
         println!("  --seed N                   add a single fold seed (repeatable)");
+        println!("  --cv inv|std               cross-fit: inv = fold k trains on 1/K (default), std = on the other K-1 folds");
+        println!("  --folds K                  number of folds (default: the preset's)");
         println!("  -h, --help                 show this help");
     }
 
@@ -150,6 +155,8 @@ mod real {
             voting_models: String::new(),
             voting: Vec::new(),
             seeds: Vec::new(),
+            cv: CrossFit::Inv,
+            folds: None,
         };
         let argv: Vec<String> = std::env::args().skip(1).collect();
         let mut i = 0;
@@ -186,6 +193,13 @@ mod real {
                     i += 2;
                 }
                 "--seed" => { a.seeds.push(need(&argv, i).parse().expect("bad --seed")); i += 2; }
+            "--folds" => { a.folds = Some(need(&argv, i).parse().expect("bad --folds value")); i += 2; }
+            "--cv" => {
+                a.cv = CrossFit::parse(&need(&argv, i)).unwrap_or_else(|| {
+                    eprintln!("error: --cv must be inv or std"); std::process::exit(2)
+                });
+                i += 2;
+            }
                 "--seeds" => {
                     for tok in need(&argv, i).split(',') {
                         a.seeds.push(tok.trim().parse().expect("bad --seeds value"));
@@ -290,6 +304,7 @@ mod real {
         teeln!("Voting:    {} ({} features, groups: {})", args.voting_models, voting.len(), voting_str);
         teeln!("Seeds:     {} (fold permutation)", seeds_str);
         teeln!("Params:    {:?}", p);
+        teeln!("Cross-fit: {:?}, {} folds", args.cv, args.folds.unwrap_or(p.folds));
         log_columns(&base, &voting);
         teeln!();
 
@@ -325,13 +340,14 @@ mod real {
         for &seed in &args.seeds {
             teeln!();
             teeln!("=== seed {} ===", seed);
-            let (p_pr, p_ql) = cvk_blend::<LgbmBlender>(
+            let (p_pr, p_ql) = cross_fit::<LgbmBlender>(
+                args.cv,
                 &x_pr,
                 y_pr.as_slice().unwrap(),
                 &x_ql,
                 y_ql.as_slice().unwrap(),
                 qz.as_slice().unwrap(),
-                p.folds,
+                args.folds.unwrap_or(p.folds),
                 seed,
                 &cfg,
             );
