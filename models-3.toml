@@ -167,7 +167,7 @@ other = [
 # Second-level blends (pipeline-3.toml jobs), by round: part 1 = round 1 (the
 # inputs of fwls2x), part 2 = round 2 (more seeds / variants), part 3 = round 3
 # (2026-10-29: K-fold blends, --cv std --folds 4 for gbm / mlp, --folds 4/8/16 for
-# fwls). `gbmblend`, `mlpblend` and `fwlsblend` in [meta] are the unions of the
+# fwls), part 4 = round 4 (2026-10-30: K-fold gbm / mlp with latent inputs). `gbmblend`, `mlpblend` and `fwlsblend` in [meta] are the unions of the
 # parts. The fwls jobs read the gbm / mlp blends as inputs by part (part 1-2), so
 # a new part does not change their inputs.
 gbmblend_part1 = [
@@ -207,6 +207,15 @@ mlpblend_part3 = [
 # fwls blends that go into the ensembles: fwls2xa reads every part-1/2 gbm / mlp
 # blend (fwls2x, the round-1-only variant, stays a pipeline job but is not used);
 # part 2 = the round-3 K-fold fwls.
+gbmblend_part4 = [
+    "gbc2lk4-s1",
+]
+
+mlpblend_part4 = [
+    "mlpr3lk4-s1",
+    "mlpr3lak4-s1",
+]
+
 fwlsblend_part1 = [
     "fwls2xa-s1",
 ]
@@ -221,6 +230,6 @@ fwlsblend_part2 = [
 # usable only via -g/--groups.
 [meta]
 blend200 = ["tx", "rbm", "nn", "other"]
-gbmblend = ["gbmblend_part1", "gbmblend_part2", "gbmblend_part3"]
-mlpblend = ["mlpblend_part1", "mlpblend_part2", "mlpblend_part3"]
+gbmblend = ["gbmblend_part1", "gbmblend_part2", "gbmblend_part3", "gbmblend_part4"]
+mlpblend = ["mlpblend_part1", "mlpblend_part2", "mlpblend_part3", "mlpblend_part4"]
 fwlsblend = ["fwlsblend_part1", "fwlsblend_part2"]

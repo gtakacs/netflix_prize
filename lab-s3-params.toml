@@ -1288,3 +1288,16 @@ probe = 0.91726
 bin = "s3 integ"
 env = "EPOCHS=10 F=40 IMPL=1 REG_DR=1000 REG_FQ=10 REG_P=30 REG_Q=30 REG_UD=10 REG_Y=30 TERMS=p+y+ud+dr+fq"
 probe = 0.92414
+
+# --- Latent-feature source models (2026-10-30; only their train_3 artifacts are
+# used, through the predfeatlat job of pipeline-3.toml) ---
+
+[s3-tx20lat]
+bin = "s3 tx"
+env = "EPOCHS=20 F=20 IFEAT=1 LR_W=0.002 NBR=25 UFEAT=1 WF=0.8"
+probe = 0.88518
+
+[s3-rbm50lat]
+bin = "s3 rbm"
+env = "EPOCHS=20 H=50 UFEAT=1"
+probe = 0.91037

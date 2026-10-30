@@ -84,12 +84,14 @@ groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 "3/gbmblend_part1" = { quiz = 0.860689 }
 "3/gbmblend_part2" = { quiz = 0.861151 }
 "3/gbmblend_part3" = { quiz = 0.860546 }
+"3/gbmblend_part4" = { quiz = 0.860665 }
 "3/mlpblend_part1" = { quiz = 0.859370 }
 "3/mlpblend_part2" = { quiz = 0.859205 }
 "3/mlpblend_part3" = { quiz = 0.858875 }
+"3/mlpblend_part4" = { quiz = 0.858844 }
 "3/fwlsblend_part1" = { quiz = 0.858576 }
 "3/fwlsblend_part2" = { quiz = 0.858294 }
-ensemble = { quiz = 0.856068 }
+ensemble = { quiz = 0.855967 }
 
 # Single split, fitted on the probe labels: the cheap bench a new column is
 # measured on. It needs only the probex predictions, so an experiment can be
@@ -133,12 +135,14 @@ other = { probe = 0.870557, quiz = 0.868188 }
 gbmblend_part1 = { probe = 0.862932, quiz = 0.860712 }
 gbmblend_part2 = { probe = 0.863560, quiz = 0.861153 }
 gbmblend_part3 = { probe = 0.862621, quiz = 0.860547 }
+gbmblend_part4 = { probe = 0.862569, quiz = 0.860665 }
 mlpblend_part1 = { probe = 0.861720, quiz = 0.859401 }
 mlpblend_part2 = { probe = 0.861323, quiz = 0.859225 }
 mlpblend_part3 = { probe = 0.860903, quiz = 0.858877 }
+mlpblend_part4 = { probe = 0.860934, quiz = 0.858847 }
 fwlsblend_part1 = { probe = 0.861663, quiz = 0.858588 }
 fwlsblend_part2 = { probe = 0.860433, quiz = 0.858306 }
-ensemble = { probe = 0.860111, quiz = 0.858160 }
+ensemble = { probe = 0.859824, quiz = 0.857945 }
 
 # What a delta is worth, measured by dropping columns from the blend. Printed
 # next to a measured gain, because the numbers are smaller than they look.
