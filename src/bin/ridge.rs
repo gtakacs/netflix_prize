@@ -735,10 +735,10 @@ fn build_registry(
             }
         });
 
-        let mut groups: IndexMap<String, Vec<String>> = if let Some(p) = &models_toml {
-            select_groups(&load_models_toml(p), &src.groups)
-        } else {
-            IndexMap::new()
+        let mg = models_toml.as_ref().map(|p| load_models_toml(p));
+        let mut groups: IndexMap<String, Vec<String>> = match &mg {
+            Some(mg) => select_groups(mg, &src.groups),
+            None => IndexMap::new(),
         };
         if !src.models_manual.is_empty() {
             groups.insert("manual".to_string(), src.models_manual.clone());
@@ -755,7 +755,28 @@ fn build_registry(
             preds_dirs.push(preds_dir.clone());
             labels.push(src.label.clone());
         }
-        for (gname, idxs) in &flat.group_indices {
+        // One row per group named in the source (a [meta] group: the union of the
+        // groups it resolves to), plus `manual`; not one per resolved leaf group.
+        let mut rows: Vec<(String, Vec<usize>)> = Vec::new();
+        if src.groups.is_empty() {
+            // no -g: the default selection, one row per resolved group as before
+            rows.extend(flat.group_indices.iter().filter(|(g, _)| g.as_str() != "manual")
+                .map(|(g, v)| (g.clone(), v.clone())));
+        } else if let Some(mg) = &mg {
+            for req in &src.groups {
+                let mut idxs: Vec<usize> = Vec::new();
+                for leaf in select_groups(mg, std::slice::from_ref(req)).keys() {
+                    for &i in flat.group_indices.get(leaf).map(|v| v.as_slice()).unwrap_or(&[]) {
+                        if !idxs.contains(&i) { idxs.push(i); }
+                    }
+                }
+                if !idxs.is_empty() { rows.push((req.clone(), idxs)); }
+            }
+        }
+        if let Some(idxs) = flat.group_indices.get("manual") {
+            rows.push(("manual".to_string(), idxs.clone()));
+        }
+        for (gname, idxs) in &rows {
             let key = if args.cross_split { format!("{}/{}", src.label, gname) } else { gname.clone() };
             let shifted: Vec<usize> = idxs.iter().map(|&x| x + offset).collect();
             group_indices.insert(key, shifted);
@@ -1688,6 +1709,15 @@ fn main() -> ExitCode {
                 // Both are slices of the one Gram, so measuring an addition costs
                 // one extra column in the streaming pass, not a second run.
                 let ref_idxs: Vec<usize> = (0..ref_m).collect();
+                // Cross-split: one row per source with all of its columns (`<split>/*`).
+                if args.cross_split {
+                    for src in &args.sources {
+                        let idxs: Vec<usize> = (0..ref_m).filter(|&i| labels[i] == src.label).collect();
+                        if idxs.is_empty() { continue; }
+                        let w = solve_group(&a, &b, dim, &idxs, args.lambda);
+                        fits.push((format!("{}/*", src.label), idxs, w));
+                    }
+                }
                 let w = solve_group(&a, &b, dim, &ref_idxs, args.lambda);
                 fits.push((ENSEMBLE_ROW.to_string(), ref_idxs, w));
                 if m > ref_m {
@@ -1754,13 +1784,12 @@ fn main() -> ExitCode {
     // Third pass on qual: compute clipped quiz RMSE per fit (mask via is_test).
     // y_q_i8 / is_test_q / qual_readers were loaded above; reuse them (the
     // readers re-seek on every block, so quiz-blend's Gram pass left them usable).
-    // The ensemble report also splits off the qual rows the quiz mask excludes:
-    // the weights are fitted against quiz feedback, so that half is held out.
-    let (quiz_sse, quiz_n, test_sse, test_n) = if have_qual {
+    // (The test half of qual is not reported: split_mask = false skips it.)
+    let (quiz_sse, quiz_n, _, _) = if have_qual {
         compute_clipped_sse(
             &mut qual_readers, &clip,
             args.in_clip_min as f32, args.in_clip_max as f32, args.out_clip_min, args.out_clip_max,
-            &y_q_i8, Some(&is_test_q), args.ensemble.is_some(), scored, m, "quiz",
+            &y_q_i8, Some(&is_test_q), false, scored, m, "quiz",
         )
     } else {
         (vec![0.0f64; scored.len()], 0usize, vec![0.0f64; scored.len()], 0usize)
@@ -1894,12 +1923,14 @@ fn main() -> ExitCode {
             };
             let w = fits.iter().map(|(n, _, _)| n.len()).max().unwrap_or(20).clamp(20, 56);
 
+            // quiz RMSE with the row's column count in parentheses
+            let qn = |v: Option<f64>, k: usize| -> String { format!("{} ({})", fmt(v), k) };
             if need_probe {
-                println!("{:<w$} {:>7} {:>10} {:>10} {:>10} {:>10} {:>11}",
-                    "row", "models", "probe", "quiz", "test", "expected", "delta", w = w);
+                println!("{:<w$} {:>10} {:>16} {:>10} {:>11}",
+                    "row", "probe", "quiz (columns)", "expected", "delta", w = w);
             } else {
-                println!("{:<w$} {:>7} {:>10} {:>10} {:>10} {:>11}",
-                    "row", "models", "quiz", "test", "expected", "delta", w = w);
+                println!("{:<w$} {:>16} {:>10} {:>11}",
+                    "row", "quiz (columns)", "expected", "delta", w = w);
             }
 
             let mut checked = 0usize;
@@ -1911,7 +1942,6 @@ fn main() -> ExitCode {
             for (i, (name, gidxs, _w)) in fits.iter().enumerate() {
                 let p = val(&probe_sse, probe_n, i);
                 let q = val(&quiz_sse, quiz_n, i);
-                let t = val(&test_sse, test_n, i);
                 let primary = if need_probe { p } else { q };
                 measured.push((name.clone(), p, q));
 
@@ -1960,11 +1990,11 @@ fn main() -> ExitCode {
                 let d = delta.map_or_else(|| "-".to_string(), |x| format!("{:+.2e}", x));
                 let e_str = exp.and_then(|e| if need_probe { e.probe } else { e.quiz });
                 if need_probe {
-                    println!("{:<w$} {:>7} {:>10} {:>10} {:>10} {:>10} {:>11}  {}",
-                        name, gidxs.len(), fmt(p), fmt(q), fmt(t), fmt(e_str), d, status, w = w);
+                    println!("{:<w$} {:>10} {:>16} {:>10} {:>11}  {}",
+                        name, fmt(p), qn(q, gidxs.len()), fmt(e_str), d, status, w = w);
                 } else {
-                    println!("{:<w$} {:>7} {:>10} {:>10} {:>10} {:>11}  {}",
-                        name, gidxs.len(), fmt(q), fmt(t), fmt(e_str), d, status, w = w);
+                    println!("{:<w$} {:>16} {:>10} {:>11}  {}",
+                        name, qn(q, gidxs.len()), fmt(e_str), d, status, w = w);
                 }
             }
 

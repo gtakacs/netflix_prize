@@ -17,26 +17,29 @@ tolerance   = 1e-5
 
 [[ensemble.source]]
 split  = "old"
-groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend", "fwlsblend"]
-models = ["fwls1x-s1"]
+groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [[ensemble.source]]
 split  = "new"
-groups = ["gold", "silver", "gbmblend2_part1", "mlpblend2_part1", "fwlsblend2_part1"]
+groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "mlpblend_part1", "fwlsblend_part1"]
 
 [ensemble.expected]
-"old/integrated" = { quiz = 0.865765 }
+"old/tx" = { quiz = 0.863788 }
 "old/rbm" = { quiz = 0.871184 }
-"old/other" = { quiz = 0.864390 }
+"old/nn" = { quiz = 0.891057 }
+"old/other" = { quiz = 0.871285 }
 "old/gbmblend" = { quiz = 0.859885 }
 "old/mlpblend" = { quiz = 0.859103 }
-"old/fwlsblend" = { quiz = 0.858148 }
-"old/manual" = { quiz = 0.858076 }
-"new/gold" = { quiz = 0.861694 }
-"new/silver" = { quiz = 0.865118 }
-"new/gbmblend2_part1" = { quiz = 0.860069 }
-"new/mlpblend2_part1" = { quiz = 0.859214 }
-"new/fwlsblend2_part1" = { quiz = 0.858014 }
+"old/fwlsblend" = { quiz = 0.858029 }
+"new/tx" = { quiz = 0.865052 }
+"new/rbm" = { quiz = 0.870671 }
+"new/nn" = { quiz = 0.875870 }
+"new/other" = { quiz = 0.877464 }
+"new/gbmblend_part1" = { quiz = 0.860069 }
+"new/mlpblend_part1" = { quiz = 0.859214 }
+"new/fwlsblend_part1" = { quiz = 0.858014 }
+"old/*" = { quiz = 0.857838 }
+"new/*" = { quiz = 0.857845 }
 ensemble = { quiz = 0.856716 }
 
 # The cross-split blend with split_3 as a third source: the 200-column base
@@ -53,47 +56,41 @@ tolerance   = 1e-5
 
 [[ensemble.source]]
 split  = "old"
-groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend", "fwlsblend"]
-models = ["fwls1x-s1"]
+groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [[ensemble.source]]
 split  = "new"
-groups = ["gold", "silver", "gbmblend2", "mlpblend2", "fwlsblend2"]
+groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [[ensemble.source]]
 split  = "3"
 groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [ensemble.expected]
-"old/integrated" = { quiz = 0.865765 }
+"old/tx" = { quiz = 0.863788 }
 "old/rbm" = { quiz = 0.871184 }
-"old/other" = { quiz = 0.864390 }
+"old/nn" = { quiz = 0.891057 }
+"old/other" = { quiz = 0.871285 }
 "old/gbmblend" = { quiz = 0.859885 }
 "old/mlpblend" = { quiz = 0.859103 }
-"old/fwlsblend" = { quiz = 0.858148 }
-"old/manual" = { quiz = 0.858076 }
-"new/gold" = { quiz = 0.861694 }
-"new/silver" = { quiz = 0.865118 }
-"new/gbmblend2_part1" = { quiz = 0.860069 }
-"new/gbmblend2_part2" = { quiz = 0.860505 }
-"new/mlpblend2_part1" = { quiz = 0.859214 }
-"new/mlpblend2_part2" = { quiz = 0.859157 }
-"new/fwlsblend2_part1" = { quiz = 0.858014 }
-"new/fwlsblend2_part2" = { quiz = 0.858454 }
-"3/tx" = { quiz = 0.865724 }
+"old/fwlsblend" = { quiz = 0.858029 }
+"new/tx" = { quiz = 0.865052 }
+"new/rbm" = { quiz = 0.870671 }
+"new/nn" = { quiz = 0.875870 }
+"new/other" = { quiz = 0.877464 }
+"new/gbmblend" = { quiz = 0.860027 }
+"new/mlpblend" = { quiz = 0.858995 }
+"new/fwlsblend" = { quiz = 0.858001 }
+"3/tx" = { quiz = 0.864892 }
 "3/rbm" = { quiz = 0.869933 }
 "3/nn" = { quiz = 0.880428 }
-"3/other" = { quiz = 0.867991 }
-"3/gbmblend_part1" = { quiz = 0.860689 }
-"3/gbmblend_part2" = { quiz = 0.861151 }
-"3/gbmblend_part3" = { quiz = 0.860546 }
-"3/gbmblend_part4" = { quiz = 0.860665 }
-"3/mlpblend_part1" = { quiz = 0.859370 }
-"3/mlpblend_part2" = { quiz = 0.859205 }
-"3/mlpblend_part3" = { quiz = 0.858875 }
-"3/mlpblend_part4" = { quiz = 0.858844 }
-"3/fwlsblend_part1" = { quiz = 0.858576 }
-"3/fwlsblend_part2" = { quiz = 0.858294 }
+"3/other" = { quiz = 0.873045 }
+"3/gbmblend" = { quiz = 0.860283 }
+"3/mlpblend" = { quiz = 0.858571 }
+"3/fwlsblend" = { quiz = 0.858296 }
+"old/*" = { quiz = 0.857838 }
+"new/*" = { quiz = 0.857715 }
+"3/*" = { quiz = 0.857746 }
 ensemble = { quiz = 0.855944 }
 
 # Single split, fitted on the probe labels: the cheap bench a new column is
@@ -107,17 +104,16 @@ tolerance   = 1e-5
 
 [[ensemble.source]]
 split  = "new"
-groups = ["gold", "silver", "gbmblend2", "mlpblend2", "fwlsblend2"]
+groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [ensemble.expected]
-gold = { probe = 0.860411, quiz = 0.861869 }
-silver = { probe = 0.863964, quiz = 0.865224 }
-gbmblend2_part1 = { probe = 0.858300, quiz = 0.860105 }
-gbmblend2_part2 = { probe = 0.858778, quiz = 0.860517 }
-mlpblend2_part1 = { probe = 0.857486, quiz = 0.859253 }
-mlpblend2_part2 = { probe = 0.857394, quiz = 0.859166 }
-fwlsblend2_part1 = { probe = 0.856869, quiz = 0.858087 }
-fwlsblend2_part2 = { probe = 0.856821, quiz = 0.858488 }
+tx = { probe = 0.863909, quiz = 0.865091 }
+rbm = { probe = 0.869304, quiz = 0.870733 }
+nn = { probe = 0.873266, quiz = 0.876034 }
+other = { probe = 0.875514, quiz = 0.877672 }
+gbmblend = { probe = 0.858145, quiz = 0.860066 }
+mlpblend = { probe = 0.857265, quiz = 0.859063 }
+fwlsblend = { probe = 0.856522, quiz = 0.858113 }
 ensemble = { probe = 0.856167, quiz = 0.858021 }
 
 # Split_3 only, fitted on the probe_3 labels: the cheap bench a new split_3 lab
@@ -134,20 +130,13 @@ split  = "3"
 groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [ensemble.expected]
-tx = { probe = 0.868180, quiz = 0.865884 }
+tx = { probe = 0.867461, quiz = 0.865076 }
 rbm = { probe = 0.872360, quiz = 0.870098 }
 nn = { probe = 0.882797, quiz = 0.880675 }
-other = { probe = 0.870557, quiz = 0.868188 }
-gbmblend_part1 = { probe = 0.862932, quiz = 0.860712 }
-gbmblend_part2 = { probe = 0.863560, quiz = 0.861153 }
-gbmblend_part3 = { probe = 0.862621, quiz = 0.860547 }
-gbmblend_part4 = { probe = 0.862569, quiz = 0.860665 }
-mlpblend_part1 = { probe = 0.861720, quiz = 0.859401 }
-mlpblend_part2 = { probe = 0.861323, quiz = 0.859225 }
-mlpblend_part3 = { probe = 0.860903, quiz = 0.858877 }
-mlpblend_part4 = { probe = 0.860934, quiz = 0.858847 }
-fwlsblend_part1 = { probe = 0.861663, quiz = 0.858588 }
-fwlsblend_part2 = { probe = 0.860433, quiz = 0.858306 }
+other = { probe = 0.875458, quiz = 0.873258 }
+gbmblend = { probe = 0.862231, quiz = 0.860330 }
+mlpblend = { probe = 0.860596, quiz = 0.858620 }
+fwlsblend = { probe = 0.860432, quiz = 0.858306 }
 ensemble = { probe = 0.859824, quiz = 0.857945 }
 
 # What a delta is worth, measured by dropping columns from the blend. Printed

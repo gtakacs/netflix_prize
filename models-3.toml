@@ -5,7 +5,7 @@
 # RBMs, s3-tx300r, s3-bk1-120nb, user-kNN chains, ...), by model family; a chain or residual
 # model sits with the family of its root. `_epNN` are epoch snapshots (keep_epochs of the job).
 
-tx = [
+tx_orig = [
     "s3-tx100olm__dnn16p",
     "s3-tx100olm__knn-m",
     "s3-tx100r{_ep03}",
@@ -55,7 +55,7 @@ tx = [
     "s3-txnsvd50y{_ep01,_ep03,_ep10,_ep18}",
 ]
 
-rbm = [
+rbm_orig = [
     "s3-rbm100p__knnf",
     "s3-rbm10__knn-s",
     "s3-rbm10__knn-w",
@@ -104,7 +104,7 @@ rbm = [
     "s3-rbm800p__nlpp__knn-w",
 ]
 
-nn = [
+nn_orig = [
     "s3-attn16{_ep08}",
     "s3-attn32{,_ep06}",
     "s3-attn32__kimp-r",
@@ -130,11 +130,14 @@ nn = [
     "s3-nade12s__knn3",
 ]
 
-other = [
+als = [
     "s3-als8",
     "s3-als8__knn3",
     "s3-als8__knn3b",
     "s3-als8__knn3t",
+]
+
+bk = [
     "s3-bk1-120{_ep20,_ep28}",
     "s3-bk1-120__knn-m",
     "s3-bk1-120nb{_ep14,_ep21}",
@@ -146,6 +149,9 @@ other = [
     "s3-bk1-60n__knn-w",
     "s3-bk3-20",
     "s3-bk3-20__knns",
+]
+
+bknbrx_integ_mf = [
     "s3-bknbrx-100w{_ep01}",
     "s3-bknbrx-200t__knn-s",
     "s3-bknbrx-30d{_ep15}",
@@ -153,9 +159,15 @@ other = [
     "s3-integ80-pyuddf",
     "s3-mf60__nlpp",
     "s3-mf60__nlpp__knn-s",
+]
+
+mfrbmx = [
     "s3-mfrbmx-50w{_ep08,_ep11}",
     "s3-mfrbmx-60h{_ep06,_ep08}",
     "s3-mfrbmx-60h__knn-s",
+]
+
+nsvd = [
     "s3-nsvd20-b",
     "s3-nsvd20-b__knn-m",
     "s3-nsvd20-b__nlpp",
@@ -229,7 +241,11 @@ fwlsblend_part2 = [
 # Meta-groups: named unions of group (or other meta) names,
 # usable only via -g/--groups.
 [meta]
-blend200 = ["tx", "rbm", "nn", "other"]
 gbmblend = ["gbmblend_part1", "gbmblend_part2", "gbmblend_part3", "gbmblend_part4"]
 mlpblend = ["mlpblend_part1", "mlpblend_part2", "mlpblend_part3", "mlpblend_part4"]
 fwlsblend = ["fwlsblend_part1", "fwlsblend_part2"]
+other_orig = ["als", "bk", "bknbrx_integ_mf", "mfrbmx", "nsvd"]
+tx = ["tx_orig", "bk"]
+rbm = ["rbm_orig"]
+nn = ["nn_orig"]
+other = ["als", "bknbrx_integ_mf", "mfrbmx", "nsvd"]

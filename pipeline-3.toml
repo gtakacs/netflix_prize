@@ -214,7 +214,7 @@ voting = ["all"]
 inputs_from = ["ingest", "split_3"]
 inputs = ["src/bin/predfeat.rs"]
 outputs = ["{preds}/vfx/std_all.{pr}.npy", "{preds}/vfx/std_all.{fulltrain_pr}.npy", "{preds}/vfx/range_all.{pr}.npy", "{preds}/vfx/range_all.{fulltrain_pr}.npy", "{preds}/vfx/mean_c.{pr}.npy", "{preds}/vfx/mean_c.{fulltrain_pr}.npy", "{preds}/vfx/std_tx.{pr}.npy", "{preds}/vfx/std_tx.{fulltrain_pr}.npy", "{preds}/vfx/std_rbm.{pr}.npy", "{preds}/vfx/std_rbm.{fulltrain_pr}.npy", "{preds}/vfx/std_nn.{pr}.npy", "{preds}/vfx/std_nn.{fulltrain_pr}.npy", "{preds}/vfx/std_other.{pr}.npy", "{preds}/vfx/std_other.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_rbm.{pr}.npy", "{preds}/vfx/d_tx_rbm.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_nn.{pr}.npy", "{preds}/vfx/d_tx_nn.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_other.{pr}.npy", "{preds}/vfx/d_tx_other.{fulltrain_pr}.npy"]
-cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-3.toml -t models-3.toml --groups tx,rbm,nn,other"
+cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-3.toml -t models-3.toml --groups tx=tx_orig,rbm=rbm_orig,nn=nn_orig,other=other_orig"
 
 # Latent features for the blends (2026-10-30): the user and item vectors of a small
 # tx and the expected hidden units of an RBM, both from the training-set model only
@@ -1394,25 +1394,25 @@ env = "EPOCHS=10 F=40 IMPL=1 REG_DR=1000 REG_FQ=10 REG_P=30 REG_Q=30 REG_UD=10 R
 
 [jobs.gbr2x]
 jobtype = "gbmblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
 [jobs.gbc2x]
 jobtype = "gbmblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
 [jobs.mlpr2x]
 jobtype = "mlpblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
 [jobs.mlpc3x]
 jobtype = "mlpblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
@@ -1420,7 +1420,7 @@ seeds = [1]
 # new-split fwls2 group (14 of 20), lambda as there.
 [jobs.fwls2x]
 jobtype = "fwlsblend"
-groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "mlpblend_part1"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig", "gbmblend_part1", "mlpblend_part1"]
 voting = ["fwls2vf"]
 seeds = [1]
 extra_args = ["--lambda", "50", "-m", "vf/vf090_movie_rating_slope"]
@@ -1429,7 +1429,7 @@ extra_args = ["--lambda", "50", "-m", "vf/vf090_movie_rating_slope"]
 # mlpblend_part1-2), not only the round-1 ones.
 [jobs.fwls2xa]
 jobtype = "fwlsblend"
-groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
 voting = ["fwls2vf"]
 seeds = [1]
 extra_args = ["--lambda", "100", "-m", "vf/vf090_movie_rating_slope"]
@@ -1441,7 +1441,7 @@ extra_args = ["--lambda", "100", "-m", "vf/vf090_movie_rating_slope"]
 # blends. Selected in the blend lab (preds_lab/s3-journal.md, 2026-10-29).
 [jobs.fwlsb57k8]
 jobtype = "fwlsblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["fwls57"]
 seeds = [1]
 inputs_from = ["vfeat1", "predfeat"]
@@ -1449,14 +1449,14 @@ extra_args = ["--lambda", "3000", "--folds", "8", "--solver", "lapack"]
 
 [jobs.fwls15k4]
 jobtype = "fwlsblend"
-groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
 voting = ["fwls15"]
 seeds = [1]
 extra_args = ["--lambda", "30", "--folds", "4", "--solver", "lapack"]
 
 [jobs.fwls33k16]
 jobtype = "fwlsblend"
-groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
 voting = ["fwls33"]
 seeds = [2]
 inputs_from = ["vfeat1", "predfeat"]
@@ -1467,21 +1467,21 @@ extra_args = ["--lambda", "10000", "--folds", "16", "--solver", "lapack"]
 # and mlpr3x (blend_config aliases).
 [jobs.gbc2k4]
 jobtype = "gbmblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3k4]
 jobtype = "mlpblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1, 2]
 extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3vk4]
 jobtype = "mlpblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4", "vfx9"]
 seeds = [1, 3]
 inputs_from = ["vfeat1", "predfeat"]
@@ -1494,7 +1494,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 # about -1e-4 to cross3 (preds_lab/s3-journal.md, 2026-10-30).
 [jobs.mlpr3lk4]
 jobtype = "mlpblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4", "lattx"]
 seeds = [1]
 inputs_from = ["vfeat1", "predfeatlat"]
@@ -1502,7 +1502,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3lak4]
 jobtype = "mlpblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4", "lattx", "latrbm"]
 seeds = [1]
 inputs_from = ["vfeat1", "predfeatlat"]
@@ -1510,7 +1510,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.gbc2lk4]
 jobtype = "gbmblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4", "lattx", "latrbm"]
 seeds = [1]
 inputs_from = ["vfeat1", "predfeatlat"]
@@ -1523,24 +1523,24 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr2o]
 jobtype = "mlpblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [2, 3, 4]
 
 [jobs.mlpc3o]
 jobtype = "mlpblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [2, 3]
 
 [jobs.mlpr3x]
 jobtype = "mlpblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
 [jobs.gbr4x]
 jobtype = "gbmblend"
-groups = ["tx", "rbm", "nn", "other"]
+groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]

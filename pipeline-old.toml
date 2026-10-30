@@ -197,38 +197,38 @@ binary = "attn"
 
 [jobs.gbr1]
 jobtype = "gbmblend"
-groups = ["integrated", "rbm", "other"]
+groups = ["integrated", "rbm_orig", "other_orig"]
 voting = ["all"]
 seeds = [1, 2, 3, 4, 5, 6, 7]
 
 [jobs.gbr2]
 jobtype = "gbmblend"
-groups = ["integrated", "rbm", "other"]
+groups = ["integrated", "rbm_orig", "other_orig"]
 voting = ["all"]
 exclude = ["cfnade-96_ep95"]
 seeds = [1, 2, 3]
 
 [jobs.gbr3]
 jobtype = "gbmblend"
-groups = ["integrated", "rbm", "other"]
+groups = ["integrated", "rbm_orig", "other_orig"]
 voting = ["all"]
 seeds = [1]
 
 [jobs.gbr4o]
 jobtype = "gbmblend"
-groups = ["integrated", "rbm", "other"]
+groups = ["integrated", "rbm_orig", "other_orig"]
 voting = ["all"]
 seeds = [1, 2, 3]
 
 [jobs.gbc1]
 jobtype = "gbmblend"
-groups = ["integrated", "rbm", "other"]
+groups = ["integrated", "rbm_orig", "other_orig"]
 voting = ["all"]
 seeds = [1, 2, 3, 4]
 
 [jobs.gbc2o]
 jobtype = "gbmblend"
-groups = ["integrated", "rbm", "other"]
+groups = ["integrated", "rbm_orig", "other_orig"]
 voting = ["all"]
 seeds = [1]
 
@@ -236,7 +236,7 @@ seeds = [1]
 
 [jobs.mlpr2o]
 jobtype = "mlpblend"
-groups = ["integrated", "rbm", "other"]
+groups = ["integrated", "rbm_orig", "other_orig"]
 voting = ["all"]
 seeds = [1, 2, 3, 4, 5, 6, 7]
 
@@ -244,7 +244,7 @@ seeds = [1, 2, 3, 4, 5, 6, 7]
 
 [jobs.fwls1]
 jobtype = "fwlsblend"
-groups = ["integrated", "rbm", "other", "gbmblend", "mlpblend"]
+groups = ["integrated", "rbm_orig", "other_orig", "gbmblend", "mlpblend"]
 voting = ["all"]
 seeds = [1]
 
@@ -252,7 +252,7 @@ seeds = [1]
 # `[meta] all`, so it has to be named here; lambda matches the fwls1 preset.
 [jobs.fwls1x]
 jobtype = "fwlsblend"
-groups = ["integrated", "rbm", "other", "x13", "gbmblend", "mlpblend"]
+groups = ["integrated", "rbm_orig", "other_orig", "x13", "gbmblend", "mlpblend"]
 voting = ["all"]
 seeds = [1]
 extra_args = ["--lambda", "10000"]

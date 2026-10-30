@@ -58,7 +58,7 @@ integrated = [
     "tsvdx4p-16000lm_ep{09,19}",   # non-deterministic!
 ]
 
-rbm = [
+rbm_orig = [
     "rbmx2-800bp_ep{03,24,27}",
     "rbmx2-600_ep27",
     "rbmx2-500{,__knnf,__knn-m,__knn-w}",
@@ -91,7 +91,7 @@ rbm = [
     "rbmx2-500bp{_ep29,__knnf}",
 ]
 
-other = [
+other_orig = [
     "cfnade-96_ep{95,10}",
     "cfnade-48_ep{95,25}",
     "cfnade-12_ep40",
@@ -341,7 +341,7 @@ fwls5 = [
 
 # Second-level blend outputs (predictions produced by the gbm/mlp blend jobs).
 
-gbmblend = [
+gbmblend_orig = [
     #"gbr1-s{1..7}",
 	#"gbr1x-s{1}",
     "gbr2-s{1,2,3}",
@@ -352,7 +352,7 @@ gbmblend = [
     "gbc2o-s1",
 ]
 
-mlpblend = [
+mlpblend_orig = [
     #"mlpr2o-s{1..9}",
 	"mlpr2ox-s{1,2}"
 ]
@@ -363,7 +363,7 @@ mlpblend = [
 # `-g gbmblend2` (see also gold/silver). Since 2026-10-30 gbmblend2 / mlpblend2 /
 # fwlsblend2 are [meta] unions of a _part1 (these lists) and a _part2 (the K-fold
 # and latent-input blends of round 3/4, below).
-gbmblend2_part1 = [
+gbmblend_part1 = [
     "gbc2o-s1",               # 3.2e-5
     "gbr2x-s2",               # 1.6e-5
     "gbr1-s1",                # 1.5e-5
@@ -383,7 +383,7 @@ gbmblend2_part1 = [
 ]
 
 # The mlp half of the same cleaned selection, same ordering.
-mlpblend2_part1 = [
+mlpblend_part1 = [
     "mlpc3x-s4",              # 1.0e-5
     "mlpr2x-s9",              # 0.7e-5
     "mlpr2x-s21",             # 0.7e-5
@@ -404,7 +404,7 @@ mlpblend2_part1 = [
     "mlpr2x14-s7",            # 0.1e-5
 ]
 
-fwlsblend = [
+fwlsblend_orig = [
     #"fwls1-s1",
     "fwls1x-s1",
     "fwls2-s1",
@@ -416,7 +416,7 @@ fwlsblend = [
 # The fwls layer after a leave-one-out sweep on the quiz-fitted blend
 # (--from new): fwls1x dropped, since fwls7x1/fwls7g took over its role.
 # Ordered by the quiz RMSE cost of dropping the column, largest first.
-fwlsblend2_part1 = [
+fwlsblend_part1 = [
     "fwls5-s1",               # 11.5e-5
     "fwls3-s1",               # 6.1e-5
     "fwls7x1-s1",             # 2.1e-5
@@ -599,12 +599,12 @@ silver = [
 # usable only via -g/--groups.
 # Round 3/4 blends (2026-10-30): K-fold cross-fit (--cv std / fwls --folds), the
 # fwls with the predfeat context features, and the blends with latent inputs.
-gbmblend2_part2 = [
+gbmblend_part2 = [
     "gbc2k4-s1",
     "gbc2lk4-s1",
 ]
 
-mlpblend2_part2 = [
+mlpblend_part2 = [
     "mlpr3k4-s1",
     "mlpr3k4-s2",
     "mlpr3vk4-s1",
@@ -612,7 +612,7 @@ mlpblend2_part2 = [
     "mlpr3lak4-s1",
 ]
 
-fwlsblend2_part2 = [
+fwlsblend_part2 = [
     "fwls38k8-s1",
     "fwlsb38k8-s1",
     "fwls38k16-s2",
@@ -688,7 +688,7 @@ fam_tx = [
     "tsvdx6-300",
 ]
 
-fam_rbm = [
+fam_rbm_part1 = [
     "rbmx2-500__knn-w",
     "rbmx2-200__knn3",
     "rbmx2-500bp__knnf",
@@ -703,7 +703,13 @@ fam_rbm = [
     "rbmx2-0",
     "rbmx2-800bp_ep27",
     "rbmx2-800bp_ep03",
+]
+
+fam_mfrbmx = [
     "mfrbmx-50",
+]
+
+fam_rbm_part2 = [
     "rbmx2-14e",
     "rbmx2-100e_ep02",
     "rbmx2-10__knn3",
@@ -751,7 +757,7 @@ fam_nn = [
     "cfnade-96_ep10",
 ]
 
-fam_other = [
+mf_als_bknbrx = [
     "mf-61__asym-16",
     "bknbrx-50_ep17",
     "als8-8__knn3",
@@ -759,9 +765,15 @@ fam_other = [
     "mf-60__knn3",
     "bknbrx-100_ep01",
     "bknbrx-50_ep05",
+]
+
+bk = [
     "bk3-30",
     "bk3-20__knns",
     "bk1-10_ep04",
+]
+
+mf_bknbrx = [
     "mf-61__knn3",
     "mf-60",
     "bknbrx-100_ep05",
@@ -769,10 +781,16 @@ fam_other = [
 ]
 
 [meta]
-gbmblend2 = ["gbmblend2_part1", "gbmblend2_part2"]
-mlpblend2 = ["mlpblend2_part1", "mlpblend2_part2"]
-fwlsblend2 = ["fwlsblend2_part1", "fwlsblend2_part2"]
-base   = ["integrated", "rbm", "other"]
+base   = ["integrated", "rbm_orig", "other_orig"]
 base2  = ["integrated2", "rbm2", "other2"]
-blends = ["gbmblend", "mlpblend"]
-all    = ["integrated", "rbm", "other", "x14", "gbmblend", "mlpblend", "fwlsblend"]
+blends = ["gbmblend_orig", "mlpblend_orig"]
+all    = ["integrated", "rbm_orig", "other_orig", "x14", "gbmblend_orig", "mlpblend_orig", "fwlsblend_orig"]
+gbmblend = ["gbmblend_part1", "gbmblend_part2"]
+mlpblend = ["mlpblend_part1", "mlpblend_part2"]
+fwlsblend = ["fwlsblend_part1", "fwlsblend_part2"]
+fam_rbm = ["fam_rbm_part1", "fam_mfrbmx", "fam_rbm_part2"]
+fam_other = ["mf_als_bknbrx", "bk", "mf_bknbrx"]
+tx = ["fam_tx", "bk"]
+rbm = ["fam_rbm_part1", "fam_rbm_part2"]
+nn = ["fam_nn"]
+other = ["mf_als_bknbrx", "fam_mfrbmx", "mf_bknbrx"]

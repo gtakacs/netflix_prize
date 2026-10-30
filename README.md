@@ -86,12 +86,15 @@ cargo build --release --features blas --bin ridge
 ```
 
 ```
-row                   models       quiz       test   expected       delta
-old/integrated            48   0.865765   0.866673   0.865765    +2.71e-7  OK
+row                    quiz (columns)   expected       delta
+old/tx                  0.863788 (52)   0.863788    -2.74e-8  OK
 ...
-ensemble                 535   0.855944   0.856888   0.855944    +2.29e-7  OK
+old/*                  0.857838 (137)   0.857838    -1.62e-7  OK
+new/*                  0.857715 (175)   0.857715    -1.54e-7  OK
+3/*                    0.857746 (223)   0.857746    -8.47e-8  OK
+ensemble               0.855944 (535)   0.855944    +2.29e-7  OK
 
-Reference check: PASS (30 rows within 1e-5)
+Reference check: PASS (25 rows within 1e-5)
 ```
 
 It takes about half a minute, exits non-zero if the numbers have drifted, and

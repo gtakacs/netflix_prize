@@ -51,7 +51,7 @@ integrated = [
     "bk1-10_ep29",
 ]
 
-rbm = [
+rbm_orig = [
     # gold
     "rbmr-2048",
     "rbmb-256__knn-r",
@@ -82,17 +82,32 @@ rbm = [
     "rbmb-512x__knn-r",
 ]
 
-other = [
+tsvd_fwls = [
     # gold
     "tsvdx4-160_fwls_10xblended_lambda100",
     "tsvdx4_fwls_10xblended_lambda200",
+]
+
+als_mf = [
     "als8-8__knn-25c",
     "mf-64u__asym-16",
+]
+
+mfrbm48 = [
     "mfrbm-48",
+]
+
+fbias_ge14 = [
     "fbias__knn-25f",
     # "gff_multi_dt_ddiff_uc_ic_xemix",
     "ge14__rbmg-128",
+]
+
+mfrbm96 = [
     "mfrbm-96",
+]
+
+misc = [
     "mf_and_consts",
     "ge14__rbmg-64__knn-c",
     "knn-25w__tsvdx-16",
@@ -118,9 +133,15 @@ other = [
     "mf_F20000",
     # extra
     "bknbrx-50seq",
+]
+
+tsvdx4_epochs = [
     "tsvdx4_20260304_1536_ep17",
     "tsvdx4_20260304_1536_ep11",
     ">tsvdx4_20260304_1536_epblended_lambda500",
+]
+
+cfnade = [
     "cfnade_rmsew010_ep38",
 ]
 
@@ -137,7 +158,7 @@ mlpblend = [
     "mlpr2o-s{1..7}",
 ]
 
-fwlsblend = [
+fwlsblend_part1 = [
     "fwls1-s1",
     "fwls3-s1",
     "fwls4-s1",
@@ -159,10 +180,21 @@ x13 = [
     "attn-32__nlpp__knn3",
 ]
 
+# fwls1x-s1: the manual column of the cross ensembles (formerly its `models` key).
+fwlsblend_part2 = [
+    "fwls1x-s1",
+]
+
 [meta]
-base   = ["integrated", "rbm", "other"]
+base   = ["integrated", "rbm_orig", "other_orig"]
 blends = ["gbmblend", "mlpblend"]
 # `all` is what an unqualified selection (no -g/--groups) resolves to: the
 # maintained list of *real* predictor groups. Add new real groups here;
 # selection/helper groups stay out so they never leak into a default run.
-all    = ["integrated", "rbm", "other", "gbmblend", "mlpblend", "fwlsblend"]
+all    = ["integrated", "rbm_orig", "other_orig", "gbmblend", "mlpblend", "fwlsblend_part1"]
+other_orig = ["tsvd_fwls", "als_mf", "mfrbm48", "fbias_ge14", "mfrbm96", "misc", "tsvdx4_epochs", "cfnade"]
+tx = ["integrated", "tsvd_fwls", "tsvdx4_epochs"]
+rbm = ["rbm_orig"]
+nn = ["cfnade"]
+other = ["als_mf", "mfrbm48", "fbias_ge14", "mfrbm96", "misc"]
+fwlsblend = ["fwlsblend_part1", "fwlsblend_part2"]

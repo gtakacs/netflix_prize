@@ -10,7 +10,10 @@
 //!   d_<g0>_<g>           mean of the first group minus the mean of group g (g ≠ g0)
 //!   mean_c               mean over all columns − 3.6
 //!
-//!   predfeat -p pipeline-3.toml -t models-3.toml --groups tx,rbm,nn,other
+//!   predfeat -p pipeline-3.toml -t models-3.toml --groups tx=tx_orig,rbm=rbm_orig,nn=nn_orig,other=other_orig
+//!
+//! A `--groups` item LABEL=GROUP names the features by LABEL (std_LABEL, d_...)
+//! while reading the columns of GROUP; a bare GROUP is its own label.
 //!
 //! With `--latent-users STEM` / `--latent-items STEM` it instead writes latent
 //! vectors per rating: `<preds>/<out>/STEM.u<k>.<ds>.npy` (`STEM.i<k>.<ds>.npy`), the
@@ -47,7 +50,8 @@ fn main() {
             "-h" | "--help" => {
                 println!("Usage: predfeat -p PIPELINE -t MODELS --groups G1,G2,... [--out DIR (default vfx)]");
                 println!("       predfeat -p PIPELINE [--latent-users STEM] [--latent-items STEM] [--out DIR (default lat)]");
-                println!("  DIR is relative to the split's preds dir; G1 is the reference of the d_<G1>_<G> features.");
+                println!("  DIR is relative to the split's preds dir; G1 is the reference of the d_<G1>_<G> features;");
+                println!("  a group may be given as LABEL=GROUP (features named after LABEL).");
                 return;
             }
             s => panic!("unknown argument '{s}' (see --help)"),
@@ -73,7 +77,13 @@ fn main() {
 
     // Columns per group (a column in two groups counts in both).
     let mg = load_models_toml(&models);
-    let cols: Vec<Vec<String>> = groups.iter().map(|g| {
+    // LABEL=GROUP: features named after LABEL, columns from GROUP
+    let (labels, sources): (Vec<String>, Vec<String>) = groups.iter().map(|g| match g.split_once('=') {
+        Some((l, s)) => (l.to_string(), s.to_string()),
+        None => (g.clone(), g.clone()),
+    }).unzip();
+    let groups = labels;
+    let cols: Vec<Vec<String>> = sources.iter().map(|g| {
         let sel = select_groups(&mg, std::slice::from_ref(g));
         let flat = flatten_groups(&sel, &[]);
         let skipped = flat.clip.iter().filter(|&&c| !c).count();
