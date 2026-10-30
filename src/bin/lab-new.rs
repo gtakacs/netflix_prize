@@ -227,6 +227,7 @@ fn main() {
             None
         },
         save_ifeat: true,
+        save_ufeat: false,
         low_memory: true,
         full_su: true,
             };

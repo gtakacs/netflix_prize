@@ -512,6 +512,7 @@ fn base_rx_cfg() -> RxConfig {
         cd_start: b.cd_start, cd_inc_every: b.cd_inc_every, cd_inc_by: b.cd_inc_by, cd_max: b.cd_max,
         use_conditional: b.use_conditional, r_include_pr_all: b.r_include_pr_all,
         save_w: b.save_w, n_factors: b.n_factors,
+        save_ufeat: false,
         n_freq_bins: b.n_freq_bins, lr_bif: b.lr_bif, wd_bif: b.wd_bif,
     }
 }

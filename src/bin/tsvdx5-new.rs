@@ -158,6 +158,7 @@ fn run_base(
         lambda1: 25.0, lambda2: 10.0,
         ordinal_head: None,
         save_ifeat,
+        save_ufeat: false,
         low_memory,
         full_su: true,
     };
@@ -211,6 +212,7 @@ fn run_ord(n_feat: usize, n_epochs: usize, max_neighbors: usize, w_factor: f32, 
             reg_t: 0.0,
         }),
         save_ifeat: false,
+        save_ufeat: false,
         low_memory: false,
         full_su: true,
     };

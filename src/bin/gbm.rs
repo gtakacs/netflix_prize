@@ -103,8 +103,9 @@ mod real {
             "gbc1" | "gbc1x" | "gbc1y" => BlendParams { multiclass: true, ..Default::default() },
 
             // Bayesian-optimized multiclass classifier GBC.
-            // gbc2k4: the same model, run with --cv std --folds 4 (round 3).
-            "gbc2o" | "gbc2x" | "gbc2k4" => BlendParams {
+            // gbc2k4: the same model, run with --cv std --folds 4 (round 3);
+            // gbc2lk4: with latent-vector inputs (lab).
+            "gbc2o" | "gbc2x" | "gbc2k4" | "gbc2lk4" | "gbc2laok4" => BlendParams {
                 num_leaves: 191, iters: 400, lr: 0.019929113104398585,
                 min_data_in_leaf: 527, feature_fraction: 0.6706351917324398,
                 bagging_fraction: 0.9755609862783436, bagging_freq: 3,

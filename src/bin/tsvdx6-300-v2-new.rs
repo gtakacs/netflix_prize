@@ -51,6 +51,7 @@ fn main() {
         lambda2: 10.0,
         ordinal_head: None,
         save_ifeat: false,
+        save_ufeat: false,
         low_memory: false,
         full_su: true,
     };

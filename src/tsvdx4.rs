@@ -140,6 +140,7 @@ pub fn into_tx_config(cfg: Tsvdx4Config) -> TxConfig {
 
         ordinal_head:  cfg.ordinal_head,
         save_ifeat:    cfg.save_ifeat,
+        save_ufeat: false,
         low_memory:    cfg.low_memory,
         full_su:       cfg.full_su,
     }

@@ -73,6 +73,9 @@ pub struct RxConfig {
 
     // Speed-ups (toggleable)
     pub save_w: bool,
+    // Save the expected hidden units of every user, computed from the model's own
+    // (training) ratings, as `.ufeat.<ds>.npy` [n_users, n_hidden] (blend features).
+    pub save_ufeat: bool,
 
     // Factored RBM: decompose W = P @ Q (and Wc = Pc @ Q for TruncExp)
     pub n_factors: Option<usize>,
@@ -1460,6 +1463,16 @@ impl Regressor for RxModel {
                 }
             }
             crate::teeln!("Saved W matrix to {}", path);
+        }
+        if self.cfg.save_ufeat {
+            use rayon::prelude::*;
+            let path = format!("{}/{}.ufeat.{}.npy", preds_dir, model_name, tr_set);
+            let rows: Vec<Vec<f32>> = (0..self.n_users).into_par_iter()
+                .map(|u| hidden_expected(&self.compute_hidden_acts(u), self.cfg.hidden_type))
+                .collect();
+            let h = Array2::from_shape_fn((self.n_users, self.cfg.n_hidden), |(u, j)| rows[u][j]);
+            write_npy(&path, &h).unwrap();
+            crate::teeln!("Saved expected hidden units to {}", path);
         }
     }
 

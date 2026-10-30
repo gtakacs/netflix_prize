@@ -81,8 +81,9 @@ fn blend_config(name: &str) -> BlendParams {
 
         // Wider net for blend diversity: 128x64 with proportionally more
         // weight decay and a bigger batch.
-        // mlpr3k4 / mlpr3vk4: the same net, run with --cv std --folds 4 (round 3).
-        "mlpr3x" | "mlpr3k4" | "mlpr3vk4" => BlendParams {
+        // mlpr3k4 / mlpr3vk4: the same net, run with --cv std --folds 4 (round 3);
+        // mlpr3lk4 / mlpr3lak4 / mlpr3lbk4: with latent-vector inputs (lab).
+        "mlpr3x" | "mlpr3k4" | "mlpr3vk4" | "mlpr3lk4" | "mlpr3lak4" | "mlpr3lbk4" | "mlpr3lok4" | "mlpr3laok4" => BlendParams {
             hidden: vec![128, 64], alpha: 0.5, lr: 0.0004, iters: 100, batch: 400,
             tol: 1e-5, n_iter_no_change: 10, ..Default::default()
         },

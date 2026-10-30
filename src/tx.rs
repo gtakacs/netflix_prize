@@ -199,6 +199,7 @@ pub struct TxConfig {
 
     pub ordinal_head: Option<OrdinalHeadConfig>, // optional ordinal head (None = MSE loss)
     pub save_ifeat: bool,     // save ifeat as `.ifeat.<ds>.npy` artifact
+    pub save_ufeat: bool,     // save ufeat + ycache (static user vector) as `.ufeat.<ds>.npy`
     pub low_memory: bool,     // skip per-day NSVD1 buffers (yfeat_day / ufeat_day / ycache_day)
     pub full_su: bool,        // build NSVD1 su from train ∪ probe (else train only)
 }
@@ -728,6 +729,12 @@ impl Regressor for TxModel {
             let path = format!("{}/{}.ifeat.{}.npy", preds_dir, model_name, tr_set);
             write_npy(&path, &self.ifeat).unwrap();
             crate::teeln!("Saved item factors to {}", path);
+        }
+        if self.cfg.save_ufeat {
+            // p_u + |N(u)|^-1/2 sum y_j: the user vector without its day / drift terms
+            let path = format!("{}/{}.ufeat.{}.npy", preds_dir, model_name, tr_set);
+            write_npy(&path, &(&self.ufeat + &self.ycache)).unwrap();
+            crate::teeln!("Saved user factors to {}", path);
         }
     }
 

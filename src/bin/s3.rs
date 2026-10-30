@@ -47,7 +47,8 @@ fn main() {
 // tx
 // ----------------------------------------------------------------------------
 // split_3 experiments: TxModel (the tsvdx4/5 family) with every knob from the
-// environment, so a parameter search needs no recompile. Defaults are the
+// environment, so a parameter search needs no recompile. IFEAT=1 / UFEAT=1 save
+// the item / user factors (`.ifeat.<ds>.npy`, `.ufeat.<ds>.npy`). Defaults are the
 // tsvdx5 base recipe, with the neighborhood off unless NBR > 0. QUAL_ONLY=1
 // runs only the fulltrain -> qual phase of an existing probe-only column.
 //
@@ -100,6 +101,7 @@ fn tx() {
             th_init: [0.5, 1.25, 3.75, 5.5], th_gap: 0.001, lr_t: 0.0, reg_t: 0.0,
         }),
         save_ifeat: ev("IFEAT", 0) != 0,
+        save_ufeat: ev("UFEAT", 0) != 0,
         low_memory: ev("LM", 0) != 0,
         full_su: true,
     };
@@ -127,6 +129,7 @@ fn tx() {
 // on [EA, EB]).
 // TRANSPOSE=1 swaps users and items (an item-based RBM).
 // QUAL_ONLY=1 runs only the fulltrain -> qual phase (probe files are left alone).
+// UFEAT=1 saves the expected hidden units per user (`.ufeat.<ds>.npy`, blend features).
 //
 //   H=100 EPOCHS=20 cargo run --release --bin s3 -- rbm s3-rbm100 -p pipeline-3.toml
 
@@ -171,6 +174,7 @@ fn rbm() {
         use_conditional: ev("COND", 1) != 0,
         r_include_pr_all: true,
         save_w: true,
+        save_ufeat: ev("UFEAT", 0) != 0,
         n_factors: (nf > 0).then_some(nf),
         n_freq_bins: 8,
         lr_bif: ev("LR_BIF", 0.0),
