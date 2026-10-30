@@ -360,8 +360,10 @@ mlpblend = [
 # Cleaned second-level blend columns: what survived a leave-one-out sweep over
 # the gold+silver blend (221 -> 171 columns). Ordered by the probe RMSE cost of
 # dropping the column, largest first. Left out of `[meta] all`; select with
-# `-g gbmblend2` (see also gold/silver).
-gbmblend2 = [
+# `-g gbmblend2` (see also gold/silver). Since 2026-10-30 gbmblend2 / mlpblend2 /
+# fwlsblend2 are [meta] unions of a _part1 (these lists) and a _part2 (the K-fold
+# and latent-input blends of round 3/4, below).
+gbmblend2_part1 = [
     "gbc2o-s1",               # 3.2e-5
     "gbr2x-s2",               # 1.6e-5
     "gbr1-s1",                # 1.5e-5
@@ -381,7 +383,7 @@ gbmblend2 = [
 ]
 
 # The mlp half of the same cleaned selection, same ordering.
-mlpblend2 = [
+mlpblend2_part1 = [
     "mlpc3x-s4",              # 1.0e-5
     "mlpr2x-s9",              # 0.7e-5
     "mlpr2x-s21",             # 0.7e-5
@@ -414,7 +416,7 @@ fwlsblend = [
 # The fwls layer after a leave-one-out sweep on the quiz-fitted blend
 # (--from new): fwls1x dropped, since fwls7x1/fwls7g took over its role.
 # Ordered by the quiz RMSE cost of dropping the column, largest first.
-fwlsblend2 = [
+fwlsblend2_part1 = [
     "fwls5-s1",               # 11.5e-5
     "fwls3-s1",               # 6.1e-5
     "fwls7x1-s1",             # 2.1e-5
@@ -595,7 +597,181 @@ silver = [
 
 # Meta-groups: named unions of group (or other meta) names,
 # usable only via -g/--groups.
+# Round 3/4 blends (2026-10-30): K-fold cross-fit (--cv std / fwls --folds), the
+# fwls with the predfeat context features, and the blends with latent inputs.
+gbmblend2_part2 = [
+    "gbc2k4-s1",
+    "gbc2lk4-s1",
+]
+
+mlpblend2_part2 = [
+    "mlpr3k4-s1",
+    "mlpr3k4-s2",
+    "mlpr3vk4-s1",
+    "mlpr3lk4-s1",
+    "mlpr3lak4-s1",
+]
+
+fwlsblend2_part2 = [
+    "fwls38k8-s1",
+    "fwlsb38k8-s1",
+    "fwls38k16-s2",
+]
+
+# gold + silver by model family, for predfeat (the job of the same name).
+fam_tx = [
+    "tsvdx5-1000__nlpp__knn3",
+    "tsvdx4-4800lm__knnf",
+    "tsvdx4-4800lm_ep13",
+    "tsvdx5-150o_ep24",
+    "tsvdx4-4800lm__knns",
+    "tsvdx5-60",
+    "tsvdx6-300_ep20",
+    "tsvdx4-q16tb__epochs",
+    "tsvdx5-1200lm__epochs",
+    "tsvdx6-300_ep03",
+    "tsvdx4-16-t_ep01",
+    "tsvdx4-16-t",
+    "tsvdx4-400lm__knnf",
+    "tsvdx5-150__nlpp__knnf",
+    "tsvdx4p-8000lm__knnf",
+    "tsvdx4-4800lm__knn-d",
+    ">tsvdx5-40-nsvd1",
+    "tsvdx4-4800lm_ep03",
+    ">tsvdx5-150-mf",
+    ">tsvdx4-2400lm-bias",
+    "tsvdx4-2400lm__knns",
+    ">tsvdx5-1200lm-bias",
+    "tsvdx5-120o__dnn-16p50",
+    "tsvdx4-h8nb_ep01",
+    "tsvdx4-t8cu_ep06",
+    "tsvdx5-150o_ep06",
+    "tsvdx4-60o__epochs",
+    "tsvdx5-150o_ep16",
+    "tsvdx5-120o__knn3",
+    "tsvdx5-120o",
+    "tsvdx5-400__knn3",
+    "tsvdx5-400__nlpp__knn3",
+    "tsvdx4-60__epochs",
+    "tsvdx4p-16000lm_ep09",
+    "tsvdx4-60",
+    "tsvdx5-300__nlpp__knn3",
+    "tsvdx5-150o",
+    "tsvdx4-d0tb__epochs",
+    "tsvdx4-d0tb__knn3",
+    "tsvdx4p-16000lm_ep19",
+    "tsvdx5-120o__epochs",
+    ">tsvdx5-150o-bias",
+    ">tsvdx4-80o-bias",
+    ">tsvdx5-120o-bias",
+    ">tsvdx4-16-t__knnf",
+    "tsvdx4p-2000lm__knnf",
+    "tsvdx4-n8nbo__knn3",
+    "tsvdx6-300_ep12",
+    "tsvdx4-4800lm_ep21",
+    "tsvdx4-60__knns",
+    "tsvdx4-60o__knns",
+    "tsvdx4-1600lm_ep02",
+    "tsvdx4-m1n",
+    "tsvdx4-s20fo_ep08",
+    "tsvdx4-160o-nsvd1",
+    "tsvdx4p-6000lm__knnf",
+    ">tsvdx4-400lm-nsvd1",
+    ">tsvdx4-400lm-mf",
+    "tsvdx4-400lm__epochs",
+    "tsvdx5-20",
+    ">tsvdx5-20-mf",
+    "tsvdx4-f1__epochs",
+    "tsvdx4-h8nb__knn3",
+    "tsvdx4-h8nb",
+    "tsvdx6-300-v2",
+    "tsvdx6-300",
+]
+
+fam_rbm = [
+    "rbmx2-500__knn-w",
+    "rbmx2-200__knn3",
+    "rbmx2-500bp__knnf",
+    "rbmx2-16-t",
+    "rbmx2-600_ep27",
+    "rbmx2-350e__epochs",
+    "rbmx2-300s__knn3",
+    "rbmx2-12__asym-16__knnf",
+    "rbmx2-400__knnf",
+    "rbmx2-300s_ep46",
+    "rbmx2-40__knn3",
+    "rbmx2-0",
+    "rbmx2-800bp_ep27",
+    "rbmx2-800bp_ep03",
+    "mfrbmx-50",
+    "rbmx2-14e",
+    "rbmx2-100e_ep02",
+    "rbmx2-10__knn3",
+    "rbmx2-10__tsvdx4-10lm__epochs",
+    "rbmx2-32-t",
+    "rbmx2-150__knnf",
+    "rbmx2-8e__knnf",
+    "rbmx2-150__knns",
+    "rbmx2-100e_ep15",
+    "rbmx2-500__knnf",
+    ">rbmx2-10__tsvdx4-10lm-nsvd1",
+    "rbmx2-160f__epochs",
+    "rbmx2-300s_ep38",
+    "rbmx2-12__asym-16__knn3",
+    "rbmx2-60__knn3",
+    "rbmx2-10r__knn3",
+    "rbmx2-300s__knnf",
+    "rbmx2-800bp_ep24",
+    ">rbmx2-400-p4",
+    "rbmx2-500__knn-m",
+    "rbmx2-500",
+]
+
+fam_nn = [
+    "cfnade-96_ep95",
+    "dnn-24__dnn-16p50__asym-16p75__knn3b",
+    "aex-64",
+    "cfnade-48_ep25",
+    "dnn-24__dnn-24p50",
+    "attn-32__nlpp__knn3",
+    "dnn-24__dnn-16p50__asym-16p50",
+    "dnn-24__dnn-16p50__asym-16p75__knn3c",
+    "dnn-24__dnn-16p50__knn3",
+    "dnn-16",
+    "attn-32-t",
+    "aex-128",
+    "cfnade-96r_ep95",
+    "aex-16",
+    "dnn-24__dnn-16__knn3",
+    "dnn-24__knn3",
+    "dnn-24__asym-16p75__knn3",
+    "dnn-24__attn-32",
+    "cfnade-12_ep40",
+    "dnn-64",
+    "cfnade-96_ep10",
+]
+
+fam_other = [
+    "mf-61__asym-16",
+    "bknbrx-50_ep17",
+    "als8-8__knn3",
+    "als8-8",
+    "mf-60__knn3",
+    "bknbrx-100_ep01",
+    "bknbrx-50_ep05",
+    "bk3-30",
+    "bk3-20__knns",
+    "bk1-10_ep04",
+    "mf-61__knn3",
+    "mf-60",
+    "bknbrx-100_ep05",
+    "mf-61__asym-16_ep02",
+]
+
 [meta]
+gbmblend2 = ["gbmblend2_part1", "gbmblend2_part2"]
+mlpblend2 = ["mlpblend2_part1", "mlpblend2_part2"]
+fwlsblend2 = ["fwlsblend2_part1", "fwlsblend2_part2"]
 base   = ["integrated", "rbm", "other"]
 base2  = ["integrated2", "rbm2", "other2"]
 blends = ["gbmblend", "mlpblend"]

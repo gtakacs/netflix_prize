@@ -93,6 +93,13 @@ outputs = [
 ]
 cmd = "cargo build --release --bin nbstats-{split.name} && ./target/release/nbstats-{split.name} {name}"
 
+# A model run through the split_3 dispatcher `s3` on this split (knobs from `env`);
+# used for the latent-feature sources. Outputs are declared per job.
+[defaults.s3model]
+inputs_from = ["ingest", "newsplit"]
+inputs  = ["src/bin/s3.rs"]
+cmd = "cargo build --release --bin s3 && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/s3 {runner} {name} -p pipeline-new.toml --final --preds {preds} {extra}"
+
 [defaults.vfeat]
 inputs_from = ["ingest", "newsplit"]
 inputs = ["src/bin/{name}-{split.name}.rs"]
@@ -942,6 +949,35 @@ binary = "attn"
 jobtype = "vfeat"
 voting = ["all"]
 
+# Context features from base-predictor statistics (src/bin/predfeat.rs) over the
+# gold + silver columns by family (models-new.toml fam_*), for the round-3 blends.
+[jobs.predfeat]
+inputs_from = ["ingest", "newsplit"]
+inputs = ["src/bin/predfeat.rs"]
+outputs = ["{preds}/vfx/std_all.{pr}.npy", "{preds}/vfx/std_all.{fulltrain_pr}.npy", "{preds}/vfx/range_all.{pr}.npy", "{preds}/vfx/range_all.{fulltrain_pr}.npy", "{preds}/vfx/mean_c.{pr}.npy", "{preds}/vfx/mean_c.{fulltrain_pr}.npy", "{preds}/vfx/std_fam_tx.{pr}.npy", "{preds}/vfx/std_fam_tx.{fulltrain_pr}.npy", "{preds}/vfx/std_fam_rbm.{pr}.npy", "{preds}/vfx/std_fam_rbm.{fulltrain_pr}.npy", "{preds}/vfx/std_fam_nn.{pr}.npy", "{preds}/vfx/std_fam_nn.{fulltrain_pr}.npy", "{preds}/vfx/std_fam_other.{pr}.npy", "{preds}/vfx/std_fam_other.{fulltrain_pr}.npy", "{preds}/vfx/d_fam_tx_fam_rbm.{pr}.npy", "{preds}/vfx/d_fam_tx_fam_rbm.{fulltrain_pr}.npy", "{preds}/vfx/d_fam_tx_fam_nn.{pr}.npy", "{preds}/vfx/d_fam_tx_fam_nn.{fulltrain_pr}.npy", "{preds}/vfx/d_fam_tx_fam_other.{pr}.npy", "{preds}/vfx/d_fam_tx_fam_other.{fulltrain_pr}.npy"]
+cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-new.toml -t models-new.toml --groups fam_tx,fam_rbm,fam_nn,fam_other"
+
+# Latent features for the round-4 blends (2026-10-30): the user / item vectors of a
+# small tx and the expected hidden units of an RBM, from the training-set models
+# (only their trainx artifacts are read), as per-rating columns in {preds}/lat/.
+[jobs.tx20lat]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 F=20 IFEAT=1 LR_W=0.002 NBR=25 UFEAT=1 WF=0.8"
+outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.out", "{preds}/{name}.ufeat.{tr}.npy", "{preds}/{name}.ifeat.{tr}.npy"]
+
+[jobs.rbm50lat]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=20 H=50 UFEAT=1"
+outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.out", "{preds}/{name}.ufeat.{tr}.npy"]
+
+[jobs.predfeatlat]
+inputs_from = ["ingest", "newsplit", "tx20lat", "rbm50lat"]
+inputs = ["src/bin/predfeat.rs"]
+outputs = ["{preds}/lat/tx20lat.u00.{pr}.npy", "{preds}/lat/tx20lat.u00.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u01.{pr}.npy", "{preds}/lat/tx20lat.u01.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u02.{pr}.npy", "{preds}/lat/tx20lat.u02.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u03.{pr}.npy", "{preds}/lat/tx20lat.u03.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u04.{pr}.npy", "{preds}/lat/tx20lat.u04.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u05.{pr}.npy", "{preds}/lat/tx20lat.u05.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u06.{pr}.npy", "{preds}/lat/tx20lat.u06.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u07.{pr}.npy", "{preds}/lat/tx20lat.u07.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u08.{pr}.npy", "{preds}/lat/tx20lat.u08.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u09.{pr}.npy", "{preds}/lat/tx20lat.u09.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u10.{pr}.npy", "{preds}/lat/tx20lat.u10.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u11.{pr}.npy", "{preds}/lat/tx20lat.u11.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u12.{pr}.npy", "{preds}/lat/tx20lat.u12.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u13.{pr}.npy", "{preds}/lat/tx20lat.u13.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u14.{pr}.npy", "{preds}/lat/tx20lat.u14.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u15.{pr}.npy", "{preds}/lat/tx20lat.u15.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u16.{pr}.npy", "{preds}/lat/tx20lat.u16.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u17.{pr}.npy", "{preds}/lat/tx20lat.u17.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u18.{pr}.npy", "{preds}/lat/tx20lat.u18.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u19.{pr}.npy", "{preds}/lat/tx20lat.u19.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i00.{pr}.npy", "{preds}/lat/tx20lat.i00.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i01.{pr}.npy", "{preds}/lat/tx20lat.i01.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i02.{pr}.npy", "{preds}/lat/tx20lat.i02.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i03.{pr}.npy", "{preds}/lat/tx20lat.i03.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i04.{pr}.npy", "{preds}/lat/tx20lat.i04.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i05.{pr}.npy", "{preds}/lat/tx20lat.i05.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i06.{pr}.npy", "{preds}/lat/tx20lat.i06.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i07.{pr}.npy", "{preds}/lat/tx20lat.i07.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i08.{pr}.npy", "{preds}/lat/tx20lat.i08.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i09.{pr}.npy", "{preds}/lat/tx20lat.i09.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i10.{pr}.npy", "{preds}/lat/tx20lat.i10.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i11.{pr}.npy", "{preds}/lat/tx20lat.i11.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i12.{pr}.npy", "{preds}/lat/tx20lat.i12.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i13.{pr}.npy", "{preds}/lat/tx20lat.i13.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i14.{pr}.npy", "{preds}/lat/tx20lat.i14.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i15.{pr}.npy", "{preds}/lat/tx20lat.i15.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i16.{pr}.npy", "{preds}/lat/tx20lat.i16.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i17.{pr}.npy", "{preds}/lat/tx20lat.i17.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i18.{pr}.npy", "{preds}/lat/tx20lat.i18.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i19.{pr}.npy", "{preds}/lat/tx20lat.i19.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u00.{pr}.npy", "{preds}/lat/rbm50lat.u00.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u01.{pr}.npy", "{preds}/lat/rbm50lat.u01.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u02.{pr}.npy", "{preds}/lat/rbm50lat.u02.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u03.{pr}.npy", "{preds}/lat/rbm50lat.u03.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u04.{pr}.npy", "{preds}/lat/rbm50lat.u04.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u05.{pr}.npy", "{preds}/lat/rbm50lat.u05.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u06.{pr}.npy", "{preds}/lat/rbm50lat.u06.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u07.{pr}.npy", "{preds}/lat/rbm50lat.u07.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u08.{pr}.npy", "{preds}/lat/rbm50lat.u08.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u09.{pr}.npy", "{preds}/lat/rbm50lat.u09.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u10.{pr}.npy", "{preds}/lat/rbm50lat.u10.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u11.{pr}.npy", "{preds}/lat/rbm50lat.u11.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u12.{pr}.npy", "{preds}/lat/rbm50lat.u12.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u13.{pr}.npy", "{preds}/lat/rbm50lat.u13.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u14.{pr}.npy", "{preds}/lat/rbm50lat.u14.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u15.{pr}.npy", "{preds}/lat/rbm50lat.u15.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u16.{pr}.npy", "{preds}/lat/rbm50lat.u16.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u17.{pr}.npy", "{preds}/lat/rbm50lat.u17.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u18.{pr}.npy", "{preds}/lat/rbm50lat.u18.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u19.{pr}.npy", "{preds}/lat/rbm50lat.u19.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u20.{pr}.npy", "{preds}/lat/rbm50lat.u20.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u21.{pr}.npy", "{preds}/lat/rbm50lat.u21.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u22.{pr}.npy", "{preds}/lat/rbm50lat.u22.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u23.{pr}.npy", "{preds}/lat/rbm50lat.u23.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u24.{pr}.npy", "{preds}/lat/rbm50lat.u24.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u25.{pr}.npy", "{preds}/lat/rbm50lat.u25.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u26.{pr}.npy", "{preds}/lat/rbm50lat.u26.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u27.{pr}.npy", "{preds}/lat/rbm50lat.u27.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u28.{pr}.npy", "{preds}/lat/rbm50lat.u28.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u29.{pr}.npy", "{preds}/lat/rbm50lat.u29.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u30.{pr}.npy", "{preds}/lat/rbm50lat.u30.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u31.{pr}.npy", "{preds}/lat/rbm50lat.u31.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u32.{pr}.npy", "{preds}/lat/rbm50lat.u32.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u33.{pr}.npy", "{preds}/lat/rbm50lat.u33.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u34.{pr}.npy", "{preds}/lat/rbm50lat.u34.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u35.{pr}.npy", "{preds}/lat/rbm50lat.u35.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u36.{pr}.npy", "{preds}/lat/rbm50lat.u36.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u37.{pr}.npy", "{preds}/lat/rbm50lat.u37.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u38.{pr}.npy", "{preds}/lat/rbm50lat.u38.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u39.{pr}.npy", "{preds}/lat/rbm50lat.u39.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u40.{pr}.npy", "{preds}/lat/rbm50lat.u40.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u41.{pr}.npy", "{preds}/lat/rbm50lat.u41.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u42.{pr}.npy", "{preds}/lat/rbm50lat.u42.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u43.{pr}.npy", "{preds}/lat/rbm50lat.u43.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u44.{pr}.npy", "{preds}/lat/rbm50lat.u44.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u45.{pr}.npy", "{preds}/lat/rbm50lat.u45.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u46.{pr}.npy", "{preds}/lat/rbm50lat.u46.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u47.{pr}.npy", "{preds}/lat/rbm50lat.u47.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u48.{pr}.npy", "{preds}/lat/rbm50lat.u48.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u49.{pr}.npy", "{preds}/lat/rbm50lat.u49.{fulltrain_pr}.npy"]
+cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-new.toml --latent-users tx20lat --latent-items tx20lat && ./target/release/predfeat -p pipeline-new.toml --latent-users rbm50lat"
+
 # --- LightGBM blends ---
 
 [jobs.gbr1]
@@ -1058,7 +1094,7 @@ seeds = [7, 10, 12]
 # model set instead of the stale base/blends meta-groups (D stays ~3400).
 [jobs.fwls2x]
 jobtype = "fwlsblend"
-groups = ["gold", "silver", "gbmblend2", "mlpblend2"]
+groups = ["gold", "silver", "gbmblend2_part1", "mlpblend2_part1"]
 voting = ["fwls2"]
 seeds = [1]
 extra_args = ["--lambda", "50", "-m", "vf/vf090_movie_rating_slope"]
@@ -1096,7 +1132,7 @@ extra_args = ["--lambda", "100", "--in-clip", "0,6"]
 # rather than the base predictors.
 [jobs.fwls7b]
 jobtype = "fwlsblend"
-groups = ["gbmblend2", "mlpblend2"]
+groups = ["gbmblend2_part1", "mlpblend2_part1"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 extra_args = ["--lambda", "1000"]
@@ -1104,7 +1140,7 @@ extra_args = ["--lambda", "1000"]
 # One job per voting subset, over the full cleaned model set.
 [jobs.fwls7x1]
 jobtype = "fwlsblend"
-groups = ["gold", "silver", "gbmblend2", "mlpblend2"]
+groups = ["gold", "silver", "gbmblend2_part1", "mlpblend2_part1"]
 voting = ["subset1"]
 seeds = [1]
 extra_args = ["--lambda", "1000"]
@@ -1112,7 +1148,80 @@ extra_args = ["--lambda", "1000"]
 # Same as fwls7x but without the silver models.
 [jobs.fwls7g]
 jobtype = "fwlsblend"
-groups = ["gold", "gbmblend2", "mlpblend2"]
+groups = ["gold", "gbmblend2_part1", "mlpblend2_part1"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 extra_args = ["--lambda", "10000"]
+
+# --- Rounds 3 and 4 (2026-10-30): K-fold blends, fwls with predfeat features,
+# blends with latent inputs (models-new.toml *_part2). The fwls read the gbm / mlp
+# blends of part 1 only.
+[jobs.fwls38k8]
+jobtype = "fwlsblend"
+groups = ["gold", "silver", "gbmblend2_part1", "mlpblend2_part1"]
+voting = ["fwls38"]
+seeds = [1]
+inputs_from = ["vfeat1", "predfeat"]
+extra_args = ["--lambda", "10000", "--folds", "8", "--solver", "lapack"]
+
+[jobs.fwlsb38k8]
+jobtype = "fwlsblend"
+groups = ["gold", "silver"]
+voting = ["fwls38"]
+seeds = [1]
+inputs_from = ["vfeat1", "predfeat"]
+extra_args = ["--lambda", "3000", "--folds", "8", "--solver", "lapack"]
+
+[jobs.fwls38k16]
+jobtype = "fwlsblend"
+groups = ["gold", "silver", "gbmblend2_part1", "mlpblend2_part1"]
+voting = ["fwls38"]
+seeds = [2]
+inputs_from = ["vfeat1", "predfeat"]
+extra_args = ["--lambda", "10000", "--folds", "16", "--solver", "lapack"]
+
+[jobs.gbc2k4]
+jobtype = "gbmblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+seeds = [1]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.mlpr3k4]
+jobtype = "mlpblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4"]
+seeds = [1, 2]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.mlpr3vk4]
+jobtype = "mlpblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4", "vfx9"]
+seeds = [1]
+inputs_from = ["vfeat1", "predfeat"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.mlpr3lk4]
+jobtype = "mlpblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4", "lattx"]
+seeds = [1]
+inputs_from = ["vfeat1", "predfeatlat"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.mlpr3lak4]
+jobtype = "mlpblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4", "lattx", "latrbm"]
+seeds = [1]
+inputs_from = ["vfeat1", "predfeatlat"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.gbc2lk4]
+jobtype = "gbmblend"
+groups = ["gold", "silver"]
+voting = ["subset1", "subset2", "subset3", "subset4", "lattx", "latrbm"]
+seeds = [1]
+inputs_from = ["vfeat1", "predfeatlat"]
+extra_args = ["--cv", "std", "--folds", "4"]

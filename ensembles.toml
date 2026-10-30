@@ -22,7 +22,7 @@ models = ["fwls1x-s1"]
 
 [[ensemble.source]]
 split  = "new"
-groups = ["gold", "silver", "gbmblend2", "mlpblend2", "fwlsblend2"]
+groups = ["gold", "silver", "gbmblend2_part1", "mlpblend2_part1", "fwlsblend2_part1"]
 
 [ensemble.expected]
 "old/integrated" = { quiz = 0.865765 }
@@ -34,9 +34,9 @@ groups = ["gold", "silver", "gbmblend2", "mlpblend2", "fwlsblend2"]
 "old/manual" = { quiz = 0.858076 }
 "new/gold" = { quiz = 0.861694 }
 "new/silver" = { quiz = 0.865118 }
-"new/gbmblend2" = { quiz = 0.860069 }
-"new/mlpblend2" = { quiz = 0.859214 }
-"new/fwlsblend2" = { quiz = 0.858014 }
+"new/gbmblend2_part1" = { quiz = 0.860069 }
+"new/mlpblend2_part1" = { quiz = 0.859214 }
+"new/fwlsblend2_part1" = { quiz = 0.858014 }
 ensemble = { quiz = 0.856716 }
 
 # The cross-split blend with split_3 as a third source: the 200-column base
@@ -74,9 +74,12 @@ groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 "old/manual" = { quiz = 0.858076 }
 "new/gold" = { quiz = 0.861694 }
 "new/silver" = { quiz = 0.865118 }
-"new/gbmblend2" = { quiz = 0.860069 }
-"new/mlpblend2" = { quiz = 0.859214 }
-"new/fwlsblend2" = { quiz = 0.858014 }
+"new/gbmblend2_part1" = { quiz = 0.860069 }
+"new/gbmblend2_part2" = { quiz = 0.860505 }
+"new/mlpblend2_part1" = { quiz = 0.859214 }
+"new/mlpblend2_part2" = { quiz = 0.859157 }
+"new/fwlsblend2_part1" = { quiz = 0.858014 }
+"new/fwlsblend2_part2" = { quiz = 0.858454 }
 "3/tx" = { quiz = 0.865724 }
 "3/rbm" = { quiz = 0.869933 }
 "3/nn" = { quiz = 0.880428 }
@@ -91,7 +94,7 @@ groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 "3/mlpblend_part4" = { quiz = 0.858844 }
 "3/fwlsblend_part1" = { quiz = 0.858576 }
 "3/fwlsblend_part2" = { quiz = 0.858294 }
-ensemble = { quiz = 0.855967 }
+ensemble = { quiz = 0.855944 }
 
 # Single split, fitted on the probe labels: the cheap bench a new column is
 # measured on. It needs only the probex predictions, so an experiment can be
@@ -109,10 +112,13 @@ groups = ["gold", "silver", "gbmblend2", "mlpblend2", "fwlsblend2"]
 [ensemble.expected]
 gold = { probe = 0.860411, quiz = 0.861869 }
 silver = { probe = 0.863964, quiz = 0.865224 }
-gbmblend2 = { probe = 0.858300, quiz = 0.860105 }
-mlpblend2 = { probe = 0.857486, quiz = 0.859253 }
-fwlsblend2 = { probe = 0.856869, quiz = 0.858087 }
-ensemble = { probe = 0.856410, quiz = 0.858156 }
+gbmblend2_part1 = { probe = 0.858300, quiz = 0.860105 }
+gbmblend2_part2 = { probe = 0.858778, quiz = 0.860517 }
+mlpblend2_part1 = { probe = 0.857486, quiz = 0.859253 }
+mlpblend2_part2 = { probe = 0.857394, quiz = 0.859166 }
+fwlsblend2_part1 = { probe = 0.856869, quiz = 0.858087 }
+fwlsblend2_part2 = { probe = 0.856821, quiz = 0.858488 }
+ensemble = { probe = 0.856167, quiz = 0.858021 }
 
 # Split_3 only, fitted on the probe_3 labels: the cheap bench a new split_3 lab
 # column is measured on (ridge --ensemble s3 -m preds_lab/<column>). The probe
