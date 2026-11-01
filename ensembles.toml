@@ -81,17 +81,17 @@ groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 "new/gbmblend" = { quiz = 0.860027 }
 "new/mlpblend" = { quiz = 0.858995 }
 "new/fwlsblend" = { quiz = 0.858001 }
-"3/tx" = { quiz = 0.864892 }
-"3/rbm" = { quiz = 0.869933 }
+"3/tx" = { quiz = 0.864459 }
+"3/rbm" = { quiz = 0.869937 }
 "3/nn" = { quiz = 0.880428 }
-"3/other" = { quiz = 0.873045 }
-"3/gbmblend" = { quiz = 0.860283 }
-"3/mlpblend" = { quiz = 0.858571 }
-"3/fwlsblend" = { quiz = 0.858296 }
+"3/other" = { quiz = 0.873464 }
+"3/gbmblend" = { quiz = 0.860124 }
+"3/mlpblend" = { quiz = 0.858371 }
+"3/fwlsblend" = { quiz = 0.858083 }
 "old/*" = { quiz = 0.857838 }
 "new/*" = { quiz = 0.857715 }
-"3/*" = { quiz = 0.857746 }
-ensemble = { quiz = 0.855944 }
+"3/*" = { quiz = 0.857567 }
+ensemble = { quiz = 0.855883 }
 
 # Single split, fitted on the probe labels: the cheap bench a new column is
 # measured on. It needs only the probex predictions, so an experiment can be
@@ -130,14 +130,54 @@ split  = "3"
 groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [ensemble.expected]
-tx = { probe = 0.867461, quiz = 0.865076 }
-rbm = { probe = 0.872360, quiz = 0.870098 }
+tx = { probe = 0.867076, quiz = 0.864655 }
+rbm = { probe = 0.872366, quiz = 0.870101 }
 nn = { probe = 0.882797, quiz = 0.880675 }
-other = { probe = 0.875458, quiz = 0.873258 }
-gbmblend = { probe = 0.862231, quiz = 0.860330 }
-mlpblend = { probe = 0.860596, quiz = 0.858620 }
-fwlsblend = { probe = 0.860432, quiz = 0.858306 }
-ensemble = { probe = 0.859824, quiz = 0.857945 }
+other = { probe = 0.875873, quiz = 0.873686 }
+gbmblend = { probe = 0.862112, quiz = 0.860185 }
+mlpblend = { probe = 0.860378, quiz = 0.858413 }
+fwlsblend = { probe = 0.860220, quiz = 0.858103 }
+ensemble = { probe = 0.859622, quiz = 0.857762 }
+
+# Old split only, fitted on the probe labels: the single-split bench of the old split.
+[[ensemble]]
+name        = "old"
+description = "old split only, fitted on probe"
+lambda      = 1000
+tolerance   = 1e-5
+
+[[ensemble.source]]
+split  = "old"
+groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
+
+[ensemble.expected]
+tx = { probe = 0.872827, quiz = 0.863999 }
+rbm = { probe = 0.881239, quiz = 0.871393 }
+nn = { probe = 0.896947, quiz = 0.891187 }
+other = { probe = 0.880073, quiz = 0.871526 }
+gbmblend = { probe = 0.868855, quiz = 0.859942 }
+mlpblend = { probe = 0.868091, quiz = 0.859109 }
+fwlsblend = { probe = 0.868043, quiz = 0.858110 }
+ensemble = { probe = 0.867267, quiz = 0.858160 }
+
+# Split_3 base predictors only (no blend columns), fitted on probe_3: what the base
+# predictors do on their own.
+[[ensemble]]
+name        = "s3base"
+description = "split_3 base predictors only (tx, rbm, nn, other), fitted on probe_3"
+lambda      = 1000
+tolerance   = 1e-5
+
+[[ensemble.source]]
+split  = "3"
+groups = ["tx", "rbm", "nn", "other"]
+
+[ensemble.expected]
+tx = { probe = 0.867076, quiz = 0.864655 }
+rbm = { probe = 0.872366, quiz = 0.870101 }
+nn = { probe = 0.882797, quiz = 0.880675 }
+other = { probe = 0.875873, quiz = 0.873686 }
+ensemble = { probe = 0.863866, quiz = 0.861785 }
 
 # What a delta is worth, measured by dropping columns from the blend. Printed
 # next to a measured gain, because the numbers are smaller than they look.

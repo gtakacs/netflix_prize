@@ -485,12 +485,6 @@ env = "EPOCHS=22 EPSAVE=1 F=20 REG_I=0.037 REG_U=0.25"
 probe = 0.90013
 snapshots = [1, 2, 4, 13, 14, 15, 19]
 
-[s3-tx20s]
-bin = "s3 tx"
-env = "EPOCHS=22 EPSAVE=1 F=20 LR_TA=0 LR_TI=0 LR_U2=0 LR_UBD=0 LR_UD=0 TBINS=1"
-probe = 0.89711
-snapshots = [1, 2, 5, 7, 8]
-
 [s3-tx20w]
 bin = "s3 tx"
 env = "EPOCHS=22 EPSAVE=1 F=20 WF=0.7"
@@ -678,11 +672,6 @@ probe = 0.87861
 bin = "s3 chain"
 env = "KA_A=0.5 KA_B=1.5 KA_K=30 KA_SCALE=2.5 KA_SIM=supp KA_STAT0=rtg_supp KA_TAU=0.05"
 probe = 0.92849
-
-[s3-tx300lm__nlpp__knn-c-g25-t10]
-bin = "s3 chain"
-env = "KN_K=40 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.1"
-probe = 0.8855
 
 [s3-bknbrx-30d]
 bin = "s3 misc"
@@ -888,11 +877,6 @@ bin = "s3 chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 probe = 0.88448
 
-[s3-rbm200__nlpp__knn-c]
-bin = "s3 chain"
-env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
-probe = 0.8904
-
 [s3-tx100olm__knn-m]
 bin = "s3 chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
@@ -947,11 +931,6 @@ probe = 0.88458
 bin = "s3 chain"
 env = "KN_K=15 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 probe = 0.88749
-
-[s3-bk1-120__knn-m]
-bin = "s3 chain"
-env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
-probe = 0.88349
 
 [s3-attn32__kimp-rs]
 bin = "s3 chain"
@@ -1058,7 +1037,7 @@ probe = 0.87691
 bin = "s3 tx"
 env = "EPOCHS=24 EPSAVE=1 F=300 LR_I=0.006 LR_U=0.0045 LR_W=0.001 LR_WD=0.0005 LR_Y=0.00075 NBR=100 REG_I=0.015 REG_U=0.06 REG_WD=0.002 RESET=12"
 probe = 0.87834
-snapshots = [5, 7, 10, 11, 12, 13, 14, 22, 23]
+snapshots = [7, 10, 11, 12, 13, 14, 22]
 
 [s3-rbm400p__knn3]
 bin = "s3 chain"
@@ -1156,11 +1135,6 @@ bin = "s3 tx"
 env = "EPOCHS=20 EPSAVE=1 F=50 LM=1 LR_U=0 LR_U2=0 LR_Y=0.001 SIGMA_U=0"
 probe = 0.91507
 snapshots = [1, 3, 10, 18]
-
-[s3-bk1-120nb__knn-m]
-bin = "s3 chain"
-env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
-probe = 0.88306
 
 [s3-bk1-120nb__nlpp__knn-w]
 bin = "s3 chain"
@@ -1284,11 +1258,6 @@ bin = "s3 chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
 probe = 0.91726
 
-[s3-integ40-pyuddf]
-bin = "s3 integ"
-env = "EPOCHS=10 F=40 IMPL=1 REG_DR=1000 REG_FQ=10 REG_P=30 REG_Q=30 REG_UD=10 REG_Y=30 TERMS=p+y+ud+dr+fq"
-probe = 0.92414
-
 # --- Latent-feature source models (2026-10-30; only their train_3 artifacts are
 # used, through the predfeatlat job of pipeline-3.toml) ---
 
@@ -1301,3 +1270,88 @@ probe = 0.88518
 bin = "s3 rbm"
 env = "EPOCHS=20 H=50 UFEAT=1"
 probe = 0.91037
+
+# --- base200 promotion (2026-10-31): BK4 (src/bk4.rs, run in the lab as lab-s3-bk4, the same
+# model), s3-tx300x5 and their chains; the base set is the first 200 of a forward selection
+# over the base predictors (selections.toml 3-base). ---
+
+[s3-tx300x5]
+bin = "s3 tx"
+env = "EPOCHS=26 EPSAVE=1 F=300 LR_W=0.0015 NBR=100 RAYON_NUM_THREADS=1 RESET=10 WF=0.8"
+probe = 0.87733
+
+[s3-tx300x5__nlpp]
+bin = "s3 chain"
+probe = 0.87561
+
+[s3-tx300x5__nlpp__knn3]
+bin = "s3 chain"
+probe = 0.87305
+
+[s3-bk4-f200x]
+bin = "s3 misc"
+env = "EPOCHS=28 F=200 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+probe = 0.88314
+
+[s3-bk4-f200x__nlpp]
+bin = "s3 chain"
+probe = 0.88184
+
+[s3-bk4-f200x__nlpp__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.88142
+
+[s3-bk4-f200x__knn-m]
+bin = "s3 chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+probe = 0.88232
+
+[s3-bk4-e300x]
+bin = "s3 misc"
+env = "EPOCHS=21 F=300 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+probe = 0.88282
+
+[s3-bk4-e300x__nlpp]
+bin = "s3 chain"
+probe = 0.88097
+
+[s3-bk4-e300x__nlpp__knn-w]
+bin = "s3 chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+probe = 0.88374
+
+[s3-bk4-e300x__attn32p]
+bin = "s3 attn"
+env = "EPSAVE=1"
+target = "0.5*s3-bk4-e300x"
+probe = 0.89261
+snapshots = [6, 11]
+
+[s3-bk4-e300x__dnn16p]
+bin = "s3 dnn"
+env = "D=16 EPOCHS=7 EPSAVE=1 NMF=192"
+target = "0.5*s3-bk4-e300x"
+probe = 0.89186
+
+[s3-bk4-g100]
+bin = "s3 misc"
+env = "DECAY=0.03 EPOCHS=22 F=100 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+probe = 0.88268
+
+[s3-bk4-d50z]
+bin = "s3 misc"
+env = "ENV=1 EPOCHS=25 EPSAVE=1 F=50 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+probe = 0.88242
+snapshots = [23]
+
+[s3-bk4-d50s]
+bin = "s3 misc"
+env = "EPOCHS=30 EPSAVE=1 F=50 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+probe = 0.88531
+snapshots = [20]
+
+[s3-bk4-e50s]
+bin = "s3 misc"
+env = "EPOCHS=30 F=50 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+probe = 0.88615

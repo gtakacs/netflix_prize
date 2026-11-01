@@ -186,6 +186,7 @@ pub mod asym;
 pub mod attn;
 pub mod bk1;
 pub mod bk3;
+pub mod bk4;
 pub mod bknbrx;
 pub mod blend;
 pub mod cfnade;

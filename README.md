@@ -119,6 +119,25 @@ check still runs: a gain is never read off a baseline that has silently moved.
 The output gives the delta and the residual correlation with the ensemble,
 alongside what deltas in this project are normally worth.
 
+### Selection curve
+
+How many columns of a blend still pay? A diagnostic answers that without changing anything:
+
+```
+./target/release/ridge --ensemble s3 --select
+```
+
+It runs a greedy forward selection over every column of a single-split ensemble. Each prefix is
+scored by 10-fold CV probe RMSE, averaged over three fold seeds. The output is the whole curve:
+each prefix's distance to the CV minimum, the standard error of that distance (paired, clustered
+by user), and a cut at the largest prefix within three of those standard errors (`fwdmax3se`).
+`--select-se X` changes the width of the band, and `--select-se none` marks no cut.
+
+With `-m NAME` a column outside the ensemble joins the candidates. With `--fixed G1,G2` those
+groups come first and are always kept.
+
+Nothing is stored. Redirect the output to keep a curve.
+
 ## Data
 
 You do not have to download anything by hand — the `download` and `ingest` jobs

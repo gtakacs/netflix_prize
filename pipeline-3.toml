@@ -214,7 +214,7 @@ voting = ["all"]
 inputs_from = ["ingest", "split_3"]
 inputs = ["src/bin/predfeat.rs"]
 outputs = ["{preds}/vfx/std_all.{pr}.npy", "{preds}/vfx/std_all.{fulltrain_pr}.npy", "{preds}/vfx/range_all.{pr}.npy", "{preds}/vfx/range_all.{fulltrain_pr}.npy", "{preds}/vfx/mean_c.{pr}.npy", "{preds}/vfx/mean_c.{fulltrain_pr}.npy", "{preds}/vfx/std_tx.{pr}.npy", "{preds}/vfx/std_tx.{fulltrain_pr}.npy", "{preds}/vfx/std_rbm.{pr}.npy", "{preds}/vfx/std_rbm.{fulltrain_pr}.npy", "{preds}/vfx/std_nn.{pr}.npy", "{preds}/vfx/std_nn.{fulltrain_pr}.npy", "{preds}/vfx/std_other.{pr}.npy", "{preds}/vfx/std_other.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_rbm.{pr}.npy", "{preds}/vfx/d_tx_rbm.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_nn.{pr}.npy", "{preds}/vfx/d_tx_nn.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_other.{pr}.npy", "{preds}/vfx/d_tx_other.{fulltrain_pr}.npy"]
-cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-3.toml -t models-3.toml --groups tx=tx_orig,rbm=rbm_orig,nn=nn_orig,other=other_orig"
+cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-3.toml -t models-3.toml --groups tx,rbm,nn,other"
 
 # Latent features for the blends (2026-10-30): the user and item vectors of a small
 # tx and the expected hidden units of an RBM, both from the training-set model only
@@ -377,12 +377,6 @@ runner = "tx"
 env = "EPOCHS=22 EPSAVE=1 F=20 REG_I=0.037 REG_U=0.25"
 keep_epochs = [4]
 
-[jobs."s3-tx20s"]
-jobtype = "s3model"
-runner = "tx"
-env = "EPOCHS=22 EPSAVE=1 F=20 LR_TA=0 LR_TI=0 LR_U2=0 LR_UBD=0 LR_UD=0 TBINS=1"
-keep_epochs = [2, 5]
-
 [jobs."s3-tx20w"]
 jobtype = "s3model_base"
 runner = "tx"
@@ -392,7 +386,7 @@ env = "EPOCHS=22 EPSAVE=1 F=20 WF=0.7"
 jobtype = "s3model_base"
 runner = "tx"
 env = "EPOCHS=22 EPSAVE=1 F=300 LM=1 REG_I=0.012 REG_U=0.08"
-keep_epochs = [5, 12]
+keep_epochs = [5]
 
 [jobs."s3-tx5"]
 jobtype = "s3model_base"
@@ -782,13 +776,6 @@ env = "KA_A=0.5 KA_B=1.5 KA_K=30 KA_SCALE=2.5 KA_SIM=supp KA_STAT0=rtg_supp KA_T
 extras = ["@train_preds"]
 inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
-[jobs."s3-tx300lm__nlpp__knn-c-g25-t10"]
-jobtype = "s3model"
-runner = "chain"
-env = "KN_K=40 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.1"
-extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy"]
-
 [jobs."s3-bknbrx-30d"]
 jobtype = "s3model"
 runner = "misc"
@@ -897,13 +884,6 @@ jobtype = "s3model_base"
 runner = "integ"
 env = "EPOCHS=10 F=20 REG_Q=30 REG_Y=30 SORT=0 TERMS=y"
 
-[jobs."s3-rbm200__nlpp__knn-c"]
-jobtype = "s3model"
-runner = "chain"
-env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
-extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy"]
-
 [jobs."s3-tx100olm__knn-m"]
 jobtype = "s3model"
 runner = "chain"
@@ -966,13 +946,6 @@ runner = "chain"
 env = "KN_K=15 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
 inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
-
-[jobs."s3-bk1-120__knn-m"]
-jobtype = "s3model"
-runner = "chain"
-env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
-extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-attn32__kimp-rs"]
 jobtype = "s3model"
@@ -1095,7 +1068,7 @@ extras = ["@train_preds"]
 jobtype = "s3model_base"
 runner = "tx"
 env = "EPOCHS=24 EPSAVE=1 F=300 LR_I=0.006 LR_U=0.0045 LR_W=0.001 LR_WD=0.0005 LR_Y=0.00075 NBR=100 REG_I=0.015 REG_U=0.06 REG_WD=0.002 RESET=12"
-keep_epochs = [5, 7, 10, 11, 12, 13, 14, 22, 23]
+keep_epochs = [7, 10, 11, 12, 13, 14, 22]
 
 [jobs."s3-rbm400p__knn3"]
 jobtype = "s3model"
@@ -1210,13 +1183,6 @@ jobtype = "s3model"
 runner = "tx"
 env = "EPOCHS=20 EPSAVE=1 F=50 LM=1 LR_U=0 LR_U2=0 LR_Y=0.001 SIGMA_U=0"
 keep_epochs = [1, 3, 10, 18]
-
-[jobs."s3-bk1-120nb__knn-m"]
-jobtype = "s3model"
-runner = "chain"
-env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
-extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk1-120nb__nlpp__knn-w"]
 jobtype = "s3model"
@@ -1385,34 +1351,134 @@ env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_T
 extras = ["@train_preds"]
 inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy"]
 
-[jobs."s3-integ40-pyuddf"]
+# --- base200 promotion (2026-10-31): Pragmatic Theory BK4 (src/bk4.rs, `s3 misc s3-bk4*`),
+# s3-tx300x5 and their chains. The BK4 runs were made in the lab (lab-s3-bk4, the same model,
+# bit-identical; the qual side of f200x / e300x / g100 / d50z / d50s by a separate fulltrain ->
+# qual process with the same knobs). f200x is the f200 recipe stopped at epoch 28 (its best blend
+# column), e300x the F300 recipe at epoch 21; both are chain bases. ---
+
+[jobs."s3-tx300x5"]
+jobtype = "s3model_base"
+runner = "tx"
+env = "EPOCHS=26 EPSAVE=1 F=300 LR_W=0.0015 NBR=100 RAYON_NUM_THREADS=1 RESET=10 WF=0.8"
+
+[jobs."s3-tx300x5__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s3-tx300x5__nlpp__knn3"]
 jobtype = "s3model"
-runner = "integ"
-env = "EPOCHS=10 F=40 IMPL=1 REG_DR=1000 REG_FQ=10 REG_P=30 REG_Q=30 REG_UD=10 REG_Y=30 TERMS=p+y+ud+dr+fq"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s3-bk4-f200x"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=28 F=200 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+inputs = ["src/bin/s3.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+
+[jobs."s3-bk4-f200x__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s3-bk4-f200x__nlpp__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s3-bk4-f200x__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s3-bk4-e300x"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=21 F=300 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+inputs = ["src/bin/s3.rs", "src/bk4.rs"]
+
+[jobs."s3-bk4-e300x__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s3-bk4-e300x__nlpp__knn-w"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+
+[jobs."s3-bk4-e300x__attn32p"]
+jobtype = "s3model"
+runner = "attn"
+env = "EPSAVE=1"
+extra_args = ["--target", "0.5*s3-bk4-e300x"]
+extras = ["@train_preds"]
+keep_epochs = [6, 11]
+
+[jobs."s3-bk4-e300x__dnn16p"]
+jobtype = "s3model"
+runner = "dnn"
+env = "D=16 EPOCHS=7 EPSAVE=1 NMF=192"
+extra_args = ["--target", "0.5*s3-bk4-e300x"]
+extras = ["@train_preds"]
+
+[jobs."s3-bk4-g100"]
+jobtype = "s3model"
+runner = "misc"
+env = "DECAY=0.03 EPOCHS=22 F=100 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+inputs = ["src/bin/s3.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+
+[jobs."s3-bk4-d50z"]
+jobtype = "s3model"
+runner = "misc"
+env = "ENV=1 EPOCHS=25 EPSAVE=1 F=50 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+keep_epochs = [23]
+inputs = ["src/bin/s3.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+
+[jobs."s3-bk4-d50s"]
+jobtype = "s3model"
+runner = "misc"
+env = "EPOCHS=30 EPSAVE=1 F=50 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+keep_epochs = [20]
+inputs = ["src/bin/s3.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+
+[jobs."s3-bk4-e50s"]
+jobtype = "s3model"
+runner = "misc"
+env = "EPOCHS=30 F=50 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
+inputs = ["src/bin/s3.rs", "src/bk4.rs"]
 
 # --- Second-level blends, round 1 (one seed each) ---
 
 [jobs.gbr2x]
 jobtype = "gbmblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
 [jobs.gbc2x]
 jobtype = "gbmblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
 [jobs.mlpr2x]
 jobtype = "mlpblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
 [jobs.mlpc3x]
 jobtype = "mlpblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
@@ -1420,7 +1486,7 @@ seeds = [1]
 # new-split fwls2 group (14 of 20), lambda as there.
 [jobs.fwls2x]
 jobtype = "fwlsblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig", "gbmblend_part1", "mlpblend_part1"]
+groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "mlpblend_part1"]
 voting = ["fwls2vf"]
 seeds = [1]
 extra_args = ["--lambda", "50", "-m", "vf/vf090_movie_rating_slope"]
@@ -1429,7 +1495,7 @@ extra_args = ["--lambda", "50", "-m", "vf/vf090_movie_rating_slope"]
 # mlpblend_part1-2), not only the round-1 ones.
 [jobs.fwls2xa]
 jobtype = "fwlsblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
+groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
 voting = ["fwls2vf"]
 seeds = [1]
 extra_args = ["--lambda", "100", "-m", "vf/vf090_movie_rating_slope"]
@@ -1441,7 +1507,7 @@ extra_args = ["--lambda", "100", "-m", "vf/vf090_movie_rating_slope"]
 # blends. Selected in the blend lab (preds_lab/s3-journal.md, 2026-10-29).
 [jobs.fwlsb57k8]
 jobtype = "fwlsblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["fwls57"]
 seeds = [1]
 inputs_from = ["vfeat1", "predfeat"]
@@ -1449,14 +1515,14 @@ extra_args = ["--lambda", "3000", "--folds", "8", "--solver", "lapack"]
 
 [jobs.fwls15k4]
 jobtype = "fwlsblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
+groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
 voting = ["fwls15"]
 seeds = [1]
 extra_args = ["--lambda", "30", "--folds", "4", "--solver", "lapack"]
 
 [jobs.fwls33k16]
 jobtype = "fwlsblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
+groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "gbmblend_part2", "mlpblend_part1", "mlpblend_part2"]
 voting = ["fwls33"]
 seeds = [2]
 inputs_from = ["vfeat1", "predfeat"]
@@ -1467,21 +1533,21 @@ extra_args = ["--lambda", "10000", "--folds", "16", "--solver", "lapack"]
 # and mlpr3x (blend_config aliases).
 [jobs.gbc2k4]
 jobtype = "gbmblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3k4]
 jobtype = "mlpblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1, 2]
 extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3vk4]
 jobtype = "mlpblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4", "vfx9"]
 seeds = [1, 3]
 inputs_from = ["vfeat1", "predfeat"]
@@ -1494,7 +1560,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 # about -1e-4 to cross3 (preds_lab/s3-journal.md, 2026-10-30).
 [jobs.mlpr3lk4]
 jobtype = "mlpblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4", "lattx"]
 seeds = [1]
 inputs_from = ["vfeat1", "predfeatlat"]
@@ -1502,7 +1568,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3lak4]
 jobtype = "mlpblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4", "lattx", "latrbm"]
 seeds = [1]
 inputs_from = ["vfeat1", "predfeatlat"]
@@ -1510,7 +1576,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.gbc2lk4]
 jobtype = "gbmblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4", "lattx", "latrbm"]
 seeds = [1]
 inputs_from = ["vfeat1", "predfeatlat"]
@@ -1523,24 +1589,24 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr2o]
 jobtype = "mlpblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [2, 3, 4]
 
 [jobs.mlpc3o]
 jobtype = "mlpblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [2, 3]
 
 [jobs.mlpr3x]
 jobtype = "mlpblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
 [jobs.gbr4x]
 jobtype = "gbmblend"
-groups = ["tx_orig", "rbm_orig", "nn_orig", "other_orig"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]

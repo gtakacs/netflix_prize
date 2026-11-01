@@ -210,6 +210,8 @@ fn rbm() {
 //   s3-aex*  autoencoder                            F, EPOCHS, LR, REG, DROP,
 //                                                   TRANSPOSE=1 (item-based)
 //   s3-bk3*  BellKor time-aware SVD++ (bk3-20's)    F, EPOCHS, LR_SCALE
+//   s3-bk4*  Pragmatic Theory BK4 (bk4.rs)          F, EPOCHS, NBR, SIGF, TIME, ENV,
+//                                                   LR_SCALE, DECAY, ... (bk4::config_from_env)
 //   s3-bk1*  Pragmatic Theory integrated (bk1-10's) F, EPOCHS, NBR, LR_SCALE, LR_NBR,
 //                                                   LR_DECAY, REG_FACT, REG_NBR
 //   s3-bknbrx*  BellKor neighborhood, eq 18          NBR, EPOCHS, LR_W, LR_WD, LR_ALPHA,
@@ -225,6 +227,7 @@ fn misc() {
         als8::{Als8Config, Als8Model},
         bk1::{Bk1Config, Bk1Model},
         bk3::{Bk3Config, Bk3Model},
+        bk4::{self, Bk4Model},
         bknbrx::{BknbrxConfig, BknbrxModel, ParallelMode},
         fit2,
         lab::{LabArgs, ev},
@@ -290,6 +293,11 @@ fn misc() {
         fit2!(AexModel, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin,
               transpose: ev("TRANSPOSE", 0) != 0, train_in_rating_order: true);
+    } else if n.starts_with("s3-bk4") {
+        let mut cfg = bk4::config_from_env();
+        if args.sampled() { cfg.n_epochs = 1; }
+        fit2!(Bk4Model, cfg, t, n, split, save_train: true,
+              save_probe_each_epoch: epsave, skip_fulltrain: fin);
     } else if n.starts_with("s3-bk3") {
         let s: f32 = ev("LR_SCALE", 1.0);
         let cfg = Bk3Config {

@@ -43,6 +43,15 @@ const ENSEMBLES_TOML: &str = "ensembles.toml";
 const QUAL_RATINGS_CSV_GZ: &str = "data/qual_ratings/qual_ratings.csv.gz";
 const N_QUAL: usize = 2_817_131;
 const ENSEMBLE_ROW: &str = "ensemble";
+/// Fold seeds a column selection averages its CV criterion over: `--cv-seed`
+/// and the ones after it.
+const SELECT_SEEDS: u64 = 3;
+/// Default width of the selection's tolerance band above the CV minimum, in
+/// standard errors of the paired difference (`--select-se`).
+const SELECT_SE_MULT: f64 = 3.0;
+/// Folds of the selection criterion: each fit sees 90% of the probe set, close
+/// to the full-probe fit the ensemble finally uses.
+const SELECT_FOLDS: usize = 10;
 
 // ---------------------------------------------------------------------------
 // Partial .npy reader for 1-D float32 arrays
@@ -145,6 +154,11 @@ struct Args {
     update_expected: bool,
     /// Skip the per-column residual correlation of the added columns (`--no-corr`).
     no_corr: bool,
+    /// `--select`: print the forward-selection curve of a (single-split) ensemble.
+    select: bool,
+    /// `--select-se X`: the tolerance band in standard errors that marks the cut
+    /// on the printed curve; `none` (NaN) marks no cut.
+    select_se: f64,
 }
 
 fn print_help() {
@@ -211,6 +225,16 @@ fn print_help() {
     println!("                             dir/name path, e.g. -m preds_lab/lab-foo.");
     println!("                             Exits non-zero if the reference does not reproduce.");
     println!("    --update-expected        write this run's numbers back into {}", ENSEMBLES_TOML);
+    println!("    --select                 print the forward-selection curve of a single-split");
+    println!("                             ensemble: each prefix's {SELECT_FOLDS}-fold CV probe RMSE (mean over");
+    println!("                             {SELECT_SEEDS} fold seeds from --cv-seed), its distance to the minimum and");
+    println!("                             the paired (by user) standard error of that distance, and");
+    println!("                             the largest prefix within {SELECT_SE_MULT} of them (rule fwdmax{{X}}se).");
+    println!("                             A diagnostic: nothing is stored. With -m the given columns");
+    println!("                             join the candidates; with --fixed G1,G2 those groups are");
+    println!("                             always in, first, and never compete.");
+    println!("    --select-se X            width of that band in standard errors (default {SELECT_SE_MULT});");
+    println!("                             'none' marks no cut");
     println!("    --no-corr                skip the residual correlation of each -m column (one pass");
     println!("                             over the scored rows per column; slow with many columns)");
     println!();
@@ -254,6 +278,8 @@ fn parse_args() -> Args {
     let mut ensemble_name: Option<String> = None;
     let mut update_expected = false;
     let mut no_corr = false;
+    let mut select = false;
+    let mut select_se = SELECT_SE_MULT;
 
     // Legacy single-source accumulator (used when no --from is given), plus the
     // list of --from sources. The two are mutually exclusive.
@@ -352,6 +378,12 @@ fn parse_args() -> Args {
             }
             "--update-expected" => { update_expected = true; i += 1; }
             "--no-corr" => { no_corr = true; i += 1; }
+            "--select" => { select = true; i += 1; }
+            "--select-se" => {
+                let v = need(&argv, i);
+                select_se = if v == "none" { f64::NAN } else { v.parse().expect("bad --select-se value") };
+                i += 2;
+            }
             "--lambda" => { lambda = need(&argv, i).parse().expect("bad --lambda value"); i += 2; }
             "--forward" => { forward = true; i += 1; }
             "--max-features" => {
@@ -438,9 +470,22 @@ fn parse_args() -> Args {
             legacy = from_sources.remove(0);
         }
         ensemble = Some(def);
-    } else if update_expected {
-        eprintln!("error: --update-expected needs --ensemble");
+    } else if update_expected || select {
+        eprintln!("error: --update-expected/--select need --ensemble");
         std::process::exit(2);
+    }
+    if select {
+        let def = ensemble.as_ref().expect("checked above");
+        if def.source.len() != 1 {
+            eprintln!("error: --select works on a single-split ensemble (its probe set is the");
+            eprintln!("       criterion); '{}' has {} sources", def.name, def.source.len());
+            std::process::exit(2);
+        }
+        // -m adds candidates to the search
+        if update_expected {
+            eprintln!("error: --select cannot be combined with --update-expected");
+            std::process::exit(2);
+        }
     }
 
     let sources = if using_from {
@@ -498,6 +543,8 @@ fn parse_args() -> Args {
         scale,
         update_expected,
         no_corr,
+        select,
+        select_se,
     }
 }
 
@@ -1276,6 +1323,275 @@ fn forward_select(
 }
 
 // ---------------------------------------------------------------------------
+// Column selection curve (`--select`)
+// ---------------------------------------------------------------------------
+//
+// Rule `fwdmax{X}se` (X = --select-se, default 3): greedy forward selection over
+// every column of a single-split ensemble, by K-fold CV probe RMSE averaged over
+// several fold seeds; the cut marked is the largest prefix whose CV RMSE is within
+// X standard errors of the minimum, i.e. columns are cut only where adding them
+// makes the CV significantly worse. The standard error is that of the paired
+// difference to the minimum prefix, clustered by user (the analytic counterpart
+// of the paired user bootstrap in the lab's noise checks), from the out-of-fold
+// residuals. A diagnostic: the curve is printed, nothing is stored.
+
+/// Mean-over-seeds K-fold CV MSE of the ridge fit on `indices`: each seed's
+/// folds are fitted on `A − A_k` and scored on `A_k`. `+∞` if a fold
+/// complement is not positive definite.
+#[allow(clippy::too_many_arguments)]
+fn cv_mse_multi(
+    a: &[f64],
+    b: &[f64],
+    dim: usize,
+    indices: &[usize],
+    lambda: f64,
+    n: usize,
+    seeds: &[Vec<GramFold>],
+) -> f64 {
+    let (a_sub, b_sub) = build_subsystem(a, b, dim, indices);
+    let mut total = 0.0f64;
+    for folds in seeds {
+        for f in folds {
+            let (ak, bk) = build_subsystem(&f.a, &f.b, dim, indices);
+            let Some(wk) =
+                try_solve_subsystem(&(&a_sub - &ak), &(&b_sub - &bk), indices.len(), lambda)
+            else {
+                return f64::INFINITY;
+            };
+            total += sse_of(&wk, &ak, &bk, f.yty);
+        }
+    }
+    total / (n as f64 * seeds.len() as f64)
+}
+
+/// Greedy forward order over all `m` columns (after `fixed`), with the CV RMSE
+/// of every prefix. `cv[k-1]` is the prefix of length `k`; the fixed columns
+/// come first, and the prefixes shorter than them are `+∞`.
+#[allow(clippy::too_many_arguments)]
+fn forward_order_multi(
+    a: &[f64],
+    b: &[f64],
+    dim: usize,
+    n: usize,
+    m: usize,
+    fixed: &[usize],
+    lambda: f64,
+    seeds: &[Vec<GramFold>],
+) -> (Vec<usize>, Vec<f64>) {
+    let mut order: Vec<usize> = fixed.to_vec();
+    let mut cv: Vec<f64> = vec![f64::INFINITY; fixed.len().saturating_sub(1)];
+    if !fixed.is_empty() {
+        cv.push(cv_mse_multi(a, b, dim, &order, lambda, n, seeds).sqrt());
+    }
+    let mut remaining: Vec<usize> = (0..m).filter(|i| !fixed.contains(i)).collect();
+    while !remaining.is_empty() {
+        let (pos, mse) = remaining
+            .par_iter()
+            .enumerate()
+            .map(|(pos, &c)| {
+                let mut trial = order.clone();
+                trial.push(c);
+                (pos, cv_mse_multi(a, b, dim, &trial, lambda, n, seeds))
+            })
+            .min_by(|x, y| x.1.partial_cmp(&y.1).expect("NaN CV MSE"))
+            .expect("non-empty remaining");
+        order.push(remaining.remove(pos));
+        cv.push(mse.sqrt());
+        eprint!("\r  select step {}/{}", order.len(), m);
+    }
+    eprintln!();
+    (order, cv)
+}
+
+/// Out-of-fold squared error per user, averaged over the fold seeds, for every
+/// prefix `order[..k]`, k = 1..=kmax (unclipped, as the CV criterion). One
+/// streaming pass; within a block the prefixes run in parallel, each into its
+/// own per-user array.
+#[allow(clippy::too_many_arguments)]
+fn per_user_oof_sse(
+    readers: &mut [NpyF32Reader],
+    clip: &[bool],
+    in_clip_min: f32,
+    in_clip_max: f32,
+    y: &[f64],
+    users: &[u32],
+    n_users: usize,
+    order: &[usize],
+    kmax: usize,
+    weights: &[Vec<DVector<f64>>],
+    fold_of: &[Vec<u32>],
+    k_folds: usize,
+) -> Vec<Vec<f64>> {
+    let m = readers.len();
+    let dim = m + 1;
+    let n = y.len();
+    let n_seeds = fold_of.len() as f64;
+    let mut sse: Vec<Vec<f64>> = (0..kmax).map(|_| vec![0.0f64; n_users]).collect();
+    let mut zt_f32 = vec![0.0f32; ROW_BLOCK * dim];
+    for k in 0..ROW_BLOCK {
+        zt_f32[m + k * dim] = 1.0;
+    }
+    let mut col_bufs: Vec<Vec<f32>> = (0..m).map(|_| vec![0.0f32; ROW_BLOCK]).collect();
+    let n_blocks = n.div_ceil(ROW_BLOCK);
+    let (mut start, mut bidx) = (0usize, 0usize);
+    while start < n {
+        let blen = (n - start).min(ROW_BLOCK);
+        load_block_parallel(readers, clip, in_clip_min, in_clip_max, &mut col_bufs, &mut zt_f32, start, blen, dim);
+        let zt = &zt_f32;
+        sse.par_iter_mut().enumerate().for_each(|(ki, acc)| {
+            let k = ki + 1;
+            let ws = &weights[ki];
+            for r in 0..blen {
+                let row = start + r;
+                let z = &zt[r * dim..(r + 1) * dim];
+                let mut e2 = 0.0f64;
+                for (s, fo) in fold_of.iter().enumerate() {
+                    let w = &ws[s * k_folds + fo[row] as usize];
+                    let mut yhat = w[k];
+                    for jj in 0..k {
+                        yhat += w[jj] * z[order[jj]] as f64;
+                    }
+                    let e = yhat - y[row];
+                    e2 += e * e;
+                }
+                acc[users[row] as usize] += e2 / n_seeds;
+            }
+        });
+        start += blen;
+        bidx += 1;
+        eprint!("\r  oof block {}/{}", bidx, n_blocks);
+    }
+    eprintln!();
+    sse
+}
+
+/// Standard error of `RMSE(a) − RMSE(b)` from per-user SSE, clustered by user:
+/// the linearised variance of the ratio `Σ(a−b) / N` over users, mapped to RMSE
+/// units at `rmse_b`.
+fn paired_user_se(sse_a: &[f64], sse_b: &[f64], n_u: &[u32], rmse_b: f64) -> f64 {
+    let n_total: f64 = n_u.iter().map(|&c| c as f64).sum();
+    let users = n_u.iter().filter(|&&c| c > 0).count() as f64;
+    let d_sum: f64 = sse_a.iter().zip(sse_b).map(|(a, b)| a - b).sum();
+    let r = d_sum / n_total;
+    let mut q = 0.0f64;
+    for ((a, b), &c) in sse_a.iter().zip(sse_b).zip(n_u) {
+        if c == 0 { continue; }
+        let e = (a - b) - r * c as f64;
+        q += e * e;
+    }
+    let var_mse = users / (users - 1.0) * q / (n_total * n_total);
+    var_mse.sqrt() / (2.0 * rmse_b)
+}
+
+/// The `fwdmax{X}se` pick: the largest prefix length `k` (not below `k_min`)
+/// with `cv[k-1] − cv_min ≤ mult · se[k-1]`, `se` covering every prefix.
+fn max_se_pick(cv: &[f64], se: &[f64], k_min: usize, mult: f64) -> usize {
+    let cv_min = cv[k_min - 1];
+    (k_min..=cv.len())
+        .rev()
+        .find(|&k| cv[k - 1] - cv_min <= mult * se[k - 1])
+        .unwrap_or(k_min)
+}
+
+/// `--select`: build the per-seed fold Grams over the probe set, run the
+/// forward search and print the curve with the cut of the SE rule.
+#[allow(clippy::too_many_arguments)]
+fn run_selection(
+    args: &Args,
+    readers: &mut [NpyF32Reader],
+    clip: &[bool],
+    unique: &[String],
+    group_indices: &IndexMap<String, Vec<usize>>,
+    probe_y: &[f64],
+    pr_name: &str,
+) -> ExitCode {
+    let m = readers.len();
+    let dim = m + 1;
+    let n = probe_y.len();
+    let seeds: Vec<u64> = (0..SELECT_SEEDS).map(|i| args.cv_seed + i).collect();
+    // --fixed G1,G2,...: always kept, first in the order, never competing
+    let mut fixed: Vec<usize> = Vec::new();
+    for g in args.fixed_group.iter().flat_map(|s| s.split(',')).map(|g| g.trim()) {
+        let idxs = group_indices.get(g).unwrap_or_else(|| {
+            eprintln!("error: --fixed group '{}' not found (have: {})", g,
+                group_indices.keys().cloned().collect::<Vec<_>>().join(", "));
+            std::process::exit(2);
+        });
+        for &i in idxs { if !fixed.contains(&i) { fixed.push(i); } }
+    }
+    println!("Select:    rule {} over {} columns, {}-fold CV, fold seeds {:?}, λ={}{}",
+        if args.select_se.is_nan() { "manual (no cut)".to_string() } else { format!("fwdmax{}se", args.select_se) }, m, SELECT_FOLDS, seeds, args.lambda,
+        if fixed.is_empty() { String::new() } else { format!(", {} fixed", fixed.len()) });
+
+    let mut fold_of: Vec<Vec<u32>> = Vec::new();
+    let mut by_seed: Vec<Vec<GramFold>> = Vec::new();
+    for &sd in &seeds {
+        println!("Gram:      fold seed {}", sd);
+        let fo = assign_folds(n, SELECT_FOLDS, sd);
+        by_seed.push(build_grams(probe_y, readers, clip,
+            args.in_clip_min as f32, args.in_clip_max as f32, &fo, SELECT_FOLDS));
+        fold_of.push(fo);
+    }
+    let total = GramFold::sum(&by_seed[0], dim);
+
+    let (order, cv) = forward_order_multi(&total.a, &total.b, dim, n, m, &fixed, args.lambda, &by_seed);
+    let k_min = cv.iter().enumerate()
+        .min_by(|x, y| x.1.partial_cmp(y.1).expect("NaN CV"))
+        .map(|(i, _)| i + 1).expect("non-empty curve");
+    let cv_min = cv[k_min - 1];
+
+    // Per-fold weights of every prefix, then the per-user out-of-fold errors
+    // they leave.
+    let weights: Vec<Vec<DVector<f64>>> = (1..=m).into_par_iter().map(|k| {
+        let idx = &order[..k];
+        let (a_sub, b_sub) = build_subsystem(&total.a, &total.b, dim, idx);
+        by_seed.iter().flat_map(|folds| folds.iter().map(|f| {
+            let (ak, bk) = build_subsystem(&f.a, &f.b, dim, idx);
+            solve_subsystem(&(&a_sub - &ak), &(&b_sub - &bk), k, args.lambda)
+        }).collect::<Vec<_>>()).collect()
+    }).collect();
+    let users_path = format!("data/{}/user_idxs.npy", pr_name);
+    let users_i32: Array1<i32> = read_npy(&users_path).unwrap_or_else(|e| panic!("read {}: {}", users_path, e));
+    let users: Vec<u32> = users_i32.iter().map(|&u| u as u32).collect();
+    let n_users = users.iter().copied().max().unwrap_or(0) as usize + 1;
+    let mut n_u = vec![0u32; n_users];
+    for &u in &users { n_u[u as usize] += 1; }
+    let sse = per_user_oof_sse(readers, clip, args.in_clip_min as f32, args.in_clip_max as f32,
+        probe_y, &users, n_users, &order, m, &weights, &fold_of, SELECT_FOLDS);
+    // The streamed errors and the Gram criterion are the same numbers.
+    let drift = sse.iter().enumerate()
+        .filter(|(ki, _)| cv[*ki].is_finite())
+        .map(|(ki, s)| ((s.iter().sum::<f64>() / n as f64).sqrt() - cv[ki]).abs())
+        .fold(0.0f64, f64::max);
+    let se: Vec<f64> = (0..m).map(|ki| paired_user_se(&sse[ki], &sse[k_min - 1], &n_u, cv_min)).collect();
+    let (k_sel, rule) = if args.select_se.is_nan() {
+        (m, String::new())
+    } else {
+        (max_se_pick(&cv, &se, k_min, args.select_se), format!("fwdmax{}se", args.select_se))
+    };
+
+    println!();
+    println!("{:>4}  {:<44} {:>11} {:>11} {:>10}", "k", "column added", "cv_probe", "- min", "se");
+    for (i, &c) in order.iter().enumerate() {
+        let k = i + 1;
+        let mark = if k == k_sel && k == k_min && !args.select_se.is_nan() { "  <- cut, min" }
+            else if k == k_sel && !args.select_se.is_nan() { "  <- cut" } else if k == k_min { "  <- min" } else { "" };
+        println!("{:>4}  {:<44} {:>11.7} {:>+11.2e} {:>10.2e}{}", k, unique[c], cv[i], cv[i] - cv_min, se[i], mark);
+    }
+    println!();
+    if args.select_se.is_nan() {
+        println!("CV minimum: k = {} ({:.7}); no cut marked (--select-se none)", k_min, cv_min);
+    } else {
+        println!("CV minimum: k = {} ({:.7}); {}: k = {} ({:.7}, {:+.2e}, se {:.2e})",
+            k_min, cv_min, rule, k_sel, cv[k_sel - 1], cv[k_sel - 1] - cv_min, se[k_sel - 1]);
+    }
+    println!("Full set:   k = {} ({:.7}, {:+.2e})", m, cv[m - 1], cv[m - 1] - cv_min);
+    println!("Check:      streamed out-of-fold RMSE vs the Gram criterion, max |diff| {:.1e}", drift);
+
+    ExitCode::SUCCESS
+}
+
+// ---------------------------------------------------------------------------
 // BLAS backend info
 // ---------------------------------------------------------------------------
 
@@ -1416,6 +1732,7 @@ fn main() -> ExitCode {
     } else {
         Vec::new()
     };
+
     // Columns measured on top of the ensemble. They are appended after the stored
     // registry (and after the no-clip drop, which concerns stored columns only),
     // so the reference fit stays the prefix `0..ref_m` whatever is added, and a
@@ -1571,6 +1888,9 @@ fn main() -> ExitCode {
             readers.push(r);
         }
         probe_y_i8 = Some(y_i8);
+        if args.select {
+            return run_selection(&args, &mut readers, &clip, &display, &group_indices, &probe_y, pr);
+        }
     }
 
     // Load qual ratings + is_test (for the quiz evaluation pass; in quiz-blend
@@ -1934,6 +2254,7 @@ fn main() -> ExitCode {
             }
 
             let mut checked = 0usize;
+            let mut failed_rows = 0usize;
             let mut details: Vec<String> = Vec::new();
             let mut measured: Vec<(String, Option<f64>, Option<f64>)> = Vec::new();
             let ens_primary = fits.iter().position(|(n, _, _)| n == ENSEMBLE_ROW)
@@ -1969,7 +2290,7 @@ fn main() -> ExitCode {
                         if any {
                             checked += 1;
                             status = if row_ok { "OK".to_string() } else { "FAIL".to_string() };
-                            if !row_ok { check_failed = true; }
+                            if !row_ok { check_failed = true; failed_rows += 1; }
                         }
                         let want_primary = if need_probe { e.probe } else { e.quiz };
                         delta = match (primary, want_primary) {
@@ -2025,7 +2346,7 @@ fn main() -> ExitCode {
                 println!("Reference check: no expected values in {} for '{}'", ENSEMBLES_TOML, def.name);
             } else if check_failed {
                 println!("Reference check: FAIL ({} of {} rows outside {:.0e})",
-                    details.len(), checked, def.tolerance);
+                    failed_rows, checked, def.tolerance);
                 println!("  A single group means those columns changed; many means a stale");
                 println!("  download. ./target/release/preds pull --dry-run re-checks every md5.");
             } else {
@@ -2248,4 +2569,37 @@ fn update_expected(
     std::fs::write(ENSEMBLES_TOML, doc.to_string())
         .unwrap_or_else(|e| panic!("write {}: {}", ENSEMBLES_TOML, e));
     println!("Updated {} rows of [expected] for '{}' in {}", n, name, ENSEMBLES_TOML);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_se_takes_the_largest_prefix_within_the_band() {
+        let cv = [0.90, 0.8603, 0.8600, 0.8601, 0.86005, 0.8604, 0.8602];
+        let se = [1e-3, 2e-4, 0.0, 2e-4, 1e-4, 2e-4, 1e-4];
+        // one se: k=7 (2e-4 vs 1e-4) and k=6 (4e-4 vs 2e-4) are out, k=5 is in
+        assert_eq!(max_se_pick(&cv, &se, 3, 1.0), 5);
+        // two se: k=7 (2e-4 vs 2e-4) is in
+        assert_eq!(max_se_pick(&cv, &se, 3, 2.0), 7);
+        // never left of the minimum, even if a shorter prefix is within the band
+        assert_eq!(max_se_pick(&cv, &[1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 3, 2.0), 3);
+    }
+
+    #[test]
+    fn paired_user_se_is_zero_for_identical_errors_and_scales_with_the_spread() {
+        let n_u = [2u32, 3, 1, 4];
+        let a = [1.0, 2.0, 0.5, 3.0];
+        assert_eq!(paired_user_se(&a, &a, &n_u, 0.9), 0.0);
+        // a constant per-rating shift has no user-level spread either
+        let b: Vec<f64> = a.iter().zip(&n_u).map(|(x, &c)| x + 0.1 * c as f64).collect();
+        assert!(paired_user_se(&b, &a, &n_u, 0.9) < 1e-12);
+        // a user-specific shift does
+        let c = [1.4, 2.0, 0.5, 3.0];
+        let d = [1.8, 2.0, 0.5, 3.0];
+        let s1 = paired_user_se(&c, &a, &n_u, 0.9);
+        let s2 = paired_user_se(&d, &a, &n_u, 0.9);
+        assert!(s1 > 0.0 && (s2 / s1 - 2.0).abs() < 1e-9);
+    }
 }
