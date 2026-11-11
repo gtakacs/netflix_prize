@@ -1,0 +1,1143 @@
+# Pipeline definition for SPLIT_1
+# Data: data/{train,probe,fulltrain,qual}/ (the old split's datasets)
+# Outputs: preds_1/
+#
+# split_1 has the same train / probe split as the old split (pipeline-old.toml),
+# and rebuilds its base predictors as proper jobs: each column of models-old.toml
+# whose recipe is recorded (preds_old/<name>.cfg, .out) and runs on current code
+# becomes an `s1-<name>` job of the `fit` dispatcher here, checked against the old
+# column (probe curve within ~1e-4 where a .out exists, correlation > 0.999).
+# preds_lab/s1tools/inventory.tsv lists every old base column with its tier and
+# the proposed runner. Columns without a record (tier C) are left out.
+
+[split]
+name         = "1"
+tr           = "train"
+pr           = "probe"
+fulltrain_tr = "fulltrain"
+fulltrain_pr = "qual"
+preds        = "preds_1"
+sim          = "sim"
+
+# --- Data preparation ---
+
+[jobs.download]
+inputs  = ["src/bin/download.rs"]
+outputs = ["data/raw/nf_prize_dataset.tar.gz"]
+cmd = "./target/release/download"
+
+# Parse the downloaded archive straight into the four numpy datasets.
+[jobs.ingest]
+inputs_from = ["download"]
+inputs  = ["data/qual_ratings/qual_ratings.csv.gz", "src/bin/ingest.rs"]
+outputs = ["data/train/", "data/probe/", "data/fulltrain/", "data/qual/", "data/raw/README", "data/raw/movie_titles.csv", "data/raw/probe.txt", "data/raw/qualifying.txt"]
+cmd = "./target/release/ingest"
+
+# --- Defaults per job type ---
+
+# The `fit` dispatcher (src/bin/fit.rs) on split_1: `runner` is the subcommand (tx,
+# rbm, misc, chain, attn, dnn, nade). Knobs from `env`, a residual target from
+# `extra_args` (--target W*base), epoch snapshots via keep_epochs (EPSAVE=1 in env).
+[defaults.s3model]
+inputs_from = ["ingest"]
+inputs  = ["src/bin/fit.rs"]
+outputs = [
+    "{preds}/{name}.{pr}.npy",
+    "{preds}/{name}.{fulltrain_pr}.npy",
+    "{preds}/{name}.out",
+]
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/fit {runner} {name} -p pipeline-1.toml --final --preds {preds} {extra}"
+
+# s3model whose train preds feed a chain or residual model (extras = ["@train_preds"]).
+[defaults.s3model_base]
+inputs_from = ["ingest"]
+inputs  = ["src/bin/fit.rs"]
+outputs = [
+    "{preds}/{name}.{pr}.npy",
+    "{preds}/{name}.{fulltrain_pr}.npy",
+    "{preds}/{name}.{tr}.npy",
+    "{preds}/{name}.{fulltrain_tr}.npy",
+    "{preds}/{name}.out",
+]
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/fit {runner} {name} -p pipeline-1.toml --final --preds {preds} {extra}"
+
+# s3model_base whose item factors feed a factor-similarity kNN chain (extras = ["@ifeat"]).
+[defaults.s3model_ifeat]
+inputs_from = ["ingest"]
+inputs  = ["src/bin/fit.rs"]
+outputs = [
+    "{preds}/{name}.{pr}.npy",
+    "{preds}/{name}.{fulltrain_pr}.npy",
+    "{preds}/{name}.{tr}.npy",
+    "{preds}/{name}.{fulltrain_tr}.npy",
+    "{preds}/{name}.ifeat.{tr}.npy",
+    "{preds}/{name}.ifeat.{fulltrain_tr}.npy",
+    "{preds}/{name}.out",
+]
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/fit {runner} {name} -p pipeline-1.toml --final --preds {preds} {extra}"
+
+# Item-item sim matrix for the knn-<tag> chain stage (fit nbstats): name
+# <rtg>_<stat>, as in pipeline-3.toml. The old split's train set has none yet;
+# they are added with the first chain that needs one.
+[defaults.s3sim]
+inputs_from = ["ingest"]
+inputs  = ["src/bin/fit.rs"]
+outputs = ["{split.sim}/{name}.{tr}.npy", "{split.sim}/{name}.{fulltrain_tr}.npy"]
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=8 ./target/release/fit nbstats {name} -p pipeline-1.toml --preds {preds}"
+
+# --- Base predictors: pilots (2026-11-01) ---
+# One small model per runner path, each with a .out to check its probe curve
+# against: the knobs are read off preds_old/<name>.cfg (preds_lab/s1tools/txmap.py
+# for the TxModel family). tx runs single-threaded.
+
+# tsvdx5 recipe (old Config struct) on TxModel in tx5 mode (no sum_err quirk); the
+# NSVD1 term from train only (FULL_SU=0: full_su did not exist then). Old probe 0.88542.
+[jobs."s1-tsvdx5-16"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 F=16 FULL_SU=0 LR_W=0.003 NBR=50 RAYON_NUM_THREADS=1 SEED=42 TBINS=29"
+
+# tsvdx4 sweep point (old TimeSvdConfig) on TxModel: no neighbourhood, NSVD1 from train
+# only (FULL_SU=0), no cu term (LR_CU=0: the old TimeSvdConfig has no lr_cu), and without
+# the sum_err quirk (SUM_ERR_BUG=0 reproduces the sweep points with lr_yb > 0; the others
+# do not depend on it). With these the probe curve matches the old one exactly.
+# Old probe 0.91758.
+[jobs."s1-tsvdx4-swp14"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 F=24 FULL_SU=0 LR_CU=0 LR_IB=0.0018 LR_IBF=2.5e-5 LR_IQF=0.0 LR_TA=0.0 LR_TI=0.0 LR_U=0.0 LR_UB=0.0062 LR_UD=0.0 LR_Y=0.00025 LR_YB=0.0 LR_YD=0.000534 RAYON_NUM_THREADS=1 REG_I=0.008322335 REG_IQF=0.01029175 REG_U2=0.28414845 REG_U=0.066059515 REG_UD=0.04827117 REG_Y=0.021581048 REG_YD=0.01371929 RESET=19 SEED=364364 SIGMA_I=0.007186402 SIGMA_IQF=0.0045767576 SIGMA_U=0.0018258156 SIGMA_Y=0.002827007 SIGMA_YD=0.012059503 TBINS=29"
+
+# Biased SGD MF, users in order, factor reset every 10 epochs; its item factors
+# feed the factor-cosine kNN chains. Old probe 0.90274.
+[jobs."s1-mf-64u"]
+jobtype = "s3model_ifeat"
+runner = "misc"
+env = "EPOCHS=20 F=64 IFEAT=1 RESET=10 SHUFFLE=0"
+
+[jobs."s1-mf-64u__knn-25f"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-mf-64u.ifeat KN_K=25 KN_SCALE=1.5 KN_SIM=fcos KN_STAT0=none KN_TAU=0.02"
+extras = ["@train_preds", "@ifeat"]
+
+# ALS bias + MF (als8; the fit misc defaults are als8-8's).
+[jobs."s1-als8-8"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=10 F=8"
+
+# The old chain used mf-64u's item factors, not als8-8's.
+[jobs."s1-als8-8__knn-25f"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-mf-64u.ifeat KN_K=25 KN_SCALE=1.5 KN_SIM=fcos KN_STAT0=none KN_TAU=0.02"
+extras = ["@train_preds"]
+inputs_from = ["ingest", "s1-mf-64u"]
+inputs = ["src/bin/fit.rs", "{preds}/s1-mf-64u.ifeat.{tr}.npy", "{preds}/s1-mf-64u.ifeat.{fulltrain_tr}.npy"]
+
+# BellKor neighbourhood model, user-sequential SGD; old probe 0.90163.
+[jobs."s1-bknbrx-50seq"]
+jobtype = "s3model"
+runner = "misc"
+env = "EPOCHS=17 PARMODE=seq"
+
+# Joint MF + RBM (old MfRbmConfig = today's MfRbmxConfig); old probe 0.90814.
+[jobs."s1-mfrbm-48"]
+jobtype = "s3model"
+runner = "misc"
+env = "EPOCHS=9 F=24 H=24"
+
+# --- Base predictors: pilot round 2 (2026-11-01) ---
+# Four more points of the tsvdx4 sweep with the recipe the swp14 pilot proved (FULL_SU=0,
+# LR_CU=0, no sum_err quirk; knobs from preds_lab/s1tools/txmap.py), and the plain BellKor
+# neighbourhood model.
+
+[jobs."s1-tsvdx4-swp02"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 F=24 FULL_SU=0 LR_CU=0 LR_I=0.0072 LR_IB=0.0 LR_IQF=0.0 LR_TA=0.0 LR_TI=0.0 LR_U2=3.5e-6 LR_UBD=0.0 LR_Y=0.001 LR_YB=1.25e-5 RAYON_NUM_THREADS=1 REG_I=0.0037168574 REG_IQF=0.0062472452 REG_U2=0.43024325 REG_U=0.038155507 REG_UD=0.039330743 REG_Y=0.044019174 REG_YD=0.039232608 RESET=7 SEED=718264 SIGMA_I=0.0071254354 SIGMA_IQF=0.00515405 SIGMA_U=0.0013671981 SIGMA_Y=0.002661013 SIGMA_YD=0.008952687 TBINS=29"
+
+[jobs."s1-tsvdx4-swp16"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 F=24 FULL_SU=0 LR_CU=0 LR_I=0.0072 LR_IB=0.0 LR_IQF=1e-5 LR_TA=4.5e-5 LR_TI=0.0 LR_U=0.0015 LR_UB=0.0 LR_UBD=0.0 LR_UD=0.0 LR_Y=0.00025 LR_YB=0.0 RAYON_NUM_THREADS=1 REG_I=0.00773326 REG_IQF=0.0068742353 REG_U2=0.5586837 REG_U=0.048591055 REG_UD=0.02877332 REG_Y=0.05481705 REG_YD=0.02262775 RESET=4 SEED=893390 SIGMA_I=0.0046512173 SIGMA_IQF=0.005419817 SIGMA_U=0.0012721138 SIGMA_Y=0.0029479705 SIGMA_YD=0.005084301 TBINS=29"
+
+[jobs."s1-tsvdx4-swp21"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=14 F=24 FULL_SU=0 LR_CU=0 LR_I=0.0072 LR_IB=0.0018 LR_IBF=2.5e-5 LR_IQF=2.5e-6 LR_TA=0.0 LR_TI=0.0 LR_U2=3.5e-6 LR_UBD=0.0 LR_UD=0.0 LR_Y=0.0 LR_YB=1.25e-5 LR_YD=0.000534 RAYON_NUM_THREADS=1 REG_I=0.005914999 REG_IQF=0.0075407377 REG_U2=0.28833184 REG_U=0.049912233 REG_UD=0.020362934 REG_Y=0.031213889 REG_YD=0.020578878 RESET=4 SEED=437527 SIGMA_I=0.006797283 SIGMA_IQF=0.003246312 SIGMA_U=0.0016620985 SIGMA_Y=0.004859002 SIGMA_YD=0.0064256038 TBINS=29"
+
+[jobs."s1-tsvdx4-swp24"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 F=24 FULL_SU=0 LR_CU=0 LR_IQF=1e-5 LR_TA=0.0 LR_U=0.006 LR_UB=0.0 LR_UBD=0.0 LR_UD=0.000625 LR_Y=0.0 LR_YB=0.0 LR_YD=0.0001335 RAYON_NUM_THREADS=1 REG_I=0.004759214 REG_IQF=0.005072052 REG_U2=0.47269812 REG_U=0.026087495 REG_UD=0.044330075 REG_Y=0.058682222 REG_YD=0.036050245 RESET=19 SEED=679892 SIGMA_I=0.0038722728 SIGMA_IQF=0.0025143097 SIGMA_U=0.0007614606 SIGMA_Y=0.0038692052 SIGMA_YD=0.006997585 TBINS=29"
+
+# BellKor neighbourhood model before its same-day terms (bknbr: no *_day fields, no
+# parallel_mode), so user-sequential with the day terms off.
+[jobs."s1-bknbr-50"]
+jobtype = "s3model"
+runner = "misc"
+env = "EPOCHS=25 LR_WD=0 PARMODE=seq REG_WD=0"
+
+# --- Base predictors: round 3 (2026-11-01 evening) ---
+# Four more tsvdx4 sweep points (the proven recipe), mfrbm-96, and two kNN chains on
+# als8-8 with their item-item statistics on the old split's train set.
+
+[jobs."s1-tsvdx4-swp03"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 F=24 FULL_SU=0 LR_CU=0 LR_I=0.0 LR_IB=0.0018 LR_IBF=0.0 LR_IQF=2.5e-6 LR_TA=0.0 LR_U2=0.0 LR_U=0.006 LR_UB=0.0 LR_UBD=0.0 LR_Y=0.0 LR_YD=0.000534 RAYON_NUM_THREADS=1 REG_I=0.005871837 REG_IQF=0.0067397375 REG_U2=0.22599588 REG_U=0.033412542 REG_UD=0.032299504 REG_Y=0.056515664 REG_YD=0.016066765 RESET=1 SEED=815804 SIGMA_I=0.0026069921 SIGMA_IQF=0.006650577 SIGMA_U=0.0010955832 SIGMA_Y=0.0018177021 SIGMA_YD=0.006727791 TBINS=29"
+
+[jobs."s1-tsvdx4-swp09"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 F=24 FULL_SU=0 LR_CU=0 LR_I=0.0018 LR_IB=0.0 LR_IBF=2.5e-5 LR_IQF=1e-5 LR_TA=4.5e-5 LR_TI=0.0001125 LR_U2=0.0 LR_U=0.0 LR_UD=0.0025 LR_Y=0.0 LR_YD=0.000534 RAYON_NUM_THREADS=1 REG_I=0.010343184 REG_IQF=0.009739594 REG_U2=0.34720197 REG_U=0.05372057 REG_UD=0.040399514 REG_Y=0.033081744 REG_YD=0.025563465 RESET=20 SEED=424438 SIGMA_I=0.0031098495 SIGMA_IQF=0.0060115606 SIGMA_U=0.00090226077 SIGMA_Y=0.0048511494 SIGMA_YD=0.011699171 TBINS=29"
+
+[jobs."s1-tsvdx4-swp20"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 F=24 FULL_SU=0 LR_CU=0 LR_I=0.0 LR_IB=0.0 LR_IQF=2.5e-6 LR_TA=0.0 LR_TI=0.00045 LR_U2=3.5e-6 LR_U=0.0 LR_UB=0.00155 LR_UBD=0.0015 LR_UD=0.0 LR_YD=0.0 RAYON_NUM_THREADS=1 REG_I=0.007615698 REG_IQF=0.010059346 REG_U2=0.44170156 REG_U=0.06592331 REG_UD=0.02640252 REG_Y=0.034287494 REG_YD=0.016320352 RESET=17 SEED=608070 SIGMA_I=0.0025213636 SIGMA_IQF=0.005813865 SIGMA_U=0.0010972022 SIGMA_Y=0.0019369037 SIGMA_YD=0.011461285 TBINS=29"
+
+[jobs."s1-tsvdx4-swp27"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 F=24 FULL_SU=0 LR_CU=0 LR_I=0.0072 LR_IB=0.0018 LR_IBF=2.5e-5 LR_IQF=0.0 LR_TA=4.5e-5 LR_TI=0.0 LR_U2=3.5e-6 LR_U=0.0 LR_UB=0.0 LR_UBD=0.0 LR_UD=0.0025 LR_Y=0.00025 LR_YB=0.0 LR_YD=0.000534 RAYON_NUM_THREADS=1 REG_I=0.007267922 REG_IQF=0.009906701 REG_U2=0.4011111 REG_U=0.03553169 REG_UD=0.03711019 REG_Y=0.052694123 REG_YD=0.020516034 RESET=12 SEED=665065 SIGMA_I=0.0025089127 SIGMA_IQF=0.004048259 SIGMA_U=0.0016353292 SIGMA_Y=0.002445177 SIGMA_YD=0.0047610304 TBINS=29"
+
+# Joint MF + RBM, mfrbm-48's model with its own MF rates.
+[jobs."s1-mfrbm-96"]
+jobtype = "s3model"
+runner = "misc"
+env = "EPOCHS=10 F=48 H=48 LR_I=0.025 LR_IB=0.025 LR_U=0.004 LR_UB=0.005"
+
+# Item-item statistics for the knn chains: rating support, and the products / squared
+# differences of s1-als8-8's residuals (the old als8-8_prod / als8-8_diff2).
+[jobs."rtg_supp"]
+jobtype = "s3sim"
+
+[jobs."rtg_prod"]
+jobtype = "s3sim"
+
+# For the kNN chains on the new RBMs (mse and weighted-support similarities).
+[jobs."rtg_diff2"]
+jobtype = "s3sim"
+
+[jobs."bin_wsupp"]
+jobtype = "s3sim"
+
+[jobs."s1-als8-8_prod"]
+jobtype = "s3sim"
+inputs_from = ["ingest", "s1-als8-8"]
+inputs = ["src/bin/fit.rs", "{preds}/s1-als8-8.{tr}.npy", "{preds}/s1-als8-8.{fulltrain_tr}.npy"]
+
+[jobs."s1-als8-8_diff2"]
+jobtype = "s3sim"
+inputs_from = ["ingest", "s1-als8-8"]
+inputs = ["src/bin/fit.rs", "{preds}/s1-als8-8.{tr}.npy", "{preds}/s1-als8-8.{fulltrain_tr}.npy"]
+
+[jobs."s1-als8-8__knn-25c"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s1-als8-8_prod KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s1-als8-8_prod.{tr}.npy", "sim/s1-als8-8_prod.{fulltrain_tr}.npy"]
+
+[jobs."s1-als8-8__knn-25m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=7.5 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=s1-als8-8_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s1-als8-8_diff2.{tr}.npy", "sim/s1-als8-8_diff2.{fulltrain_tr}.npy"]
+
+# --- Base predictors: round 4 (2026-11-02): the next size of tsvdx4 ---
+# tsvdx4-20f and tsvdx4-180f are the same model generation as the sweep (proven recipe);
+# their base columns are epoch snapshots (keep_epochs). tsvdx4-40 / -72 are the older
+# TimeSvdConfig generation (time bins as n_bins, no frequency-binned terms: TBINS=n_bins,
+# LR_IBF=0, LR_IQF=0, and SIGMA_IQF=0 so the frequency factors stay at zero instead of a
+# random init), and with the sum_err quirk (SUM_ERR_BUG=1). tsvdx4-40 runs: without
+# SIGMA_IQF corr 0.9987, without SUM_ERR_BUG 0.9988, with both exact (corr 1.00000).
+# A learning rate the old struct has no field for is switched off (tsvdx4-72 has no
+# lr_yb: LR_YB=0; with the default it had corr 0.9966).
+# No .out, so they are checked by correlation only.
+
+[jobs."s1-tsvdx4-20f"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=14 EPSAVE=1 F=20 FULL_SU=0 LR_CU=0 LR_TA=1.5e-5 LR_TI=0.00015 LR_YD=0.0003 RAYON_NUM_THREADS=1 REG_U=0.048 REG_YD=0.04 RESET=13 SEED=200 SIGMA_U=0.0 SIGMA_Y=0.005 SIGMA_YD=0.0075 TBINS=24"
+keep_epochs = [13]
+
+[jobs."s1-tsvdx4-180f"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=20 EPSAVE=1 F=200 FULL_SU=0 LR_CU=0 LR_TA=1.5e-5 LR_TI=0.00015 LR_YD=0.0003 RAYON_NUM_THREADS=1 REG_U=0.048 REG_YD=0.04 RESET=13 SEED=42 SIGMA_U=0.0 SIGMA_Y=0.005 SIGMA_YD=0.0075 TBINS=24"
+keep_epochs = [1, 3, 13]
+
+[jobs."s1-tsvdx4-40"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=13 F=40 FULL_SU=0 LR_CU=0 LR_IBF=0 LR_IQF=0 LR_TA=1.5e-5 LR_TI=0.0001 LR_U2=1e-5 LR_UD=0.0009 LR_YB=1e-6 LR_YD=0.0003 RAYON_NUM_THREADS=1 REG_I=0.007 REG_U=0.04 REG_YD=0.04 RESET=12 SEED=42 SIGMA_IQF=0 SIGMA_U=0.0 SIGMA_Y=0.005 SIGMA_YD=0.005 SUM_ERR_BUG=1 TBINS=20"
+
+[jobs."s1-tsvdx4-72"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=14 F=72 FULL_SU=0 LR_CU=0 LR_IBF=0 LR_IQF=0 LR_TA=1.5e-5 LR_TI=0.0001 LR_U2=1e-5 LR_UD=0.0009 LR_YB=0 LR_YD=0.0003 RAYON_NUM_THREADS=1 REG_I=0.007 REG_U=0.04 REG_YD=0.04 SEED=72 SIGMA_IQF=0 SIGMA_U=0.0 SIGMA_Y=0.005 SIGMA_YD=0.005 SUM_ERR_BUG=1 TBINS=20"
+
+# Older TimeSvdConfig generation at F=160 (the recipe tsvdx4-40 / -72 proved); the old column is
+# the run's final model, named after its epoch count.
+[jobs."s1-tsvdx4-160_ep19"]
+jobtype = "s3model_base"
+runner = "tx"
+env = "EPOCHS=19 F=160 FULL_SU=0 LR_CU=0 LR_IBF=0 LR_IQF=0 LR_TA=1.5e-5 LR_TI=0.0001 LR_U2=1e-5 LR_UD=0.0009 LR_YB=1e-6 LR_YD=0.0003 RAYON_NUM_THREADS=1 REG_I=0.007 REG_U=0.04 REG_YD=0.04 RESET=12 SEED=160 SIGMA_IQF=0 SIGMA_U=0.0 SIGMA_Y=0.005 SIGMA_YD=0.005 SUM_ERR_BUG=1 TBINS=20"
+
+# Ordinal-head tsvdx4s of the older generation: their OrdinalHeadConfig is the one fit tx
+# sets with ORD=1 (th_init [0.5, 1.25, 3.75, 5.5], th_gap 0.001, fixed thresholds).
+# tsvdx4-200o's struct already has sum_err_bug (false), which decides over the generation
+# rule (a first run with SUM_ERR_BUG=1 had corr 0.9984).
+
+[jobs."s1-tsvdx4-16o"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=28 F=16 FULL_SU=0 LR_CU=0 LR_I=0.0072 LR_IB=0.0072 LR_IBF=0 LR_IQF=0 LR_TA=1.5e-5 LR_TI=0.0001 LR_U2=1e-5 LR_UB=0.006 LR_UBD=0.006 LR_UD=0.0015 LR_Y=0.0012 LR_YB=2e-6 LR_YD=0.0006 ORD=1 RAYON_NUM_THREADS=1 REG_I=0.007 REG_U=0.04 REG_YD=0.04 SEED=16 SIGMA_IQF=0 SIGMA_U=0.0 SIGMA_Y=0.005 SIGMA_YD=0.005 SUM_ERR_BUG=1 TBINS=20"
+
+[jobs."s1-tsvdx4-64o"]
+jobtype = "s3model_base"
+runner = "tx"
+env = "EPOCHS=28 F=64 FULL_SU=0 LR_CU=0 LR_I=0.0072 LR_IB=0.0072 LR_IBF=0 LR_IQF=0 LR_TA=1.5e-5 LR_TI=0.0001 LR_U2=1e-5 LR_UB=0.006 LR_UBD=0.006 LR_UD=0.0015 LR_Y=0.0012 LR_YB=2e-6 LR_YD=0.0006 ORD=1 RAYON_NUM_THREADS=1 REG_I=0.007 REG_U=0.04 REG_YD=0.04 SEED=64 SIGMA_IQF=0 SIGMA_U=0.0 SIGMA_Y=0.005 SIGMA_YD=0.005 SUM_ERR_BUG=1 TBINS=20"
+
+[jobs."s1-tsvdx4-200o"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=28 F=200 FULL_SU=0 LR_CU=0 LR_I=0.0072 LR_IB=0.0072 LR_IBF=0 LR_IQF=0 LR_TA=1.5e-5 LR_TI=0.0001 LR_U2=1e-5 LR_UB=0.006 LR_UBD=0.006 LR_UD=0.0015 LR_Y=0.0012 LR_YB=3.2e-5 LR_YD=0.0006 ORD=1 RAYON_NUM_THREADS=1 REG_I=0.007 REG_U=0.04 REG_YD=0.04 SEED=42 SIGMA_IQF=0 SIGMA_U=0.0 SIGMA_Y=0.005 SIGMA_YD=0.005 TBINS=20"
+
+# Older TimeSvdConfig generation at F=512 (its struct has no lr_ud / lr_yb: those terms off);
+# about 70 GB and 15 h on one thread.
+[jobs."s1-tsvdx4-512_ep19"]
+jobtype = "s3model"
+runner = "tx"
+env = "EPOCHS=19 F=512 FULL_SU=0 LR_CU=0 LR_IBF=0 LR_IQF=0 LR_TA=1.5e-5 LR_TI=0.0001 LR_U=0.0031 LR_U2=1e-5 LR_UD=0 LR_YB=0 LR_YD=0.0003 RAYON_NUM_THREADS=1 REG_I=0.007 REG_U=0.04 REG_YD=0.04 SEED=512 SIGMA_IQF=0 SIGMA_U=0.0 SIGMA_Y=0.005 SIGMA_YD=0.005 SUM_ERR_BUG=1 TBINS=20"
+
+# --- Base predictors: round 6 (2026-11-03 evening) ---
+# A knn3 chain on tsvdx4-64o (its Knn3Config is fit chain's knn3 default exactly), a
+# support kNN on tsvdx4-160_ep19 with the binary support statistic of the train set, and
+# tsvdx5-200 (the tsvdx5-16 recipe at F=200).
+[jobs."s1-tsvdx4-64o__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."bin_supp"]
+jobtype = "s3sim"
+
+[jobs."s1-tsvdx4-160_ep19__knn-25s"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=2.5 KN_SIM=support KN_STAT0=bin_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/bin_supp.{tr}.npy", "sim/bin_supp.{fulltrain_tr}.npy"]
+
+# The old .cfg says n_epochs 20, but the old .out and column come from a 25-epoch run
+# (Epoch 25 probe 0.88518 = the old column); a 20-epoch run matched the first 20 epochs exactly.
+[jobs."s1-tsvdx5-200"]
+jobtype = "s3model_base"
+runner = "tx"
+env = "EPOCHS=25 F=200 FULL_SU=0 LR_W=0.002 NBR=50 RAYON_NUM_THREADS=1 SEED=42 TBINS=29 WB=0.8 WF=0.8 WN=0.8"
+
+# --- Round 7 (2026-11-03): asym, mf-24 + its mse kNN ---
+# The old AsymConfig / MfConfig without a shuffle_users field did not shuffle: asym-16 with
+# SHUFFLE=0 is exact (corr 1.00000), with SHUFFLE=1 corr 0.9924.
+[jobs."s1-asym-16"]
+jobtype = "s3model"
+runner = "misc"
+env = "EPOCHS=10 SHUFFLE=0"
+
+[jobs."s1-mf-64u__asym-16"]
+jobtype = "s3model"
+runner = "chain"
+env = "EPOCHS=10 SHUFFLE=0"
+extras = ["@train_preds"]
+
+# mf-24 has no old column of its own; it is the base of mf-24__knn-25m.
+[jobs."s1-mf-24"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=16 F=24 LR_I=0.01 LR_IB=0.006 LR_U=0.001 LR_UB=0.0035 REG_I=0.005 REG_U=0.03 RESET=2 SHUFFLE=0 SIGMA_I=0.05 SIGMA_U=0.04"
+
+[jobs."s1-mf-24_diff2"]
+jobtype = "s3sim"
+inputs_from = ["ingest", "s1-mf-24"]
+inputs = ["src/bin/fit.rs", "{preds}/s1-mf-24.{tr}.npy", "{preds}/s1-mf-24.{fulltrain_tr}.npy"]
+
+[jobs."s1-mf-24__knn-25m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=7.5 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=s1-mf-24_diff2 KN_TAU=0.05 W=1.2"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s1-mf-24_diff2.{tr}.npy", "sim/s1-mf-24_diff2.{fulltrain_tr}.npy"]
+
+# bk1 (the BellKor 2008 model): NBR=300 is exact on the old .out's first epoch (0.93872;
+# NBR=0 gives 0.95605). The snapshot columns are 1-based epochs (_ep05 = "Epoch 05").
+[jobs."s1-bk1-10"]
+jobtype = "s3model"
+runner = "misc"
+env = "EPOCHS=30 EPSAVE=1 NBR=300"
+keep_epochs = [5, 21, 29]
+inputs = ["src/bin/fit.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+
+# The old tsvdx.rs generation (TimeSvdConfig with one lr_t): lr_t drives all three time terms
+# (LR_TU = LR_TI = LR_TA), users in order (SHUFFLE=0). Lab tsvdx-20: exact (corr 1.00000);
+# with SHUFFLE=1 corr 0.9965. No .out, checked by correlation.
+[jobs."s1-tsvdx-20"]
+jobtype = "s3model"
+runner = "tx"
+env = "FULL_SU=0 RAYON_NUM_THREADS=1 BETA=0.4 EPOCHS=20 F=20 LR_CU=0 LR_I=0.004 LR_IB=0.0001 LR_IBF=0 LR_IQF=0 LR_TA=2e-5 LR_TI=2e-5 LR_TU=2e-5 LR_U2=0 LR_U=0.002 LR_UB=0.0001 LR_UBD=0 LR_UD=0 LR_Y=0.0 LR_YB=0 LR_YD=0.0004 REG_I=0.008 REG_U=0.02 REG_Y=0.02 REG_YD=0.02 RESET=2 SEED=42 SHUFFLE=0 SIGMA_I=0.02 SIGMA_IQF=0 SIGMA_U=0.05 SIGMA_Y=0.05 SIGMA_YD=0.02 SUM_ERR_BUG=1 TBINS=30"
+
+[jobs."s1-tsvdx-256"]
+jobtype = "s3model"
+runner = "tx"
+env = "FULL_SU=0 RAYON_NUM_THREADS=1 EPOCHS=6 F=256 LR_CU=0 LR_IBF=0 LR_IQF=0 LR_TA=1e-5 LR_TI=1e-5 LR_TU=1e-5 LR_U2=0 LR_U=0.0031 LR_UBD=0 LR_UD=0 LR_YB=0 LR_YD=0.0005 REG_I=0.007 REG_U=0.04 REG_YD=0.04 SEED=42 SHUFFLE=0 SIGMA_IQF=0 SIGMA_U=0.004 SIGMA_Y=0.005 SIGMA_YD=0.005 SUM_ERR_BUG=1 TBINS=30"
+
+# --- New RBMs (s1-nrbm*, rx.rs, configs from scratch; 2026-11-04 / 05) ---
+# Screened in the lab (preds_lab/s1rbm/, probe only, every epoch saved; blend test
+# preds_lab/s1tools/blendtest.py, blendtest_r3mid.txt). Only the snapshots picked by the
+# forward selection are outputs. Probe side copied from the lab run (the RBM is deterministic:
+# nothing depends on EPOCHS, the lab rounds agree bit for bit), qual side from a QUAL_ONLY=1
+# rerun with the same knobs (preds_lab/s1_rbm_final.sh). A plain run of the job reproduces both.
+
+[jobs."s1-nrbm100nfbut"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=50 EPSAVE=1 H=100 LR=0.025 NFACT=30 LR_BUT=0.002 RAYON_NUM_THREADS=3"
+# Also a chain base: the bare columns, train-side preds and weights are its last epoch (50).
+outputs = ["{preds}/s1-nrbm100nfbut_ep50.{pr}.npy", "{preds}/s1-nrbm100nfbut_ep50.{fulltrain_pr}.npy", "{preds}/s1-nrbm100nfbut.{pr}.npy", "{preds}/s1-nrbm100nfbut.{fulltrain_pr}.npy", "{preds}/s1-nrbm100nfbut.{tr}.npy", "{preds}/s1-nrbm100nfbut.{fulltrain_tr}.npy", "{preds}/s1-nrbm100nfbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100nfbut.ifeat.{fulltrain_tr}.npy", "{preds}/s1-nrbm100nfbut.out"]
+
+[jobs."s1-nrbm400pbut"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=18 EPSAVE=1 H=400 LR=0.025 HT=p LR_BUT=0.002 RAYON_NUM_THREADS=4"
+outputs = ["{preds}/s1-nrbm400pbut_ep01.{pr}.npy", "{preds}/s1-nrbm400pbut_ep01.{fulltrain_pr}.npy", "{preds}/s1-nrbm400pbut_ep18.{pr}.npy", "{preds}/s1-nrbm400pbut_ep18.{fulltrain_pr}.npy", "{preds}/s1-nrbm400pbut.out"]
+
+[jobs."s1-nrbm200lr4"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=43 EPSAVE=1 H=200 LR=0.04 RAYON_NUM_THREADS=4"
+outputs = ["{preds}/s1-nrbm200lr4_ep43.{pr}.npy", "{preds}/s1-nrbm200lr4_ep43.{fulltrain_pr}.npy", "{preds}/s1-nrbm200lr4.out"]
+
+[jobs."s1-nrbm100pnb"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=43 EPSAVE=1 H=100 LR=0.025 HT=p LR_BU=0 LR_BUT=0 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100pnb_ep43.{pr}.npy", "{preds}/s1-nrbm100pnb_ep43.{fulltrain_pr}.npy", "{preds}/s1-nrbm100pnb.out"]
+
+[jobs."s1-nrbm100nf10"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=49 EPSAVE=1 H=100 LR=0.025 NFACT=10 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100nf10_ep49.{pr}.npy", "{preds}/s1-nrbm100nf10_ep49.{fulltrain_pr}.npy", "{preds}/s1-nrbm100nf10.out"]
+
+[jobs."s1-nrbm100rbut"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=49 EPSAVE=1 H=100 LR=0.025 HT=r LR_BUT=0.002 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100rbut_ep49.{pr}.npy", "{preds}/s1-nrbm100rbut_ep49.{fulltrain_pr}.npy", "{preds}/s1-nrbm100rbut.out"]
+
+[jobs."s1-nrbm100ebut"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=17 EPSAVE=1 H=100 LR=0.025 HT=e EA=0 EB=1 LR_BUT=0.002 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100ebut_ep17.{pr}.npy", "{preds}/s1-nrbm100ebut_ep17.{fulltrain_pr}.npy", "{preds}/s1-nrbm100ebut.out"]
+
+[jobs."s1-nrbm200pbut"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=33 EPSAVE=1 H=200 LR=0.025 HT=p LR_BUT=0.002 RAYON_NUM_THREADS=4"
+outputs = ["{preds}/s1-nrbm200pbut_ep33.{pr}.npy", "{preds}/s1-nrbm200pbut_ep33.{fulltrain_pr}.npy", "{preds}/s1-nrbm200pbut.out"]
+
+[jobs."s1-nrbm100pc0"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=1 EPSAVE=1 H=100 LR=0.025 HT=p COND=0 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100pc0_ep01.{pr}.npy", "{preds}/s1-nrbm100pc0_ep01.{fulltrain_pr}.npy", "{preds}/s1-nrbm100pc0.out"]
+
+# The blend picks ep 42 (-1.31e-3 alone, first in the forward selection) although the probe RMSE
+# is best at ep 25. A full 42-epoch run (not QUAL_ONLY), so the train-side preds and weights
+# match the kept epoch on both sides (chain base; weight file for a factor kNN).
+[jobs."s1-nrbm400lr4"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=42 EPSAVE=1 H=400 LR=0.04 RAYON_NUM_THREADS=4"
+outputs = ["{preds}/s1-nrbm400lr4_ep42.{pr}.npy", "{preds}/s1-nrbm400lr4_ep42.{fulltrain_pr}.npy", "{preds}/s1-nrbm400lr4.{pr}.npy", "{preds}/s1-nrbm400lr4.{fulltrain_pr}.npy", "{preds}/s1-nrbm400lr4.{tr}.npy", "{preds}/s1-nrbm400lr4.{fulltrain_tr}.npy", "{preds}/s1-nrbm400lr4.ifeat.{tr}.npy", "{preds}/s1-nrbm400lr4.ifeat.{fulltrain_tr}.npy", "{preds}/s1-nrbm400lr4.out"]
+
+# Chain base only (not picked as a column itself): the bare columns are its last epoch (50).
+[jobs."s1-nrbm200nf"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=50 EPSAVE=1 H=200 LR=0.025 NFACT=30 RAYON_NUM_THREADS=4"
+outputs = ["{preds}/s1-nrbm200nf.{pr}.npy", "{preds}/s1-nrbm200nf.{fulltrain_pr}.npy", "{preds}/s1-nrbm200nf.{tr}.npy", "{preds}/s1-nrbm200nf.{fulltrain_tr}.npy", "{preds}/s1-nrbm200nf.ifeat.{tr}.npy", "{preds}/s1-nrbm200nf.ifeat.{fulltrain_tr}.npy", "{preds}/s1-nrbm200nf.out"]
+
+# Second in the forward selection over 42 + the s1-nrbm finals + 400lr4_ep42 (-6.0e-5, sd 1.2e-5;
+# alone over the 42 base -1.33e-3). Probe from the lab run, qual from a 47-epoch QUAL_ONLY rerun.
+[jobs."s1-nrbm200nf60"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=47 EPSAVE=1 H=200 LR=0.025 NFACT=60 RAYON_NUM_THREADS=4"
+outputs = ["{preds}/s1-nrbm200nf60_ep47.{pr}.npy", "{preds}/s1-nrbm200nf60_ep47.{fulltrain_pr}.npy", "{preds}/s1-nrbm200nf60.out"]
+
+# --- Short high-LR RBMs (s1-nrbm100q*, 2026-11-06): 15 epochs, full --final runs, so every
+# epoch snapshot exists on both sides and the train-side preds + weights match the last epoch
+# (chain bases). LR from the round-A lab pilot (Bernoulli 0.05 best at ep 15, bipolar 0.025;
+# 0.04 for the untested factored / NReLU / TruncExp hidden types).
+
+[jobs."s1-nrbm100qbut"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=15 EPSAVE=1 H=100 LR=0.05 LR_BUT=0.002 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100qbut.{pr}.npy", "{preds}/s1-nrbm100qbut.{fulltrain_pr}.npy", "{preds}/s1-nrbm100qbut.{tr}.npy", "{preds}/s1-nrbm100qbut.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qbut.ifeat.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qbut.out"]
+
+[jobs."s1-nrbm100qpbut"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=15 EPSAVE=1 H=100 LR=0.025 HT=p LR_BUT=0.002 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100qpbut.{pr}.npy", "{preds}/s1-nrbm100qpbut.{fulltrain_pr}.npy", "{preds}/s1-nrbm100qpbut.{tr}.npy", "{preds}/s1-nrbm100qpbut.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qpbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qpbut.ifeat.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qpbut.out"]
+
+[jobs."s1-nrbm100qnfbut"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=15 EPSAVE=1 H=100 LR=0.04 NFACT=30 LR_BUT=0.002 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100qnfbut.{pr}.npy", "{preds}/s1-nrbm100qnfbut.{fulltrain_pr}.npy", "{preds}/s1-nrbm100qnfbut.{tr}.npy", "{preds}/s1-nrbm100qnfbut.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qnfbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qnfbut.ifeat.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qnfbut.out"]
+
+[jobs."s1-nrbm100qrbut"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=15 EPSAVE=1 H=100 LR=0.04 HT=r LR_BUT=0.002 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100qrbut.{pr}.npy", "{preds}/s1-nrbm100qrbut.{fulltrain_pr}.npy", "{preds}/s1-nrbm100qrbut.{tr}.npy", "{preds}/s1-nrbm100qrbut.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qrbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qrbut.ifeat.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qrbut.out"]
+
+[jobs."s1-nrbm100qebut"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=15 EPSAVE=1 H=100 LR=0.04 HT=e EA=0 EB=1 LR_BUT=0.002 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100qebut.{pr}.npy", "{preds}/s1-nrbm100qebut.{fulltrain_pr}.npy", "{preds}/s1-nrbm100qebut.{tr}.npy", "{preds}/s1-nrbm100qebut.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qebut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qebut.ifeat.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qebut.out"]
+
+[jobs."s1-nrbm100qc0but"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=15 EPSAVE=1 H=100 LR=0.05 COND=0 LR_BUT=0.002 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100qc0but.{pr}.npy", "{preds}/s1-nrbm100qc0but.{fulltrain_pr}.npy", "{preds}/s1-nrbm100qc0but.{tr}.npy", "{preds}/s1-nrbm100qc0but.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qc0but.ifeat.{tr}.npy", "{preds}/s1-nrbm100qc0but.ifeat.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qc0but.out"]
+
+[jobs."s1-nrbm100qpnb"]
+jobtype = "s3model"
+runner = "rbm"
+env = "EPOCHS=15 EPSAVE=1 H=100 LR=0.025 HT=p LR_BU=0 LR_BUT=0 RAYON_NUM_THREADS=3"
+outputs = ["{preds}/s1-nrbm100qpnb.{pr}.npy", "{preds}/s1-nrbm100qpnb.{fulltrain_pr}.npy", "{preds}/s1-nrbm100qpnb.{tr}.npy", "{preds}/s1-nrbm100qpnb.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qpnb.ifeat.{tr}.npy", "{preds}/s1-nrbm100qpnb.ifeat.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qpnb.out"]
+
+# --- Chains on the new RBMs with a same-epoch train / fulltrain base (2026-11-07): the 7 short
+# s1-nrbm100q* and s1-nrbm100nfbut. Stage types from the lab chain screening (preds_lab/s1rbm/,
+# blendtest_chains1/2.txt): factor Pearson kNN on the base weights, nlpp then factor Pearson /
+# mse kNN, knn3.
+
+[jobs."s1-nrbm100qbut__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qbut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qbut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qbut__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qbut__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qbut__nlpp__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qbut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qbut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qbut__nlpp__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qpbut__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qpbut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qpbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qpbut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qpbut__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qpbut__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qpbut__nlpp__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qpbut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qpbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qpbut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qpbut__nlpp__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qnfbut__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qnfbut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qnfbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qnfbut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qnfbut__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qnfbut__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qnfbut__nlpp__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qnfbut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qnfbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qnfbut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qnfbut__nlpp__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qrbut__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qrbut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qrbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qrbut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qrbut__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qrbut__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qrbut__nlpp__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qrbut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qrbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qrbut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qrbut__nlpp__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qebut__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qebut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qebut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qebut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qebut__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qebut__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qebut__nlpp__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qebut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qebut.ifeat.{tr}.npy", "{preds}/s1-nrbm100qebut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qebut__nlpp__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qc0but__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qc0but.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qc0but.ifeat.{tr}.npy", "{preds}/s1-nrbm100qc0but.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qc0but__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qc0but__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qc0but__nlpp__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qc0but.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qc0but.ifeat.{tr}.npy", "{preds}/s1-nrbm100qc0but.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qc0but__nlpp__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qpnb__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qpnb.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qpnb.ifeat.{tr}.npy", "{preds}/s1-nrbm100qpnb.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qpnb__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qpnb__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100qpnb__nlpp__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100qpnb.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100qpnb.ifeat.{tr}.npy", "{preds}/s1-nrbm100qpnb.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100qpnb__nlpp__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100nfbut__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100nfbut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100nfbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100nfbut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100nfbut__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100nfbut__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm100nfbut__nlpp__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm100nfbut.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm100nfbut.ifeat.{tr}.npy", "{preds}/s1-nrbm100nfbut.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm100nfbut__nlpp__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+# --- Chains on the old split's non-RBM columns (2026-11-07): the 9 picked by the lab screening
+# (preds_lab/s1chain/, blendtest_old1.txt; list in preds_lab/s1chain/final_candidates.txt) plus
+# their intermediate steps. tsvdx4-180f__nlpp uses the old split's tuned nlpp regs (NL_RA / NL_RB);
+# tsvdx5-200__nlppd the default ones (better there than the old split's). Modern stages only:
+# knn3 in place of the old knn3x.
+
+[jobs."s1-tsvdx4-512_ep19__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-tsvdx4-512_ep19__nlpp__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-tsvdx4-180f__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+env = "NL_RA=1.8830783,0.9089225,17.158958,13295.24,49.373795,1.3076984e-6,133478.06,0.00083016884 NL_RB=0.025253067,0.581045,2.3899624,102.23255,2.439959e-7,0.009682502,7994.1357,979.001"
+extras = ["@train_preds"]
+
+[jobs."s1-tsvdx4-180f__nlpp__knn-25m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=7.5 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-tsvdx4-180f__knn-25m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=7.5 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-bk1-10__knn-25c"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy"]
+
+[jobs."s1-tsvdx5-200__nlppd"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-tsvdx4-200o__asym-16"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-tsvdx4-200o__asym-16__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-tsvdx-256__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-tsvdx-256__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+# Chains on s1-nrbm200nf (ep 50 base), picked by the lab chain screening (blendtest_chains1/2.txt):
+# 200nf__nlpp__knn-m second in the forward selection, 200nf__knn-m fifth.
+[jobs."s1-nrbm200nf__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm200nf__nlpp__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-nrbm200nf__knn-m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+# New tsvdx5 column for diversity (2026-11-07, user: 350 factors, another seed): the old split's
+# tsvdx5-200 / -400 recipe (NBR=50, LR_W=0.002, TBINS=29, W*=0.8, FULL_SU=0) with F=350, SEED=350.
+# Every epoch saved (EPSAVE=1), item factors saved (IFEAT=1) for factor kNN chains; chain base.
+[jobs."s1-tsvdx5-350s"]
+jobtype = "s3model_ifeat"
+runner = "tx"
+env = "EPOCHS=25 EPSAVE=1 F=350 FULL_SU=0 IFEAT=1 LR_W=0.002 NBR=50 RAYON_NUM_THREADS=1 SEED=350 TBINS=29 WB=0.8 WF=0.8 WN=0.8"
+
+# The one chain on the final s1-nrbm400lr4 (ep 42) worth keeping: over the 112 final split_1
+# columns it adds -1.42e-4 (probe CV), every other chain < 6e-6 on top (preds_lab/s1chain400/).
+[jobs."s1-nrbm400lr4__knn-fps3"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-nrbm400lr4.ifeat KN_K=30 KN_SCALE=3 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-nrbm400lr4.ifeat.{tr}.npy", "{preds}/s1-nrbm400lr4.ifeat.{fulltrain_tr}.npy"]
+
+# Chains on s1-tsvdx5-350s (lab screening preds_lab/s1chain350/, over the 116 final columns):
+# nlpp then factor Pearson kNN on the tsvdx5 item factors, -3.3e-5 (probe CV); the rest < 2e-5.
+[jobs."s1-tsvdx5-350s__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-tsvdx5-350s__nlpp__knn-fp"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_FACT=s1-tsvdx5-350s.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s1-tsvdx5-350s.ifeat.{tr}.npy", "{preds}/s1-tsvdx5-350s.ifeat.{fulltrain_tr}.npy"]
+
+# --- Model families from split_3, as deliberately different variants (2026-11-08, user): other
+# dims / widths / neighbour counts / seeds than the split_3 recipes. Chain bases (train preds).
+
+# split_3 attn16 / 32 / 64: D=24, other seed
+[jobs."s1-attn24"]
+jobtype = "s3model_base"
+runner = "attn"
+env = "D=24 EPSAVE=1 SEED=5"
+
+# D=48 with a wider pool
+[jobs."s1-attn48"]
+jobtype = "s3model_base"
+runner = "attn"
+env = "D=48 POOL=48 EPSAVE=1 SEED=17"
+
+# dnn24-like, other widths
+[jobs."s1-dnn20"]
+jobtype = "s3model_base"
+runner = "dnn"
+env = "D=20 DECAY=0.9 EPOCHS=8 EPSAVE=1 H1=128 H2=48 NMF=128 SEED=44"
+
+# dnn32nm with D=40
+[jobs."s1-dnn40nm"]
+jobtype = "s3model_base"
+runner = "dnn"
+env = "D=40 EPOCHS=7 EPSAVE=1 NMF=0 SEED=45"
+
+# nade12s with H=48 RANK=16
+[jobs."s1-nade16s"]
+jobtype = "s3model_base"
+runner = "nade"
+env = "EPOCHS=8 EPSAVE=1 H=48 RANK=16 SAVETR=1 SEED=7"
+
+# bk1-60n with F=80 NBR=80
+[jobs."s1-bk1-80n"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=30 EPSAVE=1 F=80 LR_DECAY=0.05 NBR=80 SEED=7"
+
+# bk1-120 with F=150, decay 0.06
+[jobs."s1-bk1-150"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=30 EPSAVE=1 F=150 LR_DECAY=0.06 SEED=9"
+
+# bknbrx-200t with NBR=300
+[jobs."s1-bknbrx-300t"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=15 EPSAVE=1 LR_BETA=1e-6 NBR=300 SEED=3"
+
+# bknbrx-100w with NBR=150
+[jobs."s1-bknbrx-150w"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=12 EPSAVE=1 LR_BETA=1e-6 LR_W=0.0035 NBR=150 REG_W=0.003 SEED=8"
+
+# mfrbmx-60h with F=80 H=120
+[jobs."s1-mfrbmx-80h"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=12 EPSAVE=1 F=80 H=120 SEED=4"
+
+# integ80-pyuddf with F=60
+[jobs."s1-integ60-pyuddf"]
+jobtype = "s3model_base"
+runner = "integ"
+env = "EPOCHS=10 F=60 IMPL=1 REG_DR=1000 REG_FQ=10 REG_P=30 REG_Q=30 REG_UD=10 REG_Y=30 SEED=6 TERMS=p+y+ud+dr+fq"
+
+# bk3-20 with F=30
+[jobs."s1-bk3-30"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "F=30 SEED=5"
+
+# BK4 after the split_1 parameter search (2026-11-07 / 09, preds_lab/bk4hp/, lab-s1-bk4hp): BINIT=2
+# (the bilinear bias terms live), 15 tuned rates on top of d50 + TIME=1, ENV=1, NBR=200. Full-data
+# probe check: best ep 28 0.88384 vs the split_3 recipe 0.88812. Chain base.
+[jobs."s1-bk4-p200"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "BINIT=2 ENV=1 EPOCHS=28 EPSAVE=1 F=200 LR_SCALE=1.5 NBR=200 RAYON_NUM_THREADS=1 SEED=42 SIGF=2 TIME=1 LR_q0=0.00119974 LR_s1=0.00107964 REG_y0=0.0213608 LR_w=0.000323904 REG_sf=0.00223922 LR_bm0=0.000997952 LR_s2=0.00222128 BSIG=0.001 LR_p0=0.00858214 REG_p1=0.046209 LR_bmt=0.000684533 LR_bm1=0.00112168"
+inputs = ["src/bin/fit.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+
+# --- Chains on the new family variants and the final BK4 (2026-11-09): the first 4 of the forward
+# selection over the 131 final columns (preds_lab/s1chainfam/blendtest_fam.txt, -1.04e-4 probe CV) and
+# s1-bk4-p200__nlpp__knn3, the most accurate BK4 chain (probe 0.88127; for the paper comparison).
+
+[jobs."s1-attn48__knn-25m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=7.5 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-bk4-p200__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-bk4-p200__nlpp__knn-25m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=7.5 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+[jobs."s1-bk4-p200__nlpp__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nade16s__knn-25c"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy"]
+
+[jobs."s1-dnn40nm__asym-16"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-dnn40nm__asym-16__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+
+# --- 2026-11-09 night batch (user: B, C, D) ---
+# B. A second tuned BK4 for diversity: F=100, NBR=445, seed 43 (the p200 recipe otherwise).
+[jobs."s1-bk4-p100"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "BINIT=2 ENV=1 EPOCHS=28 EPSAVE=1 F=100 LR_SCALE=1.5 NBR=445 RAYON_NUM_THREADS=1 SEED=43 SIGF=2 TIME=1 LR_q0=0.00119974 LR_s1=0.00107964 REG_y0=0.0213608 LR_w=0.000323904 REG_sf=0.00223922 LR_bm0=0.000997952 LR_s2=0.00222128 BSIG=0.001 LR_p0=0.00858214 REG_p1=0.046209 LR_bmt=0.000684533 LR_bm1=0.00112168"
+inputs = ["src/bin/fit.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+
+# C. More NN variants (other dims / seeds than split_3 and the 11-08 batch).
+[jobs."s1-attn64"]
+jobtype = "s3model_base"
+runner = "attn"
+env = "D=64 EPSAVE=1 SEED=23"
+
+[jobs."s1-attn20"]
+jobtype = "s3model_base"
+runner = "attn"
+env = "D=20 EPSAVE=1 SEED=29"
+
+[jobs."s1-dnn48"]
+jobtype = "s3model_base"
+runner = "dnn"
+env = "D=48 EPOCHS=7 EPSAVE=1 NMF=256 SEED=31"
+
+[jobs."s1-dnn28"]
+jobtype = "s3model_base"
+runner = "dnn"
+env = "D=28 EPOCHS=8 EPSAVE=1 NMF=64 SEED=33"
+
+[jobs."s1-dnn20t"]
+jobtype = "s3model_base"
+runner = "dnn"
+env = "D=20 EPOCHS=7 EPSAVE=1 NMF=192 SEED=39 TRANSPOSE=1"
+
+# D. A tsvdx5 with saved item factors (factor kNN chains): the tsvdx5-200 recipe with F=150, seed 150.
+[jobs."s1-tsvdx5-150f"]
+jobtype = "s3model_ifeat"
+runner = "tx"
+env = "EPOCHS=25 EPSAVE=1 F=150 FULL_SU=0 IFEAT=1 LR_W=0.002 NBR=50 RAYON_NUM_THREADS=1 SEED=150 TBINS=29 WB=0.8 WF=0.8 WN=0.8"
+
+# User-kNN chains (2026-11-11): the first 2 of the forward selection over the 145 final columns
+# (preds_lab/s1uknn/blendtest_uknn.txt, -3.2e-5 probe CV); UK_VEC=res UK_K=1000 UK_KP=200 as on split_3.
+[jobs."s1-tsvdx5-350s__nlpp__uknn-rkm"]
+jobtype = "s3model"
+runner = "chain"
+env = "UK_FACT=s1-mf-64u.ifeat UK_K=1000 UK_KP=200 UK_VEC=res"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "{preds}/s1-mf-64u.ifeat.{tr}.npy", "{preds}/s1-mf-64u.ifeat.{fulltrain_tr}.npy"]
+
+[jobs."s1-attn48__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-attn48__nlpp__uknn-rk"]
+jobtype = "s3model"
+runner = "chain"
+env = "UK_FACT=s1-tsvdx5-350s.ifeat UK_K=1000 UK_KP=200 UK_VEC=res"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "{preds}/s1-tsvdx5-350s.ifeat.{tr}.npy", "{preds}/s1-tsvdx5-350s.ifeat.{fulltrain_tr}.npy"]
+
+# tsvdx5 after the split_1 parameter search (2026-11-09 / 11, preds_lab/txhp/, lab-s1-txhp): the tsvdx5
+# recipe with c7 (LR_I x2, LR_Y x2, LR_UD x0.5, LR_W x0.5, LR_TA x0.5, REG_YD x2, LR_YD x0.5) and e4
+# (NBR=100, FULL_SU=1, REG_I x1.4, REG_Y x1.4). Full-data probe check: best ep 31 0.88410 vs the old
+# tsvdx5-200 recipe 0.88518 (ep 25). Item factors saved (factor kNN chains); chain base.
+[jobs."s1-tsvdx5-p200"]
+jobtype = "s3model_ifeat"
+runner = "tx"
+env = "EPOCHS=31 EPSAVE=1 F=200 FULL_SU=1 IFEAT=1 NBR=100 RAYON_NUM_THREADS=1 REG_I=0.01029 REG_Y=0.056 SEED=42 TBINS=29 WB=0.8 WF=0.8 WN=0.8 LR_I=0.0072 LR_Y=0.001 LR_UD=0.000625 LR_W=0.001 LR_TA=1.125e-05 REG_YD=0.05334 LR_YD=0.0001335"
+
+# The old split's gold-group column knn-25w__tsvdx-16 (2026-11-11): an item-item kNN on the ratings
+# (old ItemItemConfig: bin_wsupp support similarity, k 25, shrinkage 100, scaling 2.5, tau 100; fit misc
+# knn-<tag>), then the old tsvdx.rs TimeSvd (txmap.py recipe) on the residual 0.8*knn-25w.
+[jobs."s1-knn-25w"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "KN_K=25 KN_SCALE=2.5 KN_SHR=100 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=100"
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+
+[jobs."s1-knn-25w__tsvdx-16"]
+jobtype = "s3model"
+runner = "tx"
+env = "FULL_SU=0 RAYON_NUM_THREADS=1 EPOCHS=8 F=16 LR_CU=0 LR_IBF=0 LR_IQF=0 LR_TA=1e-5 LR_TI=1e-5 LR_TU=1e-5 LR_U2=0 LR_U=0.0031 LR_UBD=0 LR_UD=0 LR_YB=0 LR_YD=0.0005 REG_I=0.007 REG_U=0.04 REG_YD=0.04 SEED=42 SHUFFLE=0 SIGMA_IQF=0 SIGMA_U=0.0 SIGMA_Y=0.005 SIGMA_YD=0.005 SUM_ERR_BUG=1 TBINS=30"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.8*s1-knn-25w"]
+
+# --- Voting features (2026-11-11) ---
+# vfeat1 (the 130 vf/ features; vf000-vf044 are the old split's fwls A-F) and vfeat0 (the old split's
+# fwls C5 and the 11 claude105 features voting-old.toml uses, src/vfeat0.rs). Groups in voting-1.toml.
+# The files were produced in the lab (preds_lab/vfs1/, the same code) and moved in; a plain run of the
+# jobs reproduces them (both generators are deterministic).
+[defaults.vfeat]
+inputs_from = ["ingest"]
+inputs = ["src/bin/fit.rs"]
+voting_models = "voting-1.toml"
+outputs = [
+    "{preds}/{feature}.{pr}.npy",
+    "{preds}/{feature}.{fulltrain_pr}.npy",
+    "{preds}/{name}.out",
+]
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 ./target/release/fit vfeat1 {name} -p pipeline-1.toml --preds {preds}"
+
+[jobs.s1-vfeat1]
+jobtype = "vfeat"
+voting = ["vf1_all"]
+
+[jobs.s1-vfeat0]
+jobtype = "vfeat"
+voting = ["vf0_all"]
+inputs = ["src/bin/fit.rs", "src/vfeat0.rs"]
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=16 ./target/release/fit vfeat0 {name} -p pipeline-1.toml --preds {preds}"

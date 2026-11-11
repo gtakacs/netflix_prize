@@ -1,0 +1,9 @@
+# Base-predictor groups for SPLIT_1 (preds_1/): the old split's base predictors
+# rebuilt as pipeline-1.toml jobs (s1-<old name>), by model family as in
+# models-old.toml; a chain or residual model sits with the family of its root.
+# Filled as the columns are reproduced and checked against preds_old/.
+
+tx = []
+rbm = []
+nn = []
+other = []

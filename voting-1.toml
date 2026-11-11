@@ -1,0 +1,221 @@
+# Voting-feature groups for SPLIT_1 (the old split's train / probe / fulltrain / qual).
+# Specs are names relative to preds_1/: vf/<name> for the vfeat1 features (preds_1/vf/),
+# vf0/<name> for the vfeat0 ones (preds_1/vf0/, src/vfeat0.rs). gold / silver mirror
+# voting-old.toml: the old split's fwls A-F features map onto vfeat1 vf000-vf044 (bit for bit
+# or to float rounding; preds_lab/vfs1/vfmap.txt), fwls C5 and the claude105 ones onto vfeat0.
+
+# The full outputs of the two generators (the vfeat jobs' {feature} lists).
+vf1_all = [
+    "vf/vf000_constant",
+    "vf/vf001_user_gt3_on_date",
+    "vf/vf002_log_movie_cnt",
+    "vf/vf003_log_user_dates",
+    "vf/vf004_log_user_cnt",
+    "vf/vf005_user_std",
+    "vf/vf006_movie_std",
+    "vf/vf007_log_user_tenure",
+    "vf/vf008_log_user_date_cnt",
+    "vf/vf009_log_product",
+    "vf/vf010_bayesian_movie_minus_user",
+    "vf/vf011_bayesian_user_mean",
+    "vf/vf012_log_avg_rater_cnt",
+    "vf/vf013_log_movie_date_std",
+    "vf/vf014_user_date_bias_std",
+    "vf/vf015_movie_single_day_pct",
+    "vf/vf016_user_avg_movie_pop",
+    "vf/vf017_log_sim_sum",
+    "vf/vf018_sim_top20_pct",
+    "vf/vf019_max_sim",
+    "vf/vf020_svd_user_norm",
+    "vf/vf021_svd_movie_norm",
+    "vf/vf022_ordinal_svd_std",
+    "vf/vf023_user_overlap",
+    "vf/vf024_sameday_corr",
+    "vf/vf025_has_r1_same_day",
+    "vf/vf026_has_r2_same_day",
+    "vf/vf027_has_r3_same_day",
+    "vf/vf028_has_r4_same_day",
+    "vf/vf029_has_r5_same_day",
+    "vf/vf030_has_r1_other_day",
+    "vf/vf031_has_r2_other_day",
+    "vf/vf032_has_r3_other_day",
+    "vf/vf033_has_r4_other_day",
+    "vf/vf034_has_r5_other_day",
+    "vf/vf035_log_r1_same_day",
+    "vf/vf036_log_r2_same_day",
+    "vf/vf037_log_r3_same_day",
+    "vf/vf038_log_r4_same_day",
+    "vf/vf039_log_r5_same_day",
+    "vf/vf040_log_r1_other_day",
+    "vf/vf041_log_r2_other_day",
+    "vf/vf042_log_r3_other_day",
+    "vf/vf043_log_r4_other_day",
+    "vf/vf044_log_r5_other_day",
+    "vf/vf045_movie_log_age",
+    "vf/vf046_user_rating_velocity",
+    "vf/vf047_movie_rating_velocity",
+    "vf/vf048_user_date_position",
+    "vf/vf049_movie_date_position",
+    "vf/vf050_log_day",
+    "vf/vf051_day_sin7",
+    "vf/vf052_day_sin30",
+    "vf/vf053_user_log_avg_day_gap",
+    "vf/vf054_movie_log_distinct_dates",
+    "vf/vf055_user_skewness",
+    "vf/vf056_movie_skewness",
+    "vf/vf057_user_kurtosis",
+    "vf/vf058_movie_kurtosis",
+    "vf/vf059_user_entropy",
+    "vf/vf060_movie_entropy",
+    "vf/vf061_user_pct_extreme",
+    "vf/vf062_movie_pct_extreme",
+    "vf/vf063_user_mode_frac",
+    "vf/vf064_movie_mode_frac",
+    "vf/vf065_movie_avg_rater_tenure",
+    "vf/vf066_user_avg_movie_date_std",
+    "vf/vf067_log_cnt_geometric",
+    "vf/vf068_log_cnt_harmonic",
+    "vf/vf069_user_std_x_movie_std",
+    "vf/vf070_movie_avg_rater_std",
+    "vf/vf071_user_avg_movie_mean",
+    "vf/vf072_log_user_cnt_over_movie_cnt",
+    "vf/vf073_user_tenure_x_log_movie_cnt",
+    "vf/vf074_user_date_bias_std_x_movie_std",
+    "vf/vf075_pct_r1_same_day",
+    "vf/vf076_pct_r2_same_day",
+    "vf/vf077_pct_r3_same_day",
+    "vf/vf078_pct_r4_same_day",
+    "vf/vf079_pct_r5_same_day",
+    "vf/vf080_user_log_avg_batch",
+    "vf/vf081_user_multi_day_pct",
+    "vf/vf082_movie_log_ratings_per_date",
+    "vf/vf083_user_log_max_day_cnt",
+    "vf/vf084_same_day_mean_rating",
+    "vf/vf085_same_day_std_rating",
+    "vf/vf086_user_pct_popular",
+    "vf/vf087_movie_pct_heavy_raters",
+    "vf/vf088_user_last_date_diff",
+    "vf/vf089_movie_last_date_diff",
+    "vf/vf090_movie_rating_slope",
+    "vf/vf091_user_rating_slope",
+    "vf/vf092_movie_early_late_diff",
+    "vf/vf093_user_early_late_diff",
+    "vf/vf094_movie_temporal_z",
+    "vf/vf095_user_temporal_z",
+    "vf/vf096_user_herfindahl",
+    "vf/vf097_movie_herfindahl",
+    "vf/vf098_user_n_distinct_ratings",
+    "vf/vf099_user_top2_concentration",
+    "vf/vf100_movie_top2_concentration",
+    "vf/vf101_movie_bimodality",
+    "vf/vf102_user_bimodality",
+    "vf/vf103_user_movie_mean_gap",
+    "vf/vf104_user_movie_std_ratio",
+    "vf/vf105_user_movie_entropy_diff",
+    "vf/vf106_user_pct_at_movie_mode",
+    "vf/vf107_movie_pct_at_user_mode",
+    "vf/vf108_user_movie_dist_overlap",
+    "vf/vf109_user_movie_dist_cosine",
+    "vf/vf110_is_single_rating_day",
+    "vf/vf111_same_day_cnt_norm",
+    "vf/vf112_same_day_entropy",
+    "vf/vf113_same_day_range",
+    "vf/vf114_same_day_pct_high",
+    "vf/vf115_same_day_pct_low",
+    "vf/vf116_is_first_date",
+    "vf/vf117_is_last_date",
+    "vf/vf118_user_day_index_norm",
+    "vf/vf119_log_movie_same_day_cnt",
+    "vf/vf120_item_year_norm",
+    "vf/vf121_log_item_age_at_rating",
+    "vf/vf122_is_early_adopter",
+    "vf/vf123_is_late_adopter",
+    "vf/vf124_movie_maturity",
+    "vf/vf125_user_avg_item_year",
+    "vf/vf126_user_item_year_std",
+    "vf/vf127_user_prefers_old",
+    "vf/vf128_movie_avg_rater_mean",
+    "vf/vf129_movie_avg_rater_entropy",
+]
+
+vf0_all = [
+    "vf0/fwls_c5_user_avg_movie_pop",
+    "vf0/c105_015_user_days_active_32d",
+    "vf0/c105_025_movie_last_32d_avg",
+    "vf0/c105_026_movie_age",
+    "vf0/c105_030_log_movie_same_day_count",
+    "vf0/c105_035_knn_same_day",
+    "vf0/c105_050_user_rating_entropy",
+    "vf0/c105_082_user_movie_avg_diff_abs",
+    "vf0/c105_084_log_user_similar_movies",
+    "vf0/c105_085_user_rates_popular",
+    "vf0/c105_088_log_user_movie_support",
+    "vf0/c105_097_movie_recency_score",
+]
+
+gold = [
+    "vf/vf000_constant",                  # fwls/A1: constant 1.0
+    "vf/vf027_has_r3_same_day",           # fwls/F3: binary: user gave rating=3 on same day
+    "vf/vf012_log_avg_rater_cnt",         # fwls/C1: log(avg user rating count for movie's raters)
+    "vf0/c105_035_knn_same_day",          # claude105/035: kNN prediction from user's same-day rated movies
+    "vf/vf003_log_user_dates",            # fwls/A4: log(user's distinct rating date count)
+    "vf/vf007_log_user_tenure",           # fwls/A8: log(days since user's first rating + 1)
+    "vf0/c105_030_log_movie_same_day_count", # claude105/030: log(movie's rating count on this day + 1)
+    "vf0/c105_088_log_user_movie_support", # claude105/088: log(1 + shared raters with >=3 movie overlap)
+    "vf/vf043_log_r4_other_day",          # fwls/F19: log(1 + count of user's rating=4 on other days)
+    "vf/vf008_log_user_date_cnt",         # fwls/A9: log(user's rating count on this date + 1)
+    "vf/vf004_log_user_cnt",              # fwls/A5: log(user's total rating count)
+    "s1-knn-25w__tsvdx-16",               # knn-25w__tsvdx-16: tsvdx on the residual of the weighted-support kNN
+    "vf0/c105_015_user_days_active_32d",  # claude105/015: user's distinct active days in the last 32 days
+    "vf0/c105_050_user_rating_entropy",   # claude105/050: entropy of the user's 1-5 rating distribution
+    "vf/vf009_log_product",               # fwls/A10: log(movie_cnt) * log(user_cnt)
+    "vf0/c105_025_movie_last_32d_avg",    # claude105/025: regularized avg movie rating in the last 32 days
+    "vf/vf013_log_movie_date_std",        # fwls/C2: log(std dev of the movie's rating dates)
+    "vf/vf028_has_r4_same_day",           # fwls/F4: binary: user gave rating=4 on same day
+    "vf/vf029_has_r5_same_day",           # fwls/F5: binary: user gave rating=5 on same day
+    "vf/vf017_log_sim_sum",               # fwls/D1: log(1 + sum of positive item-item correlations for the user's rated items)
+    "vf0/c105_084_log_user_similar_movies", # claude105/084: log(1 + user's movies with sim > 0.1 to this movie)
+    "vf0/c105_085_user_rates_popular",    # claude105/085: user's avg movie popularity / dataset avg
+]
+
+silver = [
+    "vf/vf001_user_gt3_on_date",          # fwls/A2
+    "vf/vf002_log_movie_cnt",             # fwls/A3
+    "vf/vf005_user_std",                  # fwls/A6
+    "vf/vf006_movie_std",                 # fwls/A7
+    "vf/vf010_bayesian_movie_minus_user", # fwls/B1
+    "vf/vf011_bayesian_user_mean",        # fwls/B2
+    "vf/vf014_user_date_bias_std",        # fwls/C3
+    "vf/vf015_movie_single_day_pct",      # fwls/C4
+    "vf0/fwls_c5_user_avg_movie_pop",     # fwls/C5
+    "vf/vf018_sim_top20_pct",             # fwls/D2
+    "vf/vf019_max_sim",                   # fwls/D3
+    "vf/vf020_svd_user_norm",             # fwls/E1
+    "vf/vf021_svd_movie_norm",            # fwls/E2
+    "vf/vf022_ordinal_svd_std",           # fwls/E3
+    "vf/vf023_user_overlap",              # fwls/E4
+    "vf/vf024_sameday_corr",              # fwls/E5
+    "vf/vf025_has_r1_same_day",           # fwls/F1
+    "vf/vf026_has_r2_same_day",           # fwls/F2
+    "vf/vf030_has_r1_other_day",          # fwls/F6
+    "vf/vf031_has_r2_other_day",          # fwls/F7
+    "vf/vf032_has_r3_other_day",          # fwls/F8
+    "vf/vf033_has_r4_other_day",          # fwls/F9
+    "vf/vf034_has_r5_other_day",          # fwls/F10
+    "vf/vf035_log_r1_same_day",           # fwls/F11
+    "vf/vf036_log_r2_same_day",           # fwls/F12
+    "vf/vf037_log_r3_same_day",           # fwls/F13
+    "vf/vf038_log_r4_same_day",           # fwls/F14
+    "vf/vf039_log_r5_same_day",           # fwls/F15
+    "vf/vf040_log_r1_other_day",          # fwls/F16
+    "vf/vf041_log_r2_other_day",          # fwls/F17
+    "vf/vf042_log_r3_other_day",          # fwls/F18
+    "vf/vf044_log_r5_other_day",          # fwls/F20
+    "vf0/c105_026_movie_age",             # claude105/026
+    "vf0/c105_082_user_movie_avg_diff_abs", # claude105/082
+    "vf0/c105_097_movie_recency_score",   # claude105/097
+]
+
+# `all` is an explicit meta group, not a builtin (as in voting-old.toml).
+[meta]
+all = ["gold", "silver"]
