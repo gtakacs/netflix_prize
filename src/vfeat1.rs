@@ -4,8 +4,13 @@
 // Each phase is self-contained — its statistics are gated on the active
 // `Selection` so unused phases (and the expensive sim matrix / SVD inside
 // fx1) are skipped entirely.
+//
+// No target leakage: the statistics are built from the training set only
+// (`VotingFeatures1::new(&Dataset)`), and the set the features are emitted for
+// (probe, qual) reaches `compute_all` only as a `MaskedDataset`, which has no
+// ratings or residuals.
 
-use crate::{Dataset, Split};
+use crate::{Dataset, MaskedDataset, Split};
 use indicatif::ParallelProgressIterator;
 use ndarray::Array1;
 use ndarray_npy::write_npy;
@@ -2287,6 +2292,8 @@ pub struct VotingFeatures1 {
 }
 
 impl VotingFeatures1 {
+    /// The per-user / per-item statistics of the training set `ds` (its ratings and
+    /// residuals are read here, and only here).
     pub fn new(ds: &Dataset, sel: &Selection) -> Self {
         let needs_fx1 = fx1::NAMES.iter().any(|n| sel.includes(n));
         let needs_fx2 = fx2::NAMES.iter().any(|n| sel.includes(n));
@@ -2327,7 +2334,9 @@ impl VotingFeatures1 {
         all
     }
 
-    pub fn compute_all(&self, ds: &Dataset) -> Vec<Array1<f32>> {
+    /// The features of every (user, item, date) of the prediction set `ds`; masked, so
+    /// its targets cannot be read.
+    pub fn compute_all(&self, ds: &MaskedDataset) -> Vec<Array1<f32>> {
         crate::teeln!("Computing {} features for {} ratings...", N_FEATURES, ds.n_ratings);
 
         let mut features: Vec<Array1<f32>> = (0..N_FEATURES)
@@ -2402,7 +2411,7 @@ pub fn save_vfeat1(name: &str, sel: Selection, split: Split) {
     let tr = Dataset::load(split.tr, "rtg", split.preds_dir);
     let pr = Dataset::load(split.pr, "rtg", split.preds_dir);
     let stats = VotingFeatures1::new(&tr, &sel);
-    let features = stats.compute_all(&pr);
+    let features = stats.compute_all(&MaskedDataset::from(&pr));
     save_features(&features, &sel, &vf_dir, split.pr);
     drop(features);
     drop(stats);
@@ -2413,7 +2422,7 @@ pub fn save_vfeat1(name: &str, sel: Selection, split: Split) {
     let fulltrain = Dataset::load(split.fulltrain_tr, "rtg", split.preds_dir);
     let qual = Dataset::load(split.fulltrain_pr, "rtg", split.preds_dir);
     let stats = VotingFeatures1::new(&fulltrain, &sel);
-    let features = stats.compute_all(&qual);
+    let features = stats.compute_all(&MaskedDataset::from(&qual));
     save_features(&features, &sel, &vf_dir, split.fulltrain_pr);
 
     if owns_log {
