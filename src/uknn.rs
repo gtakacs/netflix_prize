@@ -1,5 +1,5 @@
 // User-user kNN as a chain stage on another column's residual (split_3; the
-// `uknn[-tag]` stage of `s3 chain`, `<base>__uknn-<tag>`, target `W*base`, which
+// `uknn[-tag]` stage of `fit chain`, `<base>__uknn-<tag>`, target `W*base`, which
 // reads the knobs named below from the environment).
 //
 // A user-user similarity over common ratings is out of reach (480k^2 pairs, few

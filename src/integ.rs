@@ -1,5 +1,5 @@
 // Koren's integrated model trained by ALS, built up term by term (split_3; run
-// by `s3 integ`, which reads the knobs named below from the environment).
+// by `fit integ`, which reads the knobs named below from the environment).
 // TERMS=y SORT=0 is the NSVD1 model that used to be lab-s3-nsvd (its REG_W is
 // REG_Y here).
 //

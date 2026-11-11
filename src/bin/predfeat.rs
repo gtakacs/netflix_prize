@@ -20,7 +20,7 @@
 //! k-th component of the user (item) row of `STEM.ufeat.<tr>.npy`
 //! (`STEM.ifeat.<tr>.npy`) of the training-set model, for the probe and the qual set
 //! alike, so probe and qual rows see one model (default out `lat`). The two can name
-//! different models. `s3 tx` writes ufeat / ifeat with UFEAT=1 / IFEAT=1, `s3 rbm`
+//! different models. `fit tx` writes ufeat / ifeat with UFEAT=1 / IFEAT=1, `fit rbm`
 //! the expected hidden units as ufeat with UFEAT=1.
 //!
 //!   predfeat -p pipeline-3.toml --latent-users s3-tx20lat --latent-items s3-tx20lat

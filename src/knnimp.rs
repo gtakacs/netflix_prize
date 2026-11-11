@@ -1,6 +1,6 @@
 // Item kNN with implicit neighbors (split_3): the `kimp[-tag]` stage of
-// `s3 chain`, and its pair statistics, built by `s3 nbstats` (stat `imp`). The
-// knobs named below are read from the environment by `s3 chain`.
+// `fit chain`, and its pair statistics, built by `fit nbstats` (stat `imp`). The
+// knobs named below are read from the environment by `fit chain`.
 //
 // The usual kNN averages the user's own residuals r_uj over rated neighbors j,
 // so only items with a known rating can be neighbors. Here a neighbor j only
@@ -20,7 +20,7 @@
 //                bin_wsupp, which also counts probe/qual presence), KI_WSHR shrinkage
 //   KI_SIM=conf  M_ij / (M_ij + KI_WSHR)
 //
-// Statistics (`save_imp`, by name as `s3 nbstats` gets it):
+// Statistics (`save_imp`, by name as `fit nbstats` gets it):
 //   bin_imp            the count matrix M -> <sim>/bin_impcnt.<ds>.npy
 //   <base>_imp         the sum matrix S over <base>'s residuals -> <sim>/<base>_impsum.<ds>.npy
 // Model (`KimpModel`, the chain stage <base>__kimp-<tag> on <base>'s residual,

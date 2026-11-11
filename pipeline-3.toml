@@ -61,7 +61,7 @@ cmd = "cargo build --release --bin split_3 && ./target/release/split_3"
 # knobs from `env`, a residual target from `extra_args` (--target W*base), epoch
 # snapshots via keep_epochs (EPSAVE=1 in env). No job uses these types since
 # 2026-10-28 (the lab-s3-integ, -nsvd, -uknn, -knnasym, -knnimp model code moved
-# into the library, run by `s3`); kept for new standalone experiments.
+# into the library, run by the dispatcher, now `fit`); kept for new standalone experiments.
 [defaults.s3lab]
 inputs_from = ["ingest", "split_3"]
 inputs  = ["src/bin/{binary}.rs"]
@@ -100,24 +100,24 @@ outputs = [
 ]
 cmd = "cargo build --release --bin {binary} && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/{binary} {name} -p pipeline-3.toml --final --preds {preds} {extra}"
 
-# The same three job types for the `s3` dispatcher (src/bin/s3.rs): `runner` is the
+# The same three job types for the `fit` dispatcher (src/bin/fit.rs): `runner` is the
 # subcommand (tx, rbm, misc, chain, attn, dnn, nade). Knobs from `env`, a residual
 # target from `extra_args` (--target W*base), epoch snapshots via keep_epochs
 # (EPSAVE=1 in env).
 [defaults.s3model]
 inputs_from = ["ingest", "split_3"]
-inputs  = ["src/bin/s3.rs"]
+inputs  = ["src/bin/fit.rs"]
 outputs = [
     "{preds}/{name}.{pr}.npy",
     "{preds}/{name}.{fulltrain_pr}.npy",
     "{preds}/{name}.out",
 ]
-cmd = "cargo build --release --bin s3 && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/s3 {runner} {name} -p pipeline-3.toml --final --preds {preds} {extra}"
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/fit {runner} {name} -p pipeline-3.toml --final --preds {preds} {extra}"
 
 # s3model whose train preds feed a chain or residual model (extras = ["@train_preds"]).
 [defaults.s3model_base]
 inputs_from = ["ingest", "split_3"]
-inputs  = ["src/bin/s3.rs"]
+inputs  = ["src/bin/fit.rs"]
 outputs = [
     "{preds}/{name}.{pr}.npy",
     "{preds}/{name}.{fulltrain_pr}.npy",
@@ -125,12 +125,12 @@ outputs = [
     "{preds}/{name}.{fulltrain_tr}.npy",
     "{preds}/{name}.out",
 ]
-cmd = "cargo build --release --bin s3 && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/s3 {runner} {name} -p pipeline-3.toml --final --preds {preds} {extra}"
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/fit {runner} {name} -p pipeline-3.toml --final --preds {preds} {extra}"
 
 # s3model_base whose item factors feed a knnf chain (extras = ["@ifeat"]).
 [defaults.s3model_ifeat]
 inputs_from = ["ingest", "split_3"]
-inputs  = ["src/bin/s3.rs"]
+inputs  = ["src/bin/fit.rs"]
 outputs = [
     "{preds}/{name}.{pr}.npy",
     "{preds}/{name}.{fulltrain_pr}.npy",
@@ -140,37 +140,37 @@ outputs = [
     "{preds}/{name}.ifeat.{fulltrain_tr}.npy",
     "{preds}/{name}.out",
 ]
-cmd = "cargo build --release --bin s3 && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/s3 {runner} {name} -p pipeline-3.toml --final --preds {preds} {extra}"
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/fit {runner} {name} -p pipeline-3.toml --final --preds {preds} {extra}"
 
-# Item-item sim matrix for the knn-<tag> chain stage (s3 nbstats): name
+# Item-item sim matrix for the knn-<tag> chain stage (fit nbstats): name
 # <rtg>_<stat>, rtg = `rtg` (ratings), `bin`, or a model whose residuals are used
 # (then `inputs_from` that model and its train preds as `inputs`).
 [defaults.s3sim]
 inputs_from = ["ingest", "split_3"]
-inputs  = ["src/bin/s3.rs"]
+inputs  = ["src/bin/fit.rs"]
 outputs = ["{split.sim}/{name}.{tr}.npy", "{split.sim}/{name}.{fulltrain_tr}.npy"]
-cmd = "cargo build --release --bin s3 && RAYON_NUM_THREADS=8 ./target/release/s3 nbstats {name} -p pipeline-3.toml --preds {preds}"
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=8 ./target/release/fit nbstats {name} -p pipeline-3.toml --preds {preds}"
 
-# Pair statistics for the kimp-<tag> chain stage (s3 nbstats, stat `imp`;
+# Pair statistics for the kimp-<tag> chain stage (fit nbstats, stat `imp`;
 # knnimp.rs): `bin_imp` the count matrix (-> bin_impcnt), `<base>_imp` the
 # residual sums of a model (-> <base>_impsum; `inputs_from` that model and its
 # train preds as `inputs`). Outputs are given per job, as the file stem differs
 # from the job name.
 [defaults.s3imp]
 inputs_from = ["ingest", "split_3"]
-inputs  = ["src/bin/s3.rs"]
-cmd = "cargo build --release --bin s3 && RAYON_NUM_THREADS=8 ./target/release/s3 nbstats {name} -p pipeline-3.toml --preds {preds}"
+inputs  = ["src/bin/fit.rs"]
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=8 ./target/release/fit nbstats {name} -p pipeline-3.toml --preds {preds}"
 
 [defaults.vfeat]
 inputs_from = ["ingest", "split_3"]
-inputs = ["src/bin/s3.rs"]
+inputs = ["src/bin/fit.rs"]
 voting_models = "voting-3.toml"
 outputs = [
     "{preds}/{feature}.{pr}.npy",
     "{preds}/{feature}.{fulltrain_pr}.npy",
     "{preds}/{name}.out",
 ]
-cmd = "cargo build --release --bin s3 && RAYON_NUM_THREADS=4 ./target/release/s3 vfeat1 {name} -p pipeline-3.toml --preds {preds}"
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 ./target/release/fit vfeat1 {name} -p pipeline-3.toml --preds {preds}"
 
 # --- Second-level blends (gbm / mlp / fwls) over the base columns ---
 # As in pipeline-new.toml: cross-fit blends of the base columns (+ voting
@@ -644,22 +644,22 @@ jobtype = "s3sim"
 [jobs."s3-rbm400__nlpp_diff1"]
 jobtype = "s3sim"
 inputs_from = ["ingest", "split_3", "s3-rbm400__nlpp"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-rbm400__nlpp.{tr}.npy", "{preds}/s3-rbm400__nlpp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-rbm400__nlpp.{tr}.npy", "{preds}/s3-rbm400__nlpp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400__nlpp_prod"]
 jobtype = "s3sim"
 inputs_from = ["ingest", "split_3", "s3-rbm400__nlpp"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-rbm400__nlpp.{tr}.npy", "{preds}/s3-rbm400__nlpp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-rbm400__nlpp.{tr}.npy", "{preds}/s3-rbm400__nlpp.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx100r__nlpp_prod"]
 jobtype = "s3sim"
 inputs_from = ["ingest", "split_3", "s3-tx100r__nlpp"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-tx100r__nlpp.{tr}.npy", "{preds}/s3-tx100r__nlpp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-tx100r__nlpp.{tr}.npy", "{preds}/s3-tx100r__nlpp.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx300lm__nlpp_diff1"]
 jobtype = "s3sim"
 inputs_from = ["ingest", "split_3", "s3-tx300lm__nlpp"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-tx300lm__nlpp.{tr}.npy", "{preds}/s3-tx300lm__nlpp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-tx300lm__nlpp.{tr}.npy", "{preds}/s3-tx300lm__nlpp.{fulltrain_tr}.npy"]
 
 [jobs."bin_wsupp"]
 jobtype = "s3sim"
@@ -667,22 +667,22 @@ jobtype = "s3sim"
 [jobs."s3-rbm400__nlpp_diff2"]
 jobtype = "s3sim"
 inputs_from = ["ingest", "split_3", "s3-rbm400__nlpp"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-rbm400__nlpp.{tr}.npy", "{preds}/s3-rbm400__nlpp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-rbm400__nlpp.{tr}.npy", "{preds}/s3-rbm400__nlpp.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx100r__nlpp_diff2"]
 jobtype = "s3sim"
 inputs_from = ["ingest", "split_3", "s3-tx100r__nlpp"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-tx100r__nlpp.{tr}.npy", "{preds}/s3-tx100r__nlpp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-tx100r__nlpp.{tr}.npy", "{preds}/s3-tx100r__nlpp.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx300lm__nlpp_prod"]
 jobtype = "s3sim"
 inputs_from = ["ingest", "split_3", "s3-tx300lm__nlpp"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-tx300lm__nlpp.{tr}.npy", "{preds}/s3-tx300lm__nlpp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-tx300lm__nlpp.{tr}.npy", "{preds}/s3-tx300lm__nlpp.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx60o__nlpp_diff2"]
 jobtype = "s3sim"
 inputs_from = ["ingest", "split_3", "s3-tx60o__nlpp"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-tx60o__nlpp.{tr}.npy", "{preds}/s3-tx60o__nlpp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-tx60o__nlpp.{tr}.npy", "{preds}/s3-tx60o__nlpp.{fulltrain_tr}.npy"]
 
 [jobs."bin_imp"]
 jobtype = "s3imp"
@@ -691,25 +691,25 @@ outputs = ["{split.sim}/bin_impcnt.{tr}.npy", "{split.sim}/bin_impcnt.{fulltrain
 [jobs."s3-attn32_imp"]
 jobtype = "s3imp"
 inputs_from = ["ingest", "split_3", "s3-attn32"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-attn32.{tr}.npy", "{preds}/s3-attn32.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-attn32.{tr}.npy", "{preds}/s3-attn32.{fulltrain_tr}.npy"]
 outputs = ["{split.sim}/s3-attn32_impsum.{tr}.npy", "{split.sim}/s3-attn32_impsum.{fulltrain_tr}.npy"]
 
 [jobs."s3-dnn24__nlpp_imp"]
 jobtype = "s3imp"
 inputs_from = ["ingest", "split_3", "s3-dnn24__nlpp"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-dnn24__nlpp.{tr}.npy", "{preds}/s3-dnn24__nlpp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-dnn24__nlpp.{tr}.npy", "{preds}/s3-dnn24__nlpp.{fulltrain_tr}.npy"]
 outputs = ["{split.sim}/s3-dnn24__nlpp_impsum.{tr}.npy", "{split.sim}/s3-dnn24__nlpp_impsum.{fulltrain_tr}.npy"]
 
 [jobs."s3-nade12s_imp"]
 jobtype = "s3imp"
 inputs_from = ["ingest", "split_3", "s3-nade12s"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-nade12s.{tr}.npy", "{preds}/s3-nade12s.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-nade12s.{tr}.npy", "{preds}/s3-nade12s.{fulltrain_tr}.npy"]
 outputs = ["{split.sim}/s3-nade12s_impsum.{tr}.npy", "{split.sim}/s3-nade12s_impsum.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx60o__nlpp_imp"]
 jobtype = "s3imp"
 inputs_from = ["ingest", "split_3", "s3-tx60o__nlpp"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-tx60o__nlpp.{tr}.npy", "{preds}/s3-tx60o__nlpp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-tx60o__nlpp.{tr}.npy", "{preds}/s3-tx60o__nlpp.{fulltrain_tr}.npy"]
 outputs = ["{split.sim}/s3-tx60o__nlpp_impsum.{tr}.npy", "{split.sim}/s3-tx60o__nlpp_impsum.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk1-60"]
@@ -729,28 +729,28 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=15 KN_SCALE=3.5 KN_SIM=support KN_STAT0=rtg_supp KN_STAT1=s3-tx300lm__nlpp_diff1 KN_TAU=0 KN_USE1=1"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "{split.sim}/rtg_supp.{tr}.npy", "{split.sim}/rtg_supp.{fulltrain_tr}.npy", "{split.sim}/s3-tx300lm__nlpp_diff1.{tr}.npy", "{split.sim}/s3-tx300lm__nlpp_diff1.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{split.sim}/rtg_supp.{tr}.npy", "{split.sim}/rtg_supp.{fulltrain_tr}.npy", "{split.sim}/s3-tx300lm__nlpp_diff1.{tr}.npy", "{split.sim}/s3-tx300lm__nlpp_diff1.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx50n__nlpp__knn-fp"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_FACT=s3-tx50n.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "{split.sim}/rtg_supp.{tr}.npy", "{split.sim}/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-tx50n.ifeat.{tr}.npy", "{preds}/s3-tx50n.ifeat.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{split.sim}/rtg_supp.{tr}.npy", "{split.sim}/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-tx50n.ifeat.{tr}.npy", "{preds}/s3-tx50n.ifeat.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm200__nlpp__knn-fp"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_FACT=s3-rbm200.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-rbm200.ifeat.{tr}.npy", "{preds}/s3-rbm200.ifeat.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-rbm200.ifeat.{tr}.npy", "{preds}/s3-rbm200.ifeat.{fulltrain_tr}.npy"]
 
 [jobs."s3-dnn24__nlpp__knn-s"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk1-60n"]
 jobtype = "s3model_base"
@@ -774,7 +774,7 @@ jobtype = "s3model"
 runner = "chain"
 env = "KA_A=0.5 KA_B=1.5 KA_K=30 KA_SCALE=2.5 KA_SIM=supp KA_STAT0=rtg_supp KA_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-bknbrx-30d"]
 jobtype = "s3model"
@@ -787,7 +787,7 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=1 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-tx300lm__nlpp_prod KN_TAU=0"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-tx300lm__nlpp_prod.{tr}.npy", "sim/s3-tx300lm__nlpp_prod.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-tx300lm__nlpp_prod.{tr}.npy", "sim/s3-tx300lm__nlpp_prod.{fulltrain_tr}.npy"]
 
 [jobs."s3-bknbrx-200t"]
 jobtype = "s3model_base"
@@ -799,7 +799,7 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=30 KN_SCALE=1 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-dnn24__nlpp__knns"]
 jobtype = "s3model"
@@ -811,7 +811,7 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=s3-tx100r__nlpp_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-tx100r__nlpp_diff2.{tr}.npy", "sim/s3-tx100r__nlpp_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-tx100r__nlpp_diff2.{tr}.npy", "sim/s3-tx100r__nlpp_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-bknbrx-100w"]
 jobtype = "s3model"
@@ -830,21 +830,21 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400__nlpp__knn-w-k100"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=100 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx200h2__nlpp__knn-m"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx200h2__nlpp"]
 jobtype = "s3model_base"
@@ -865,14 +865,14 @@ jobtype = "s3model"
 runner = "chain"
 env = "KI_K=50 KI_SCALE=2 KI_SIM=supp KI_STAT0=rtg_supp KI_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-nade12s_impsum.{tr}.npy", "sim/s3-nade12s_impsum.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-nade12s_impsum.{tr}.npy", "sim/s3-nade12s_impsum.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400__nlpp__knn-cr-g25-t5"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-rbm400__nlpp_prod.{tr}.npy", "sim/s3-rbm400__nlpp_prod.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-rbm400__nlpp_prod.{tr}.npy", "sim/s3-rbm400__nlpp_prod.{fulltrain_tr}.npy"]
 
 [jobs."s3-nsvd20-b__nlpp"]
 jobtype = "s3model_base"
@@ -889,175 +889,175 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx60o__nlpp__knn-m-k15"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=15 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-attn32__nlpp__knn-w"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx300lm__nlpp__knn-cr-g20-t0"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-tx300lm__nlpp_prod KN_TAU=0"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-tx300lm__nlpp_prod.{tr}.npy", "sim/s3-tx300lm__nlpp_prod.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-tx300lm__nlpp_prod.{tr}.npy", "sim/s3-tx300lm__nlpp_prod.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk1-60n__knn-w"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx60o__nlpp__kimp-c"]
 jobtype = "s3model"
 runner = "chain"
 env = "KI_K=50 KI_SCALE=1 KI_SIM=conf KI_TAU=0.05 KI_WSHR=100"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-tx60o__nlpp_impsum.{tr}.npy", "sim/s3-tx60o__nlpp_impsum.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-tx60o__nlpp_impsum.{tr}.npy", "sim/s3-tx60o__nlpp_impsum.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx300lm__nlpp__knn-cr-g35-t0"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=3.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-tx300lm__nlpp_prod KN_TAU=0"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-tx300lm__nlpp_prod.{tr}.npy", "sim/s3-tx300lm__nlpp_prod.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-tx300lm__nlpp_prod.{tr}.npy", "sim/s3-tx300lm__nlpp_prod.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx20w__nlpp__knn-m"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx50n__nlpp__knn-w-k15"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=15 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-attn32__kimp-rs"]
 jobtype = "s3model"
 runner = "chain"
 env = "KI_K=50 KI_SCALE=2.5 KI_SIM=supp KI_STAT0=rtg_supp KI_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-attn32_impsum.{tr}.npy", "sim/s3-attn32_impsum.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-attn32_impsum.{tr}.npy", "sim/s3-attn32_impsum.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400__nlpp__knn-cr-g10-t20"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=1 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0.2"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-rbm400__nlpp_prod.{tr}.npy", "sim/s3-rbm400__nlpp_prod.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-rbm400__nlpp_prod.{tr}.npy", "sim/s3-rbm400__nlpp_prod.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx100r__nlpp__kasym-p100-50"]
 jobtype = "s3model"
 runner = "chain"
 env = "KA_A=1 KA_B=0.5 KA_K=40 KA_SCALE=2 KA_SIM=prod KA_STAT0=rtg_supp KA_STAT2=s3-tx100r__nlpp_prod KA_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-tx100r__nlpp_prod.{tr}.npy", "sim/s3-tx100r__nlpp_prod.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-tx100r__nlpp_prod.{tr}.npy", "sim/s3-tx100r__nlpp_prod.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx100r__nlpp__knn-w-k100"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=100 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-bknbrx-200t__knn-s"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-mfrbmx-60h__knn-s"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx50n__nlpp__knn-s-g50-t5"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=30 KN_SCALE=5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-dnn24__nlpp__kimp-rs"]
 jobtype = "s3model"
 runner = "chain"
 env = "KI_K=50 KI_SCALE=2.5 KI_SIM=supp KI_STAT0=rtg_supp KI_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-dnn24__nlpp_impsum.{tr}.npy", "sim/s3-dnn24__nlpp_impsum.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-dnn24__nlpp_impsum.{tr}.npy", "sim/s3-dnn24__nlpp_impsum.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-dnn24__nlpp__kimp-n"]
 jobtype = "s3model"
 runner = "chain"
 env = "KI_CENTER=0 KI_K=50 KI_SCALE=1.5 KI_SIM=supp KI_STAT0=bin_wsupp KI_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-dnn24__nlpp_impsum.{tr}.npy", "sim/s3-dnn24__nlpp_impsum.{fulltrain_tr}.npy", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-dnn24__nlpp_impsum.{tr}.npy", "sim/s3-dnn24__nlpp_impsum.{fulltrain_tr}.npy", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-attn32__kimp-r"]
 jobtype = "s3model"
 runner = "chain"
 env = "KI_K=50 KI_SCALE=2 KI_SIM=supp KI_STAT0=rtg_supp KI_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-attn32_impsum.{tr}.npy", "sim/s3-attn32_impsum.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-attn32_impsum.{tr}.npy", "sim/s3-attn32_impsum.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-dnn24__nlpp__kimp-r"]
 jobtype = "s3model"
 runner = "chain"
 env = "KI_K=50 KI_SCALE=2 KI_SIM=supp KI_STAT0=rtg_supp KI_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-dnn24__nlpp_impsum.{tr}.npy", "sim/s3-dnn24__nlpp_impsum.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_impcnt.{tr}.npy", "sim/bin_impcnt.{fulltrain_tr}.npy", "sim/s3-dnn24__nlpp_impsum.{tr}.npy", "sim/s3-dnn24__nlpp_impsum.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400__nlpp__knn-cr-g15-t10"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=1.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0.1"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-rbm400__nlpp_prod.{tr}.npy", "sim/s3-rbm400__nlpp_prod.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-rbm400__nlpp_prod.{tr}.npy", "sim/s3-rbm400__nlpp_prod.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400__nlpp__knn-cr-g35-t0"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=3.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s3-rbm400__nlpp_prod KN_TAU=0"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-rbm400__nlpp_prod.{tr}.npy", "sim/s3-rbm400__nlpp_prod.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s3-rbm400__nlpp_prod.{tr}.npy", "sim/s3-rbm400__nlpp_prod.{fulltrain_tr}.npy"]
 
 [jobs."s3-dnn24__knn-m"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-attn32__nlpp__knn-s"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-mf60__nlpp__knn-s"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-tx300r__nlpp"]
 jobtype = "s3model"
@@ -1086,7 +1086,7 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_FACT=s3-rbm800p.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-rbm800p.ifeat.{tr}.npy", "{preds}/s3-rbm800p.ifeat.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-rbm800p.ifeat.{tr}.npy", "{preds}/s3-rbm800p.ifeat.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm800p"]
 jobtype = "s3model_ifeat"
@@ -1116,7 +1116,7 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_FACT=s3-rbm800-l25.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-rbm800-l25.ifeat.{tr}.npy", "{preds}/s3-rbm800-l25.ifeat.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-rbm800-l25.ifeat.{tr}.npy", "{preds}/s3-rbm800-l25.ifeat.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm800-l25"]
 jobtype = "s3model_ifeat"
@@ -1131,7 +1131,7 @@ jobtype = "s3model"
 runner = "chain"
 env = "UK_K=1000 UK_KP=200 UK_VEC=res"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-tx50n.ifeat.{tr}.npy", "{preds}/s3-tx50n.ifeat.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-tx50n.ifeat.{tr}.npy", "{preds}/s3-tx50n.ifeat.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm200e__nlpp"]
 jobtype = "s3model_base"
@@ -1165,7 +1165,7 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk1-120nb__nlpp"]
 jobtype = "s3model_base"
@@ -1189,14 +1189,14 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm50b10__nlpp__knn-w"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm50b10__nlpp"]
 jobtype = "s3model_base"
@@ -1214,7 +1214,7 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm800p__nlpp"]
 jobtype = "s3model_base"
@@ -1226,14 +1226,14 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400pf__nlpp__knn-m"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400pf__nlpp"]
 jobtype = "s3model_base"
@@ -1250,14 +1250,14 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm10__knn-s"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm800-l15"]
 jobtype = "s3model"
@@ -1272,86 +1272,86 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400pf__knn-m"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400__nlpp__uknn-rk"]
 jobtype = "s3model"
 runner = "chain"
 env = "UK_K=1000 UK_KP=200 UK_VEC=res"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "{preds}/s3-tx50n.ifeat.{tr}.npy", "{preds}/s3-tx50n.ifeat.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "{preds}/s3-tx50n.ifeat.{tr}.npy", "{preds}/s3-tx50n.ifeat.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm200e__knn-fp"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_FACT=s3-rbm200e.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-rbm200e.ifeat.{tr}.npy", "{preds}/s3-rbm200e.ifeat.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-rbm200e.ifeat.{tr}.npy", "{preds}/s3-rbm200e.ifeat.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm200e__nlpp__knn-w"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm800-l25__knn-m"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm800-l25__knn-w"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm50b10__nlpp__knn-m"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-rbm400p__knn-fp"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_FACT=s3-rbm400p.ifeat KN_K=30 KN_SCALE=2 KN_SIM=fpearson KN_STAT0=rtg_supp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-rbm400p.ifeat.{tr}.npy", "{preds}/s3-rbm400p.ifeat.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "{preds}/s3-rbm400p.ifeat.{tr}.npy", "{preds}/s3-rbm400p.ifeat.{fulltrain_tr}.npy"]
 
 [jobs."s3-nsvd20-b__knn-m"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-nsvd20-b__nlpp__knn-s"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=30 KN_SCALE=2.5 KN_SIM=support KN_STAT0=rtg_supp KN_TAU=0.1"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-nsvd20-b__nlpp__knn-c"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy"]
 
-# --- base200 promotion (2026-10-31): Pragmatic Theory BK4 (src/bk4.rs, `s3 misc s3-bk4*`),
+# --- base200 promotion (2026-10-31): Pragmatic Theory BK4 (src/bk4.rs, `fit misc s3-bk4*`),
 # s3-tx300x5 and their chains. The BK4 runs were made in the lab (lab-s3-bk4, the same model,
 # bit-identical; the qual side of f200x / e300x / g100 / d50z / d50s by a separate fulltrain ->
 # qual process with the same knobs). f200x is the f200 recipe stopped at epoch 28 (its best blend
@@ -1376,7 +1376,7 @@ extras = ["@train_preds"]
 jobtype = "s3model_base"
 runner = "misc"
 env = "EPOCHS=28 F=200 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
-inputs = ["src/bin/s3.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk4-f200x__nlpp"]
 jobtype = "s3model_base"
@@ -1388,20 +1388,20 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk4-f200x__knn-m"]
 jobtype = "s3model"
 runner = "chain"
 env = "KN_K=40 KN_SCALE=2 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk4-e300x"]
 jobtype = "s3model_base"
 runner = "misc"
 env = "EPOCHS=21 F=300 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
-inputs = ["src/bin/s3.rs", "src/bk4.rs"]
+inputs = ["src/bin/fit.rs", "src/bk4.rs"]
 
 [jobs."s3-bk4-e300x__nlpp"]
 jobtype = "s3model_base"
@@ -1413,7 +1413,7 @@ jobtype = "s3model"
 runner = "chain"
 env = "KN_K=50 KN_SCALE=1.5 KN_SIM=support KN_STAT0=bin_wsupp KN_TAU=0.05"
 extras = ["@train_preds"]
-inputs = ["src/bin/s3.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "sim/bin_wsupp.{tr}.npy", "sim/bin_wsupp.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk4-e300x__attn32p"]
 jobtype = "s3model"
@@ -1434,27 +1434,27 @@ extras = ["@train_preds"]
 jobtype = "s3model"
 runner = "misc"
 env = "DECAY=0.03 EPOCHS=22 F=100 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
-inputs = ["src/bin/s3.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk4-d50z"]
 jobtype = "s3model"
 runner = "misc"
 env = "ENV=1 EPOCHS=25 EPSAVE=1 F=50 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
 keep_epochs = [23]
-inputs = ["src/bin/s3.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk4-d50s"]
 jobtype = "s3model"
 runner = "misc"
 env = "EPOCHS=30 EPSAVE=1 F=50 NBR=445 LR_SCALE=1.5 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
 keep_epochs = [20]
-inputs = ["src/bin/s3.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
+inputs = ["src/bin/fit.rs", "src/bk4.rs", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy"]
 
 [jobs."s3-bk4-e50s"]
 jobtype = "s3model"
 runner = "misc"
 env = "EPOCHS=30 F=50 RAYON_NUM_THREADS=1 SIGF=2 TIME=1"
-inputs = ["src/bin/s3.rs", "src/bk4.rs"]
+inputs = ["src/bin/fit.rs", "src/bk4.rs"]
 
 # --- Second-level blends, round 1 (one seed each) ---
 

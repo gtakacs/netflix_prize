@@ -97,8 +97,8 @@ cmd = "cargo build --release --bin nbstats-{split.name} && ./target/release/nbst
 # used for the latent-feature sources. Outputs are declared per job.
 [defaults.s3model]
 inputs_from = ["ingest", "newsplit"]
-inputs  = ["src/bin/s3.rs"]
-cmd = "cargo build --release --bin s3 && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/s3 {runner} {name} -p pipeline-new.toml --final --preds {preds} {extra}"
+inputs  = ["src/bin/fit.rs"]
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/fit {runner} {name} -p pipeline-new.toml --final --preds {preds} {extra}"
 
 [defaults.vfeat]
 inputs_from = ["ingest", "newsplit"]
