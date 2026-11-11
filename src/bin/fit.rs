@@ -1,15 +1,16 @@
-// split_3 model runs: one dispatcher with a subcommand per model family. Each
-// subcommand builds the config of a library model from the environment (every
-// knob is an env var, so a parameter search needs no recompile) and runs it on
-// the split given by -p. The arguments after the subcommand are the lab ones
-// (NAME, -p, --final, --preds, --target, --smoke, --sample).
+// fit: the model runs of the pipelines, one dispatcher with a subcommand per model
+// family. Each subcommand builds the config of a library model from the environment
+// (every knob is an env var, so a parameter search needs no recompile) and runs it on
+// the split given by -p; nothing here depends on the split otherwise. The arguments
+// after the subcommand are the lab ones (NAME, -p, --final, --preds, --target,
+// --smoke, --sample). Job names carry their split's prefix (`s3-`, `s1-`).
 //
-//   s3 <subcommand> NAME -p pipeline-3.toml [--final] [--preds DIR] ...
+//   fit <subcommand> NAME -p pipeline-<split>.toml [--final] [--preds DIR] ...
 //
 //   tx       TxModel (the tsvdx4/5 family)
 //   rbm      the conditional RBM (RxModel)
-//   misc     the smaller families, picked by the name's prefix (mf, als, aex, bk3,
-//            bk1, bknbrx, mfrbmx)
+//   misc     the smaller families, picked by the name after its split prefix (mf,
+//            als, aex, bk1, bk3, bk4, bknbrx, mfrbm; rbmx: split_1's legacy RBM)
 //   chain    second stages on another column's residual (knn-*, knn3, knnf, knns,
 //            nlpp, asym-<d>, kasym, kimp, uknn)
 //   attn     the attention model
@@ -20,11 +21,14 @@
 //   vfeat1   the voting features
 //   integ    the integrated model trained by ALS (IntegModel; NSVD1 with TERMS=y)
 //
-// The sections below are the former lab-s3-<subcommand> binaries, unchanged
-// apart from their `use` lines moving into the function (integ: its model code
-// moved to src/integ.rs).
+// The file has two parts. "Shared runners" are the subcommands as they were built for
+// split_3 (pipeline-3.toml; they started as the lab-s3-<subcommand> binaries), and
+// split_1 (pipeline-1.toml) uses them too: their defaults are split_3's recipes, and
+// a split_1 job sets the old split's values in its `env` (e.g. SUM_ERR_BUG=1 FULL_SU=0
+// for the tsvdx4 family). "split_1: the old split's legacy models" holds what only the
+// old split's columns need (models kept for them, ports from src/old).
 //
-//   F=50 EPOCHS=20 cargo run --release --bin s3 -- tx s3-tx50 -p pipeline-3.toml
+//   F=50 EPOCHS=20 cargo run --release --bin fit -- tx s3-tx50 -p pipeline-3.toml
 
 const SUBCOMMANDS: &[(&str, fn())] = &[
     ("tx", tx), ("rbm", rbm), ("misc", misc), ("chain", chain), ("attn", attn),
@@ -37,23 +41,29 @@ fn main() {
         Some((_, run)) => run(),
         None => {
             let names: Vec<&str> = SUBCOMMANDS.iter().map(|(n, _)| *n).collect();
-            eprintln!("usage: s3 <subcommand> NAME -p PIPELINE [--final] [--preds DIR] ...");
+            eprintln!("usage: fit <subcommand> NAME -p PIPELINE [--final] [--preds DIR] ...");
             eprintln!("subcommands: {}", names.join(", "));
             std::process::exit(2);
         }
     }
 }
 
+// ============================================================================
+// Shared runners (built for split_3; defaults are its recipes)
+// ============================================================================
+
 // ----------------------------------------------------------------------------
 // tx
 // ----------------------------------------------------------------------------
-// split_3 experiments: TxModel (the tsvdx4/5 family) with every knob from the
+// TxModel (the tsvdx4/5 family) with every knob from the
 // environment, so a parameter search needs no recompile. IFEAT=1 / UFEAT=1 save
 // the item / user factors (`.ifeat.<ds>.npy`, `.ufeat.<ds>.npy`). Defaults are the
 // tsvdx5 base recipe, with the neighborhood off unless NBR > 0. QUAL_ONLY=1
 // runs only the fulltrain -> qual phase of an existing probe-only column.
+// SUM_ERR_BUG=1 / FULL_SU=0 select the older TxModel behaviours (for reproducing
+// old-split columns).
 //
-//   F=50 EPOCHS=20 cargo run --release --bin s3 -- tx s3-tx50 -p pipeline-3.toml
+//   F=50 EPOCHS=20 cargo run --release --bin fit -- tx s3-tx50 -p pipeline-3.toml
 
 fn tx() {
     use netflix_prize::{
@@ -73,7 +83,8 @@ fn tx() {
         n_feat: ev("F", 50),
         n_epochs: if args.sampled() { 2 } else { ev("EPOCHS", 20) },
         seed: ev("SEED", 42),
-        shuffle_users: true,
+        // The old split's tsvdx.rs (tsvdx-20, tsvdx-256) visited users in order: SHUFFLE=0.
+        shuffle_users: ev("SHUFFLE", 1) != 0,
         n_time_bins: ev("TBINS", 32),
         beta: ev("BETA", 0.3),
         n_freq_bins: ev("FBINS", 16),
@@ -86,8 +97,8 @@ fn tx() {
         reg_iqf: ev("REG_IQF", 0.007), reg_cu: ev("REG_CU", 0.01),
         reg_u: ev("REG_U", 0.0504), reg_u2: ev("REG_U2", 0.4), reg_ud: ev("REG_UD", 0.04),
         reg_i: ev("REG_I", 0.00735), reg_y: ev("REG_Y", 0.04), reg_yd: ev("REG_YD", 0.02667),
-        sigma_iqf: 0.005, sigma_u: ev("SIGMA_U", 0.0015), sigma_i: ev("SIGMA_I", 0.005),
-        sigma_y: ev("SIGMA_Y", 0.00333), sigma_yd: 0.009,
+        sigma_iqf: ev("SIGMA_IQF", 0.005), sigma_u: ev("SIGMA_U", 0.0015), sigma_i: ev("SIGMA_I", 0.005),
+        sigma_y: ev("SIGMA_Y", 0.00333), sigma_yd: ev("SIGMA_YD", 0.009),
         reset_u_epoch: ev("RESET", 1024),
         max_neighbors: nbr,
         lr_w, lr_c: lr_w,
@@ -96,7 +107,7 @@ fn tx() {
         lr_w_day: ev("LR_WD", 0.0), lr_c_day: ev("LR_WD", 0.0),
         reg_w_day: ev("REG_WD", 0.0), reg_c_day: ev("REG_WD", 0.0),
         w_bias: ev("WB", wf), w_factor: wf, w_nbr: ev("WN", wf),
-        sum_err_bug: false,
+        sum_err_bug: ev("SUM_ERR_BUG", 0) != 0,
         lambda1: 25.0, lambda2: 10.0,
         ordinal_head: ord.then_some(OrdinalHeadConfig {
             th_init: [0.5, 1.25, 3.75, 5.5], th_gap: 0.001, lr_t: 0.0, reg_t: 0.0,
@@ -104,7 +115,7 @@ fn tx() {
         save_ifeat: ev("IFEAT", 0) != 0,
         save_ufeat: ev("UFEAT", 0) != 0,
         low_memory: ev("LM", 0) != 0,
-        full_su: true,
+        full_su: ev("FULL_SU", 1) != 0,
     };
 
     if ev("QUAL_ONLY", 0) != 0 {
@@ -124,7 +135,7 @@ fn tx() {
 // ----------------------------------------------------------------------------
 // rbm
 // ----------------------------------------------------------------------------
-// split_3 experiments: the conditional RBM (RxModel) with every knob from the
+// The conditional RBM (RxModel) with every knob from the
 // environment. Defaults are the rbmx2-500 recipe at H hidden units.
 // HT selects the hidden type: b(ernoulli), p (bipolar), r (NReLU), e (TruncExp
 // on [EA, EB]).
@@ -132,7 +143,7 @@ fn tx() {
 // QUAL_ONLY=1 runs only the fulltrain -> qual phase (probe files are left alone).
 // UFEAT=1 saves the expected hidden units per user (`.ufeat.<ds>.npy`, blend features).
 //
-//   H=100 EPOCHS=20 cargo run --release --bin s3 -- rbm s3-rbm100 -p pipeline-3.toml
+//   H=100 EPOCHS=20 cargo run --release --bin fit -- rbm s3-rbm100 -p pipeline-3.toml
 
 fn rbm() {
     use netflix_prize::{
@@ -203,10 +214,11 @@ fn rbm() {
 // ----------------------------------------------------------------------------
 // misc
 // ----------------------------------------------------------------------------
-// split_3 experiments: the smaller model families, picked by the name's
-// prefix, every knob from the environment.
+// The smaller model families, picked by the
+// name after its split prefix (`s3-`, `s1-`), every knob from the environment.
 //
-//   s3-mf*   biased SGD MF (mf-60's rates)          F, EPOCHS, RESET, REG_U, REG_I
+//   s3-mf*   biased SGD MF (mf-60's rates)          F, EPOCHS, RESET, REG_U, REG_I,
+//                                                   SHUFFLE (1), IFEAT=1 (save .ifeat)
 //   s3-als*  als8                                   F, EPOCHS, REG_U, REG_I, SHRINK
 //   s3-aex*  autoencoder                            F, EPOCHS, LR, REG, DROP,
 //                                                   TRANSPOSE=1 (item-based)
@@ -215,17 +227,24 @@ fn rbm() {
 //                                                   LR_SCALE, DECAY, ... (bk4::config_from_env)
 //   s3-bk1*  Pragmatic Theory integrated (bk1-10's) F, EPOCHS, NBR, LR_SCALE, LR_NBR,
 //                                                   LR_DECAY, REG_FACT, REG_NBR
-//   s3-bknbrx*  BellKor neighborhood, eq 18          NBR, EPOCHS, LR_W, LR_WD, LR_ALPHA,
-//               (bknbrx-50's)                       LR_BETA, REG_W, REG_ALPHA, THREADS
-//   s3-mfrbmx*  joint MF + RBM (mfrbmx-50's)        F, H, EPOCHS, W_MF, W_RBM,
-//                                                   LR_W, REG_U, REG_I
+//   s3-bknbr*   BellKor neighborhood, eq 18          NBR, EPOCHS, LR_W, LR_WD, LR_ALPHA,
+//               (bknbrx-50's)                       LR_BETA, REG_W, REG_ALPHA, THREADS,
+//                                                   PARMODE=seq|hogwild (hogwild)
+//   s1-rbmx*    legacy RBM + mini MF (rbmx2.rs;     H, EPOCHS, SEED, BATCH, LR, MOM, WD,
+//               the old split's rbmx-16)            LR_BU, LR_BUT, CD_EVERY, CD_MAX, COND,
+//                                                   MF_DIM, LR_MF_U, LR_MF_I, WD_MF
+//   s3-mfrbm*   joint MF + RBM (mfrbmx-50's)        F, H, EPOCHS, W_MF, W_RBM,
+//                                                   LR_W, REG_U, REG_I, LR_U, LR_I,
+//                                                   LR_UB, LR_IB
+//   s1-knn-*    item-item kNN on the target (rtg)   KN_* (as the chain knn-<tag> stage)
 //
-//   F=8 cargo run --release --bin s3 -- misc s3-als8 -p pipeline-3.toml
+//   F=8 cargo run --release --bin fit -- misc s3-als8 -p pipeline-3.toml
 
 fn misc() {
     use netflix_prize::{
         aex::{AexConfig, AexModel},
         als8::{Als8Config, Als8Model},
+        asym::{AsymConfig, AsymModel},
         bk1::{Bk1Config, Bk1Model},
         bk3::{Bk3Config, Bk3Model},
         bk4::{self, Bk4Model},
@@ -243,25 +262,44 @@ fn misc() {
     let fin = !args.final_run;
     let ep = |d: usize| if args.sampled() { 1 } else { ev("EPOCHS", d) };
     let epsave = ev("EPSAVE", 0) != 0;
+    // The family is the name after its split prefix (`s3-`, or `s1-` for split_1).
+    let fam = n.strip_prefix("s3-").or_else(|| n.strip_prefix("s1-")).unwrap_or(n);
 
-    if n.starts_with("s3-mf") && !n.starts_with("s3-mfrbmx") {
+    if fam.starts_with("mf") && !fam.starts_with("mfrbm") {
         let cfg = MfConfig {
             n_feat: ev("F", 60),
             n_epochs: ep(20),
             seed: ev("SEED", 42),
-            shuffle_users: true,
-            lr_u: 0.0031, lr_i: 0.0036, lr_ub: 0.0031, lr_ib: 0.0036,
+            shuffle_users: ev("SHUFFLE", 1) != 0,
+            lr_u: ev("LR_U", 0.0031), lr_i: ev("LR_I", 0.0036),
+            lr_ub: ev("LR_UB", 0.0031), lr_ib: ev("LR_IB", 0.0036),
             reg_u: ev("REG_U", 0.03),
             reg_i: ev("REG_I", 0.005),
-            sigma_u: 0.004, sigma_i: 0.005,
+            sigma_u: ev("SIGMA_U", 0.004), sigma_i: ev("SIGMA_I", 0.005),
             reset_u_epoch: ev("RESET", 0),
             item_feat_npy: None,
             ordinal_head: None,
-            save_ifeat: false,
+            save_ifeat: ev("IFEAT", 0) != 0,
         };
         fit2!(MfModel, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin);
-    } else if n.starts_with("s3-als") {
+    } else if let Some(spec) = fam.strip_prefix("asym-") {
+        // Asymmetric factor model on the ratings (the chain's asym stage fits a residual).
+        let d: String = spec.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let cfg = AsymConfig {
+            n_feat: d.parse().expect("asym name must be asym-<d>[tag]"),
+            n_epochs: ep(10),
+            seed: ev("SEED", 42),
+            shuffle_users: ev("SHUFFLE", 1) != 0,
+            lr_ub: 0.0031, lr_i: 0.0036, lr_ib: 0.0036, lr_y: 0.0005, lr_us: 0.0,
+            reg_i: 0.007, reg_y: 0.04, reg_us: 0.0,
+            sigma_i: 0.005, sigma_y: 0.005,
+            init_with_user_std: false,
+            save_ifeat: ev("IFEAT", 0) != 0,
+        };
+        fit2!(AsymModel, cfg, t, n, split, save_train: true,
+              save_probe_each_epoch: epsave, skip_fulltrain: fin);
+    } else if fam.starts_with("als") {
         let cfg = Als8Config {
             n_epochs: ep(10),
             seed: ev("SEED", 42),
@@ -276,7 +314,7 @@ fn misc() {
         };
         fit2!(Als8Model, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin);
-    } else if n.starts_with("s3-aex") {
+    } else if fam.starts_with("aex") {
         let cfg = AexConfig {
             n_feat: ev("F", 64),
             n_epochs: ep(20),
@@ -294,12 +332,12 @@ fn misc() {
         fit2!(AexModel, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin,
               transpose: ev("TRANSPOSE", 0) != 0, train_in_rating_order: true);
-    } else if n.starts_with("s3-bk4") {
+    } else if fam.starts_with("bk4") {
         let mut cfg = bk4::config_from_env();
         if args.sampled() { cfg.n_epochs = 1; }
         fit2!(Bk4Model, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin);
-    } else if n.starts_with("s3-bk3") {
+    } else if fam.starts_with("bk3") {
         let s: f32 = ev("LR_SCALE", 1.0);
         let cfg = Bk3Config {
             n_feat: ev("F", 20),
@@ -319,7 +357,7 @@ fn misc() {
         };
         fit2!(Bk3Model, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin);
-    } else if n.starts_with("s3-bk1") {
+    } else if fam.starts_with("bk1") {
         let s: f32 = ev("LR_SCALE", 1.0);
         let cfg = Bk1Config {
             n_feat: ev("F", 10),
@@ -327,7 +365,7 @@ fn misc() {
             seed: ev("SEED", 42),
             shuffle_users: true,
             n_time_bins: 30, beta: 0.4, k1: 0.0363636, k2: 0.909091, dev_mean: false,
-            // 0 = no neighborhood term (bk1-10 ran without one).
+            // 0 = no neighborhood term; the old split's bk1-10 used NBR=300 (needs sim/rtg_prod).
             k_neighbors: ev("NBR", 0),
             alpha_rho: 100.0, lambda1: 25.0, lambda2: 10.0,
             lr_bias: 0.007 * s, lr_fact: 0.007 * s, lr_nbr: ev("LR_NBR", 0.001) * s, lr_h: 0.0,
@@ -337,12 +375,15 @@ fn misc() {
         };
         fit2!(Bk1Model, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin);
-    } else if n.starts_with("s3-bknbrx") {
+    } else if fam.starts_with("bknbr") {
         let cfg = BknbrxConfig {
             n_epochs: ep(25),
             seed: ev("SEED", 42),
             shuffle_users: true,
-            parallel_mode: ParallelMode::Hogwild,
+            parallel_mode: match ev("PARMODE", "hogwild".to_string()).as_str() {
+                "seq" => ParallelMode::Sequential,
+                _ => ParallelMode::Hogwild,
+            },
             n_threads: ev("THREADS", 8),
             n_time_bins: 30,
             beta: 0.4,
@@ -365,14 +406,17 @@ fn misc() {
         };
         fit2!(BknbrxModel, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin);
-    } else if n.starts_with("s3-mfrbmx") {
+    } else if fam.starts_with("rbmx") {
+        rbmx_legacy(&args, split);
+    } else if fam.starts_with("mfrbm") {
         let e = ep(9);
         let cfg = MfRbmxConfig {
             mf: mfrbmx::MfConfig {
                 n_feat: ev("F", 25),
                 n_epochs: e,
                 seed: ev("SEED", 42),
-                lr_u: 0.005, lr_i: 0.03, lr_ub: 0.006, lr_ib: 0.03,
+                lr_u: ev("LR_U", 0.005), lr_i: ev("LR_I", 0.03),
+                lr_ub: ev("LR_UB", 0.006), lr_ib: ev("LR_IB", 0.03),
                 reg_u: ev("REG_U", 0.07), reg_i: ev("REG_I", 0.004),
                 sigma_u: 0.004, sigma_i: 0.005,
                 reset_u_epoch: 1024,
@@ -393,20 +437,25 @@ fn misc() {
         };
         fit2!(MfRbmxModel, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin);
+    } else if fam.starts_with("knn-") {
+        // item-item kNN on the target itself (`rtg` by default; the chain stage fits a residual)
+        let cfg = knn_config_from_env(&split);
+        fit2!(netflix_prize::knn::KnnModel, cfg, t, n, split, save_train: true, skip_fulltrain: fin);
     } else {
         panic!("unknown model family in '{n}'");
     }
 }
 
+
 // ----------------------------------------------------------------------------
 // chain
 // ----------------------------------------------------------------------------
-// split_3 experiments: second stages on another column's residual. The stage
+// Second stages on another column's residual. The stage
 // is the last `__` segment of the name, the base is everything before it, so
 // chains nest (`s3-tx50__nlpp__knn3`). Knobs come from the environment, and
 // `W` (default 1.0) is the weight of the base in the target (`W*base`).
 //
-//   K3_KMAX=100 cargo run --release --bin s3 -- chain s3-tx50__knn3b -p pipeline-3.toml
+//   K3_KMAX=100 cargo run --release --bin fit -- chain s3-tx50__knn3b -p pipeline-3.toml
 //
 // Stages: knn3[tag], knnf[tag] (needs the base's `.ifeat`), knns[tag],
 // nlpp[tag], asym-<d>[tag], and
@@ -424,6 +473,44 @@ fn misc() {
 //   uknn[-tag]   the user-user kNN of uknn.rs: UK_VEC = pres|res|coday, UK_FACT =
 //                item-factor stem in the preds dir (s3-tx50n.ifeat), UK_K, UK_KP,
 //                UK_SCALE, UK_SHR, UK_TAU, UK_DIM, UK_WIN, UK_CAP, IMPL
+
+// The item-item kNN (src/knn.rs) from the KN_* knobs: the chain's knn-<tag> stage and the
+// misc knn-<tag> family (a kNN on the ratings themselves) share it.
+fn knn_config_from_env(split: &netflix_prize::Split) -> netflix_prize::knn::KnnConfig {
+    use netflix_prize::{knn::{KnnConfig, SimType}, lab::ev};
+    let stem = |key: &str, d: &str| -> Option<&'static str> {
+        let v: String = ev(key, d.to_string());
+        (v != "none").then(|| &*v.leak())
+    };
+    let sim_type = match ev("KN_SIM", "support".to_string()).as_str() {
+        "support" => SimType::Support,
+        "cosine" => SimType::Cosine,
+        "mse" => SimType::Mse,
+        "fcos" => SimType::FactorCosine,
+        "fpearson" => SimType::FactorPearson,
+        "fmse" => SimType::FactorMse,
+        "fdot" => SimType::FactorDot,
+        s => panic!("unknown KN_SIM '{s}'"),
+    };
+    let thr: f32 = ev("KN_THR", f32::NAN);
+    KnnConfig {
+        stat0: stem("KN_STAT0", "bin_wsupp"),
+        stat1: stem("KN_STAT1", "none"),
+        stat2: stem("KN_STAT2", "none"),
+        factors: stem("KN_FACT", "none"),
+        sim_type,
+        k: ev("KN_K", 50),
+        sim_threshold: (!thr.is_nan()).then_some(thr),
+        shrinkage: ev("KN_SHR", 100.0),
+        scaling: ev("KN_SCALE", 1.5),
+        tau: ev("KN_TAU", 0.05),
+        use_stat1: ev("KN_USE1", 0) != 0,
+        regression: ev("KN_REG", 0) != 0,
+        regression_lambda: ev("KN_RLAM", 0.1),
+        sim_dir: split.sim_dir,
+        preds_dir: split.preds_dir,
+    }
+}
 
 fn chain() {
     use netflix_prize::{
@@ -451,38 +538,7 @@ fn chain() {
     let fin = !args.final_run;
 
     if stage.starts_with("knn-") {
-        let stem = |key: &str, d: &str| -> Option<&'static str> {
-            let v: String = ev(key, d.to_string());
-            (v != "none").then(|| &*v.leak())
-        };
-        let sim_type = match ev("KN_SIM", "support".to_string()).as_str() {
-            "support" => SimType::Support,
-            "cosine" => SimType::Cosine,
-            "mse" => SimType::Mse,
-            "fcos" => SimType::FactorCosine,
-            "fpearson" => SimType::FactorPearson,
-            "fmse" => SimType::FactorMse,
-            "fdot" => SimType::FactorDot,
-            s => panic!("unknown KN_SIM '{s}'"),
-        };
-        let thr: f32 = ev("KN_THR", f32::NAN);
-        let cfg = KnnConfig {
-            stat0: stem("KN_STAT0", "bin_wsupp"),
-            stat1: stem("KN_STAT1", "none"),
-            stat2: stem("KN_STAT2", "none"),
-            factors: stem("KN_FACT", "none"),
-            sim_type,
-            k: ev("KN_K", 50),
-            sim_threshold: (!thr.is_nan()).then_some(thr),
-            shrinkage: ev("KN_SHR", 100.0),
-            scaling: ev("KN_SCALE", 1.5),
-            tau: ev("KN_TAU", 0.05),
-            use_stat1: ev("KN_USE1", 0) != 0,
-            regression: ev("KN_REG", 0) != 0,
-            regression_lambda: ev("KN_RLAM", 0.1),
-            sim_dir: split.sim_dir,
-            preds_dir: split.preds_dir,
-        };
+        let cfg = knn_config_from_env(&split);
         fit2!(KnnModel, cfg, &target, n, split, skip_fulltrain: fin);
     } else if stage.starts_with("knn3") {
         let d = Knn3Config::default();
@@ -516,15 +572,23 @@ fn chain() {
         };
         fit2!(KnnsModel, cfg, &target, n, split, skip_fulltrain: fin);
     } else if stage.starts_with("nlpp") {
-        // Regularisation of the tuned tsvdx5-1000 fit, as in lab-new.
+        // Regularisation of the tuned tsvdx5-1000 fit, as in lab-new; NL_RA / NL_RB override
+        // reg_a / reg_b with 8 comma-separated values each (the 4 pairs in order).
+        let regs = |key: &str, d: [(f32, f32); 4]| -> [(f32, f32); 4] {
+            let v: String = ev(key, String::new());
+            if v.is_empty() { return d; }
+            let x: Vec<f32> = v.split(',').map(|t| t.trim().parse().expect(key)).collect();
+            assert_eq!(x.len(), 8, "{key} needs 8 values");
+            [(x[0], x[1]), (x[2], x[3]), (x[4], x[5]), (x[6], x[7])]
+        };
         let cfg = NlppConfig {
             base_model: base,
             preds_dir: split.preds_dir,
             n_als_iters: ev("NL_ITERS", 2),
-            reg_a: [(4.74449, 0.489646), (1.86309, 4.83715e5),
-                    (118.959, 1.19996e-6), (2.37045e5, 6.54512e-4)],
-            reg_b: [(3.74578e-4, 0.452495), (0.638521, 5.08715e3),
-                    (3.36975e-8, 0.161125), (4.45546e3, 459.028)],
+            reg_a: regs("NL_RA", [(4.74449, 0.489646), (1.86309, 4.83715e5),
+                                  (118.959, 1.19996e-6), (2.37045e5, 6.54512e-4)]),
+            reg_b: regs("NL_RB", [(3.74578e-4, 0.452495), (0.638521, 5.08715e3),
+                                  (3.36975e-8, 0.161125), (4.45546e3, 459.028)]),
             shrinkage_u: ev("NL_SHU", 10.0),
             shrinkage_i: ev("NL_SHI", 25.0),
             regs_path: None,
@@ -536,7 +600,7 @@ fn chain() {
             n_feat: d.parse().expect("asym stage must be asym-<d>[tag]"),
             n_epochs: if args.sampled() { 1 } else { ev("EPOCHS", 10) },
             seed: ev("SEED", 42),
-            shuffle_users: true,
+            shuffle_users: ev("SHUFFLE", 1) != 0,
             lr_ub: ev("LR_UB", 0.0031),
             lr_i: ev("LR_I", 0.0036),
             lr_ib: ev("LR_IB", 0.0036),
@@ -637,14 +701,14 @@ fn chain() {
 // ----------------------------------------------------------------------------
 // attn
 // ----------------------------------------------------------------------------
-// split_3 experiments: the attention model (attn.rs) with every knob from the
+// The attention model (attn.rs) with every knob from the
 // environment. Defaults are attn-32's (D=32 POOL=32 NMF=192 EPOCHS=12).
 // TRANSPOSE=1 gives the user-based variant (attn-32-t). THREADS=1 is
 // deterministic, more threads are faster but not reproducible. TR_LEGACY=1 (with
 // TRANSPOSE=1) saves the train preds in the old, transposed order, needed only
 // to regenerate s3-attn32t__knn3 and s3-attn32t__nlpp.
 //
-//   EPSAVE=1 cargo run --release --bin s3 -- attn s3-attn32 -p pipeline-3.toml
+//   EPSAVE=1 cargo run --release --bin fit -- attn s3-attn32 -p pipeline-3.toml
 
 fn attn() {
     use netflix_prize::{
@@ -689,12 +753,12 @@ fn attn() {
 // ----------------------------------------------------------------------------
 // dnn
 // ----------------------------------------------------------------------------
-// split_3 experiments: the dnn (embedding MLP + MF branch) with every knob from
+// The dnn (embedding MLP + MF branch) with every knob from
 // the environment. Defaults are dnn-16's. THREADS=1 is deterministic, more
 // threads are faster but not reproducible.
 // TRANSPOSE=1 swaps users and items.
 //
-//   D=16 NMF=192 EPOCHS=10 cargo run --release --bin s3 -- dnn s3-dnn16 -p pipeline-3.toml
+//   D=16 NMF=192 EPOCHS=10 cargo run --release --bin fit -- dnn s3-dnn16 -p pipeline-3.toml
 
 fn dnn() {
     use netflix_prize::{
@@ -735,11 +799,11 @@ fn dnn() {
 // ----------------------------------------------------------------------------
 // nade
 // ----------------------------------------------------------------------------
-// split_3 experiments: CF-NADE with the main knobs from the environment.
+// CF-NADE with the main knobs from the environment.
 // Defaults are cfnade-48's shape; the lr milestones sit at 2/3 and 3/4 of the
 // run, as in the 96-epoch preset, unless MS1/MS2 say otherwise.
 //
-//   H=160 RANK=48 EPOCHS=30 cargo run --release --bin s3 -- nade s3-nade48 -p pipeline-3.toml
+//   H=160 RANK=48 EPOCHS=30 cargo run --release --bin fit -- nade s3-nade48 -p pipeline-3.toml
 
 fn nade() {
     use netflix_prize::{
@@ -778,7 +842,7 @@ fn nade() {
 // ----------------------------------------------------------------------------
 // nbstats
 // ----------------------------------------------------------------------------
-// split_3 sim matrices for the knn-<tag> chain stage: item-item statistics over
+// Sim matrices for the knn-<tag> chain stage: item-item statistics over
 // train_3 and fulltrain, into the split's sim dir as <rtg>_<stat>.<ds>.npy. The
 // name is <rtg>_<stat> as for nbstats-new: rtg = `rtg` (ratings), `bin` (who
 // rated what, probe/qual included) or a model whose residuals are used (read
@@ -786,7 +850,7 @@ fn nade() {
 // statistics of the kimp-<tag> chain stage (knnimp.rs; bin_imp -> bin_impcnt,
 // <base>_imp -> <base>_impsum).
 //
-//   cargo run --release --bin s3 -- nbstats rtg_supp -p pipeline-3.toml
+//   cargo run --release --bin fit -- nbstats rtg_supp -p pipeline-3.toml
 
 fn nbstats() {
     use netflix_prize::{knnimp, lab::LabArgs, nbstats};
@@ -819,12 +883,12 @@ fn vfeat0() {
 // ----------------------------------------------------------------------------
 // vfeat1
 // ----------------------------------------------------------------------------
-// split_3 voting features: vfeat1 (Selection::All, the `all` group of
+// Voting features: vfeat1 (Selection::All, the `all` group of
 // voting-new.toml) on the lab split, into preds_lab/vf/<feature>.{probe_3,qual}.npy.
 // The qual side depends only on fulltrain -> qual, so it must match
 // preds_new/vf/*.qual.npy; that is the check of a run.
 //
-//   cargo run --release --bin s3 -- vfeat1 s3-vfeat1 -p pipeline-3.toml
+//   cargo run --release --bin fit -- vfeat1 s3-vfeat1 -p pipeline-3.toml
 
 fn vfeat1() {
     use netflix_prize::{
@@ -839,7 +903,7 @@ fn vfeat1() {
 // ----------------------------------------------------------------------------
 // integ
 // ----------------------------------------------------------------------------
-// split_3 experiments: the integrated model trained by ALS (src/integ.rs) with
+// The integrated model trained by ALS (src/integ.rs) with
 // every knob from the environment.
 //
 // Knobs: TERMS (p+y), F, EPOCHS, ALPHA (0.5), REG_BU, REG_BI, REG_P, REG_Q, REG_Y,
@@ -850,7 +914,7 @@ fn vfeat1() {
 // nb: NB_K (50), NB_START (first epoch that fits w, c; 1), NB_FREEZE (1: p, q, y
 // stay fixed from NB_START on, only the biases and w, c are fitted), REG_NW, REG_NC, NB_SIM, NB_STAT0, NB_STAT2, NB_SHR (100); ud: REG_UD.
 //
-//   TERMS=p+y F=20 EPOCHS=5 cargo run --release --bin s3 -- integ s3-integ20 -p pipeline-3.toml --smoke
+//   TERMS=p+y F=20 EPOCHS=5 cargo run --release --bin fit -- integ s3-integ20 -p pipeline-3.toml --smoke
 
 fn integ() {
     use netflix_prize::{
@@ -915,4 +979,59 @@ fn integ() {
     let epsave = ev("EPSAVE", 0) != 0;
     fit2!(IntegModel, cfg, &args.target, &args.name, split, save_train: true,
           save_probe_each_epoch: epsave, skip_fulltrain: !args.final_run);
+}
+
+// ============================================================================
+// split_1: the old split's legacy models
+// ============================================================================
+// Models only the old split's columns need, run through `misc` (and later their own
+// subcommands for the ports from src/old: the tsvd family, rbmb/rbmr, bkbias, ...).
+
+/// `s1-rbmx*` (misc): the legacy conditional RBM with the mini MF in the visible
+/// bias (rbmx2.rs), which made the old split's rbmx-* columns; defaults are
+/// rbmx-16's. A function of its own so the deprecation allowance covers the
+/// whole use of the legacy module.
+#[allow(deprecated)]
+fn rbmx_legacy(args: &netflix_prize::lab::LabArgs, split: netflix_prize::Split) {
+    use netflix_prize::{fit2, lab::ev, rbmx2::{Rbmx2Config, Rbmx2Model}, rx::{HiddenType, VisibleType}};
+    let (n, t) = (&args.name, &args.target);
+    let fin = !args.final_run;
+    let ep = |d: usize| if args.sampled() { 1 } else { ev("EPOCHS", d) };
+    let epsave = ev("EPSAVE", 0) != 0;
+    let cfg = Rbmx2Config {
+        hidden_type: HiddenType::Bernoulli,
+        visible_type: VisibleType::Softmax,
+        temperature: 1.0,
+        n_hidden: ev("H", 16),
+        n_epochs: ep(18),
+        seed: ev("SEED", 128),
+        shuffle_users: true,
+        init_sigma: 0.01,
+        batch_size: ev("BATCH", 500),
+        lr: ev("LR", 0.01),
+        momentum: ev("MOM", 0.9),
+        weight_decay: ev("WD", 0.001),
+        lr_bu: ev("LR_BU", 0.001),
+        wd_bu: 0.01,
+        lr_but: ev("LR_BUT", 0.0005),
+        wd_but: 0.01,
+        cd_start: 1,
+        cd_inc_every: ev("CD_EVERY", 3),
+        cd_inc_by: 1,
+        cd_max: ev("CD_MAX", 5),
+        use_conditional: ev("COND", 1) != 0,
+        r_include_pr_all: true,
+        save_w: false,
+        n_factors: None,
+        mf_dim: ev("MF_DIM", 4),
+        lr_mf_u: ev("LR_MF_U", 0.001),
+        lr_mf_i: ev("LR_MF_I", 0.0005),
+        wd_mf: ev("WD_MF", 0.01),
+        n_freq_bins: 0,
+        lr_bif: 0.0,
+        wd_bif: 0.01,
+        lr_bif_bug: false,
+    };
+    fit2!(Rbmx2Model, cfg, t, n, split, save_train: true,
+          save_probe_each_epoch: epsave, skip_fulltrain: fin);
 }

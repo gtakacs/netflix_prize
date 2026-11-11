@@ -28,10 +28,11 @@
 //
 // Knobs (env, see `config_from_env`): F, EPOCHS, SEED, NBU, NBM, NSU, NBR (k),
 // SORTED, DECAY, TIME, LR_<group> / REG_<group> (bu0 .. yf), LR_SCALE, REG_SCALE,
-// AQ/BQ, AP/BP, AY/BY, SIGF, ALPHA_W, BETA_W, BL_M/BL_U/BL_S, ENV, SIGMA.
+// AQ/BQ, AP/BP, AY/BY, SIGF, ALPHA_W, BETA_W, BL_M/BL_U/BL_S, ENV, SIGMA, BINIT / BSIG
+// (init of the bilinear multipliers bu1 / bm1 / s1; BINIT=0, the default, leaves those terms dead).
 // Training is single-threaded SGD.
 //
-//   F=200 NBR=445 SIGF=2 TIME=1 LR_SCALE=1.5 EPOCHS=28 cargo run --release --bin s3 -- misc s3-bk4-f200x -p pipeline-3.toml
+//   F=200 NBR=445 SIGF=2 TIME=1 LR_SCALE=1.5 EPOCHS=28 cargo run --release --bin fit -- misc s3-bk4-f200x -p pipeline-3.toml
 
 use crate::{
     Dataset, MaskedDataset, Regressor, calc_gbias, calc_user_offsets, get_users,
@@ -42,6 +43,7 @@ use crate::{
 use ndarray::{Array1, Array2};
 use ndarray_npy::read_npy;
 use rand::{SeedableRng, rngs::StdRng};
+use rand_distr::{Distribution, Normal};
 
 const NB: usize = 36;      // f36 / t36 bins
 const FMAX: f32 = 5446.0;  // largest per-day rating count in the Netflix data
@@ -96,6 +98,11 @@ pub struct Bk4Config {
     pub bl_m: f32, pub bl_u: f32, pub bl_s: f32,
     pub envelope: bool,
     pub sigma_init: f32,
+    // Init of the bilinear multipliers bu1, bm1, s1 (their partners buf/but, bmf/bmt, sf/st start
+    // at 0): 0 = all at 0, which keeps every one of these 9 groups at 0 for good (zero gradients;
+    // the behaviour of every BK4 column before 2026-11-07); 1 = 1 + N(0, bsig); 2 = N(0, bsig).
+    pub binit: u8,
+    pub bsig: f32,
 }
 
 #[inline]
@@ -372,13 +379,20 @@ impl Regressor for Bk4Model {
         let n_ud = ud.n_total();
         crate::teeln!("bk4: {} users, {} items, {} user-days, days {day0}..{day1}, baseline2 done", nu_n, ni, n_ud);
 
+        // the bilinear multipliers, from their own RNG so that BINIT leaves p0 / q0 unchanged
+        let mult = |n: usize, salt: u64| -> Vec<f32> {
+            if cfg.binit == 0 { return vec![0.0; n]; }
+            let mut r = StdRng::seed_from_u64(cfg.seed ^ salt);
+            let d = Normal::<f32>::new(if cfg.binit == 1 { 1.0 } else { 0.0 }, cfg.bsig).unwrap();
+            (0..n).map(|_| d.sample(&mut r)).collect()
+        };
         let mut model = Self {
             cfg, mu, n_feat: nf,
-            bu0: vec![0.0; nu_n], bu1: vec![0.0; nu_n * cfg.nbu], but: vec![0.0; tsz * cfg.nbu],
+            bu0: vec![0.0; nu_n], bu1: mult(nu_n * cfg.nbu, 0xB1), but: vec![0.0; tsz * cfg.nbu],
             buf: vec![0.0; NB * cfg.nbu], bu2: vec![0.0; n_ud],
-            bm0: vec![0.0; ni], bm1: vec![0.0; ni * cfg.nbm], bmt: vec![0.0; tsz * cfg.nbm],
+            bm0: vec![0.0; ni], bm1: mult(ni * cfg.nbm, 0xB2), bmt: vec![0.0; tsz * cfg.nbm],
             bmf: vec![0.0; NB * cfg.nbm],
-            s0: vec![0.0; nu_n], s1: vec![0.0; nu_n * cfg.nsu], st: vec![0.0; tsz * cfg.nsu],
+            s0: vec![0.0; nu_n], s1: mult(nu_n * cfg.nsu, 0xB3), st: vec![0.0; tsz * cfg.nsu],
             sf: vec![0.0; NB * cfg.nsu], s2: vec![0.0; n_ud],
             q0, q1: Array2::zeros((ni, nf)), p0, p1: Array2::zeros((nu_n, nf)),
             y0: Array2::zeros((ni, nf)), y1: Array2::zeros((ni, nf)),
@@ -670,5 +684,7 @@ pub fn config_from_env() -> Bk4Config {
         bl_m: ev("BL_M", 25.0), bl_u: ev("BL_U", 10.0), bl_s: ev("BL_S", 20.0),
         envelope: ev("ENV", 0) != 0,
         sigma_init: ev("SIGMA", 0.01),
+        binit: ev("BINIT", 0),
+        bsig: ev("BSIG", 0.1),
     }
 }
