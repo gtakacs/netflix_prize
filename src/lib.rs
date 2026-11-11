@@ -213,6 +213,7 @@ pub mod tsvdx5;
 pub mod tsvdx6;
 pub mod tx;
 pub mod uknn;
+pub mod vfeat0;
 pub mod vfeat1;
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@
 //   dnn      the dnn (embedding MLP + MF branch)
 //   nade     CF-NADE
 //   nbstats  item-item sim matrices for the knn-<tag> and kimp-<tag> chain stages
+//   vfeat0   the old split's voting features that vfeat1 does not reproduce
 //   vfeat1   the voting features
 //   integ    the integrated model trained by ALS (IntegModel; NSVD1 with TERMS=y)
 //
@@ -27,7 +28,7 @@
 
 const SUBCOMMANDS: &[(&str, fn())] = &[
     ("tx", tx), ("rbm", rbm), ("misc", misc), ("chain", chain), ("attn", attn),
-    ("dnn", dnn), ("nade", nade), ("nbstats", nbstats), ("vfeat1", vfeat1), ("integ", integ),
+    ("dnn", dnn), ("nade", nade), ("nbstats", nbstats), ("vfeat0", vfeat0), ("vfeat1", vfeat1), ("integ", integ),
 ];
 
 fn main() {
@@ -798,6 +799,21 @@ fn nbstats() {
     } else {
         nbstats::save_nbstats_split(rtg, stat, args.split());
     }
+}
+
+// ----------------------------------------------------------------------------
+// vfeat0
+// ----------------------------------------------------------------------------
+// Voting features: vfeat0, the old split's set (voting-old.toml) that vfeat1 does not
+// reproduce (src/vfeat0.rs); files in <preds>/vf0/.
+//
+//   cargo run --release --bin fit -- vfeat0 s1-vfeat0 -p pipeline-1.toml
+
+fn vfeat0() {
+    use netflix_prize::{lab::LabArgs, vfeat0::save_vfeat0};
+
+    let args = LabArgs::parse();
+    save_vfeat0(&args.name, args.split());
 }
 
 // ----------------------------------------------------------------------------

@@ -334,6 +334,10 @@ mod fx1 {
             }
 
             let global_mean = total_sum / total_cnt as f64;
+            // Known quirk, kept on purpose: `total_ratings` is the SUM of the ratings, not
+            // their count, so the prior of vf016_user_avg_movie_pop (`global_avg_movie_cnt`
+            // below) is ~3.6x the mean movie count (the old split's fwls C5 used the count).
+            // vf016 feeds the split_3 / new blends, so it stays for reproducibility.
             let total_ratings = total_sum;
 
             let user_distinct_dates: Vec<u32> = user_date_counts.iter()
