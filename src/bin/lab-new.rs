@@ -286,6 +286,7 @@ fn main() {
                 sigma_y: 0.005,
                 init_with_user_std: false,
                 save_ifeat: true, // item factors for the `__knnf` chains below
+                save_ufeat: false,
             };
             let target: &'static str = format!("{}*{}", weight, residual_base).leak();
             fit2!(AsymModel, cfg, target, job_name, SPLIT_NEW, save_train: true);

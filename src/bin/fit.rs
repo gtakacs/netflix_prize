@@ -262,8 +262,11 @@ fn misc() {
     let fin = !args.final_run;
     let ep = |d: usize| if args.sampled() { 1 } else { ev("EPOCHS", d) };
     let epsave = ev("EPSAVE", 0) != 0;
-    // The family is the name after its split prefix (`s3-`, or `s1-` for split_1).
-    let fam = n.strip_prefix("s3-").or_else(|| n.strip_prefix("s1-")).unwrap_or(n);
+    // The family is the name after its split prefix (`s3-`, or `s1-` for split_1); for a
+    // multi-stage name `<base>__<stage>` (a model fit on a residual given by --target) it is
+    // the last stage.
+    let last = n.rsplit_once("__").map_or(n.as_str(), |(_, stage)| stage);
+    let fam = last.strip_prefix("s3-").or_else(|| last.strip_prefix("s1-")).unwrap_or(last);
 
     if fam.starts_with("mf") && !fam.starts_with("mfrbm") {
         let cfg = MfConfig {
@@ -280,6 +283,7 @@ fn misc() {
             item_feat_npy: None,
             ordinal_head: None,
             save_ifeat: ev("IFEAT", 0) != 0,
+            save_ufeat: ev("UFEAT", 0) != 0,
         };
         fit2!(MfModel, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin);
@@ -296,6 +300,7 @@ fn misc() {
             sigma_i: 0.005, sigma_y: 0.005,
             init_with_user_std: false,
             save_ifeat: ev("IFEAT", 0) != 0,
+            save_ufeat: ev("UFEAT", 0) != 0,
         };
         fit2!(AsymModel, cfg, t, n, split, save_train: true,
               save_probe_each_epoch: epsave, skip_fulltrain: fin);
@@ -613,6 +618,7 @@ fn chain() {
             sigma_y: 0.005,
             init_with_user_std: false,
             save_ifeat: true,
+            save_ufeat: ev("UFEAT", 0) != 0,
         };
         fit2!(AsymModel, cfg, &target, n, split, save_train: true,
               save_probe_each_epoch: ev("EPSAVE", 0) != 0, skip_fulltrain: fin);

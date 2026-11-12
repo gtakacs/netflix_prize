@@ -796,6 +796,7 @@ fn main() {
             sigma_y: 0.005,
             init_with_user_std: false,
             save_ifeat: true,
+            save_ufeat: false,
             };
             fit2!(AsymModel, cfg, "rbmx2-12", job_name, SPLIT_NEW, save_train: true);
         }

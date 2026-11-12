@@ -25,6 +25,7 @@ fn run_mf(n_feat: usize, n_epochs: usize, job_name: &str) {
         item_feat_npy: None,
         ordinal_head: None,
         save_ifeat: false,
+        save_ufeat: false,
     };
     fit2!(MfModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
 }
@@ -60,6 +61,7 @@ fn main() {
                 sigma_y: 0.005,
                 init_with_user_std: false,
                 save_ifeat: false,
+                save_ufeat: false,
             };
             fit2!(
                 AsymModel, cfg, "mf-61", job_name, SPLIT_NEW,

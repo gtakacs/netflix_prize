@@ -36,6 +36,7 @@ pub struct AsymConfig {
 
     pub init_with_user_std: bool, // initialize user_scaling with per-user stddev (else 1.0)
     pub save_ifeat: bool,         // save ifeat as `.ifeat.<ds>.npy` artifact
+    pub save_ufeat: bool,         // save the user vectors su (ycache) as `.ufeat.<ds>.npy`
 }
 
 pub struct AsymModel {
@@ -147,6 +148,11 @@ impl Regressor for AsymModel {
             let path = format!("{}/{}.ifeat.{}.npy", preds_dir, model_name, tr_set);
             write_npy(&path, &self.ifeat).unwrap();
             crate::teeln!("Saved item factors to {}", path);
+        }
+        if self.cfg.save_ufeat {
+            let path = format!("{}/{}.ufeat.{}.npy", preds_dir, model_name, tr_set);
+            write_npy(&path, &self.ycache).unwrap();
+            crate::teeln!("Saved user factors to {}", path);
         }
     }
 

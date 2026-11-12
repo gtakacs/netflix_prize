@@ -41,6 +41,7 @@ pub struct MfConfig {
 
     pub ordinal_head: Option<OrdinalHeadConfig>, // optional ordinal head (None = MSE loss)
     pub save_ifeat: bool,     // save ifeat as `.ifeat.<ds>.npy` artifact
+    pub save_ufeat: bool,     // save ufeat (user factors pu) as `.ufeat.<ds>.npy`
 }
 
 pub struct MfModel {
@@ -94,6 +95,11 @@ impl Regressor for MfModel {
             let path = format!("{}/{}.ifeat.{}.npy", preds_dir, model_name, tr_set);
             write_npy(&path, &self.ifeat).unwrap();
             crate::teeln!("Saved item factors to {}", path);
+        }
+        if self.cfg.save_ufeat {
+            let path = format!("{}/{}.ufeat.{}.npy", preds_dir, model_name, tr_set);
+            write_npy(&path, &self.ufeat).unwrap();
+            crate::teeln!("Saved user factors to {}", path);
         }
     }
 
