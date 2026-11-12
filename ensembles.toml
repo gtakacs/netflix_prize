@@ -93,6 +93,53 @@ groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 "3/*" = { quiz = 0.857567 }
 ensemble = { quiz = 0.855883 }
 
+# The cross-split blend with split_1 in place of the old split: split_1 (the old split's train /
+# probe, rebuilt as pipeline-1.toml jobs; 125 base columns + 17 blends), new and split_3, as cross3.
+[[ensemble]]
+name        = "cross1"
+description = "cross-split quiz blend of split_1, new and split_3"
+lambda      = 1000
+tolerance   = 1e-5
+
+[[ensemble.source]]
+split  = "1"
+groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
+
+[[ensemble.source]]
+split  = "new"
+groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
+
+[[ensemble.source]]
+split  = "3"
+groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
+
+[ensemble.expected]
+"1/tx" = { quiz = 0.865269 }
+"1/rbm" = { quiz = 0.869343 }
+"1/nn" = { quiz = 0.876351 }
+"1/other" = { quiz = 0.873113 }
+"1/gbmblend" = { quiz = 0.860568 }
+"1/mlpblend" = { quiz = 0.859542 }
+"1/fwlsblend" = { quiz = 0.858692 }
+"new/tx" = { quiz = 0.865052 }
+"new/rbm" = { quiz = 0.870671 }
+"new/nn" = { quiz = 0.875870 }
+"new/other" = { quiz = 0.877464 }
+"new/gbmblend" = { quiz = 0.860027 }
+"new/mlpblend" = { quiz = 0.858995 }
+"new/fwlsblend" = { quiz = 0.858001 }
+"3/tx" = { quiz = 0.864459 }
+"3/rbm" = { quiz = 0.869937 }
+"3/nn" = { quiz = 0.880428 }
+"3/other" = { quiz = 0.873464 }
+"3/gbmblend" = { quiz = 0.860124 }
+"3/mlpblend" = { quiz = 0.858371 }
+"3/fwlsblend" = { quiz = 0.858083 }
+"1/*" = { quiz = 0.858291 }
+"new/*" = { quiz = 0.857715 }
+"3/*" = { quiz = 0.857567 }
+ensemble = { quiz = 0.856033 }
+
 # Single split, fitted on the probe labels: the cheap bench a new column is
 # measured on. It needs only the probex predictions, so an experiment can be
 # judged before it has run its fulltrain -> qual phase.
@@ -159,6 +206,46 @@ gbmblend = { probe = 0.868855, quiz = 0.859942 }
 mlpblend = { probe = 0.868091, quiz = 0.859109 }
 fwlsblend = { probe = 0.868043, quiz = 0.858110 }
 ensemble = { probe = 0.867267, quiz = 0.858160 }
+
+# Split_1 only, fitted on the probe labels: the single-split bench of split_1 (the old split's
+# train / probe, rebuilt as pipeline-1.toml jobs): the 125 base columns and their blends.
+[[ensemble]]
+name        = "s1"
+description = "split_1 only, fitted on probe"
+lambda      = 1000
+tolerance   = 1e-5
+
+[[ensemble.source]]
+split  = "1"
+groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
+
+[ensemble.expected]
+tx = { probe = 0.874727, quiz = 0.865385 }
+rbm = { probe = 0.878675, quiz = 0.869491 }
+nn = { probe = 0.885648, quiz = 0.876513 }
+other = { probe = 0.882452, quiz = 0.873321 }
+gbmblend = { probe = 0.869520, quiz = 0.860578 }
+mlpblend = { probe = 0.868229, quiz = 0.859690 }
+fwlsblend = { probe = 0.867923, quiz = 0.858710 }
+ensemble = { probe = 0.867445, quiz = 0.858525 }
+
+# Split_1 base predictors only (no blend columns), fitted on probe.
+[[ensemble]]
+name        = "s1base"
+description = "split_1 base predictors only (tx, rbm, nn, other), fitted on probe"
+lambda      = 1000
+tolerance   = 1e-5
+
+[[ensemble.source]]
+split  = "1"
+groups = ["tx", "rbm", "nn", "other"]
+
+[ensemble.expected]
+tx = { probe = 0.874727, quiz = 0.865385 }
+rbm = { probe = 0.878675, quiz = 0.869491 }
+nn = { probe = 0.885648, quiz = 0.876513 }
+other = { probe = 0.882452, quiz = 0.873321 }
+ensemble = { probe = 0.871565, quiz = 0.862309 }
 
 # Split_3 base predictors only (no blend columns), fitted on probe_3: what the base
 # predictors do on their own.

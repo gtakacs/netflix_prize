@@ -1141,3 +1141,378 @@ jobtype = "vfeat"
 voting = ["vf0_all"]
 inputs = ["src/bin/fit.rs", "src/vfeat0.rs"]
 cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=16 ./target/release/fit vfeat0 {name} -p pipeline-1.toml --preds {preds}"
+
+# --- Exotic small chains (2026-11-11, user): each starts on a partial residual of a split_1 column of
+# another family (W0 * base), every further stage on a partial residual of the previous one (--target
+# W * <previous>; the w<NN> tag in the name is that weight), ending in a kNN stage. fit misc picks the
+# family from the last __ segment of the name.
+# L1: on s1-bk4-p200
+
+[jobs."s1-bk4-p200__integ8w06"]
+jobtype = "s3model_base"
+runner = "integ"
+env = "F=8 TERMS=p+y EPOCHS=10"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.6*s1-bk4-p200"]
+
+[jobs."s1-bk4-p200__integ8w06__tx16w07"]
+jobtype = "s3model_base"
+runner = "tx"
+env = "RAYON_NUM_THREADS=1 EPOCHS=20 NBR=0 F=16 BETA=0.6 TBINS=8 FBINS=4"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.7*s1-bk4-p200__integ8w06"]
+
+[jobs."s1-bk4-p200__integ8w06__tx16w07__bk1-6w08"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=20 F=6 NBR=0 LR_SCALE=2"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.8*s1-bk4-p200__integ8w06__tx16w07"]
+
+[jobs."s1-bk4-p200__integ8w06__tx16w07__bk1-6w08__knn-25m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=7.5 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+# L2: on s1-nrbm400lr4
+
+[jobs."s1-nrbm400lr4__tx4w05"]
+jobtype = "s3model_base"
+runner = "tx"
+env = "RAYON_NUM_THREADS=1 EPOCHS=20 NBR=0 F=4 REG_U=0.5 REG_I=0.05"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.5*s1-nrbm400lr4"]
+
+[jobs."s1-nrbm400lr4__tx4w05__integ16w05"]
+jobtype = "s3model_base"
+runner = "integ"
+env = "F=16 TERMS=p+y+ud EPOCHS=10"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.5*s1-nrbm400lr4__tx4w05"]
+
+[jobs."s1-nrbm400lr4__tx4w05__integ16w05__asym-8"]
+jobtype = "s3model_base"
+runner = "chain"
+env = "W=0.9"
+extras = ["@train_preds"]
+
+[jobs."s1-nrbm400lr4__tx4w05__integ16w05__asym-8__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+# L3: on s1-tsvdx5-350s
+
+[jobs."s1-tsvdx5-350s__bk3-4w07"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=20 F=4"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.7*s1-tsvdx5-350s"]
+
+[jobs."s1-tsvdx5-350s__bk3-4w07__mf-12w06"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=16 F=12 REG_I=0.02 REG_U=0.1 SHUFFLE=0"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.6*s1-tsvdx5-350s__bk3-4w07"]
+
+[jobs."s1-tsvdx5-350s__bk3-4w07__mf-12w06__tx8w07"]
+jobtype = "s3model_base"
+runner = "tx"
+env = "RAYON_NUM_THREADS=1 EPOCHS=20 NBR=0 F=8 BETA=0.1 TBINS=64"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.7*s1-tsvdx5-350s__bk3-4w07__mf-12w06"]
+
+[jobs."s1-tsvdx5-350s__bk3-4w07__mf-12w06__tx8w07__knn-25c"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy"]
+# L4: on s1-attn48
+
+[jobs."s1-attn48__knn-25sw05"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "KN_K=25 KN_SCALE=2.5 KN_SIM=support KN_STAT0=bin_supp KN_TAU=0.05"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.5*s1-attn48"]
+inputs = ["src/bin/fit.rs", "sim/bin_supp.{tr}.npy", "sim/bin_supp.{fulltrain_tr}.npy"]
+
+[jobs."s1-attn48__knn-25sw05__tx12w06"]
+jobtype = "s3model_base"
+runner = "tx"
+env = "RAYON_NUM_THREADS=1 EPOCHS=20 NBR=0 F=12"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.6*s1-attn48__knn-25sw05"]
+
+[jobs."s1-attn48__knn-25sw05__tx12w06__als-4w08"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=10 F=4"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.8*s1-attn48__knn-25sw05__tx12w06"]
+
+[jobs."s1-attn48__knn-25sw05__tx12w06__als-4w08__knn3"]
+jobtype = "s3model"
+runner = "chain"
+extras = ["@train_preds"]
+# L5: on s1-nade16s
+
+[jobs."s1-nade16s__als-2w06"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=10 F=2"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.6*s1-nade16s"]
+
+[jobs."s1-nade16s__als-2w06__bk4-10w08"]
+jobtype = "s3model_base"
+runner = "misc"
+env = "EPOCHS=20 F=10 NBR=0 BINIT=2 ENV=1 LR_SCALE=1.5 SIGF=2 TIME=1 RAYON_NUM_THREADS=1 LR_q0=0.00119974 LR_s1=0.00107964 REG_y0=0.0213608 LR_w=0.000323904 REG_sf=0.00223922 LR_bm0=0.000997952 LR_s2=0.00222128 BSIG=0.001 LR_p0=0.00858214 REG_p1=0.046209 LR_bmt=0.000684533 LR_bm1=0.00112168"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.8*s1-nade16s__als-2w06"]
+
+[jobs."s1-nade16s__als-2w06__bk4-10w08__nlpp"]
+jobtype = "s3model_base"
+runner = "chain"
+extras = ["@train_preds"]
+
+[jobs."s1-nade16s__als-2w06__bk4-10w08__nlpp__knn-25m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=7.5 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+# L6: on s1-bknbr-50
+
+[jobs."s1-bknbr-50__integ4w08"]
+jobtype = "s3model_base"
+runner = "integ"
+env = "F=4 TERMS=ud+dr+fq EPOCHS=10"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.8*s1-bknbr-50"]
+
+[jobs."s1-bknbr-50__integ4w08__tx24w05"]
+jobtype = "s3model_base"
+runner = "tx"
+env = "RAYON_NUM_THREADS=1 EPOCHS=20 NBR=0 F=24 WF=1.4"
+extras = ["@train_preds"]
+extra_args = ["--target", "0.5*s1-bknbr-50__integ4w08"]
+
+[jobs."s1-bknbr-50__integ4w08__tx24w05__knn-25m"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=25 KN_SCALE=7.5 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_TAU=0.05"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
+
+# --- Second-level blends (gbm / mlp / fwls) over the base columns (2026-11-12) ---
+# The split_3 round-3 K-fold blends on the 125 models-1.toml base columns (tx, rbm, nn, other),
+# one prediction per seed ({name}-s<seed>). Job names reuse the split_3 ones, so blend_config(NAME)
+# in gbm.rs / mlp.rs gives the same tuned params; --cv std --folds K: fold k trains on the other
+# K-1 folds. Voting groups in voting-1.toml (vf1_core = split_3's subset1-4 as one group).
+[defaults.gbmblend]
+models        = "models-1.toml"
+voting_models = "voting-1.toml"
+inputs        = ["src/bin/gbm.rs"]
+inputs_from   = ["s1-vfeat1"]
+outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
+cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-1.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
+
+[defaults.mlpblend]
+models        = "models-1.toml"
+voting_models = "voting-1.toml"
+inputs        = ["src/bin/mlp.rs"]
+inputs_from   = ["s1-vfeat1"]
+outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
+cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-1.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
+
+[defaults.fwlsblend]
+models        = "models-1.toml"
+voting_models = "voting-1.toml"
+inputs        = ["src/bin/fwls.rs"]
+inputs_from   = ["s1-vfeat1"]
+outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
+cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-1.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
+
+# Context features from base-predictor statistics (src/bin/predfeat.rs): spread of the base
+# columns overall and per family, family-mean differences (voting groups fwls57 / vfx9).
+[jobs.s1-predfeat]
+inputs_from = ["ingest"]
+inputs = ["src/bin/predfeat.rs"]
+outputs = ["{preds}/vfx/std_all.{pr}.npy", "{preds}/vfx/std_all.{fulltrain_pr}.npy", "{preds}/vfx/range_all.{pr}.npy", "{preds}/vfx/range_all.{fulltrain_pr}.npy", "{preds}/vfx/mean_c.{pr}.npy", "{preds}/vfx/mean_c.{fulltrain_pr}.npy", "{preds}/vfx/std_tx.{pr}.npy", "{preds}/vfx/std_tx.{fulltrain_pr}.npy", "{preds}/vfx/std_rbm.{pr}.npy", "{preds}/vfx/std_rbm.{fulltrain_pr}.npy", "{preds}/vfx/std_nn.{pr}.npy", "{preds}/vfx/std_nn.{fulltrain_pr}.npy", "{preds}/vfx/std_other.{pr}.npy", "{preds}/vfx/std_other.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_rbm.{pr}.npy", "{preds}/vfx/d_tx_rbm.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_nn.{pr}.npy", "{preds}/vfx/d_tx_nn.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_other.{pr}.npy", "{preds}/vfx/d_tx_other.{fulltrain_pr}.npy"]
+cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-1.toml -t models-1.toml --groups tx,rbm,nn,other"
+
+# Round 1 (2026-11-12): gbc2k4 / mlpr3k4 / mlpr3vk4 / fwlsb57k8 as on split_3; mlpr3k4v0 is
+# mlpr3k4 with the 12 vfeat0 features (the old split's own context features) next to vf1_core.
+[jobs.gbc2k4]
+jobtype = "gbmblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core"]
+seeds = [1]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.mlpr3k4]
+jobtype = "mlpblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core"]
+seeds = [1, 2]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.mlpr3vk4]
+jobtype = "mlpblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core", "vfx9"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeat"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.mlpr3k4v0]
+jobtype = "mlpblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core", "vf0_all"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-vfeat0"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.fwlsb57k8]
+jobtype = "fwlsblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["fwls57"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeat"]
+extra_args = ["--lambda", "3000", "--folds", "8", "--solver", "lapack"]
+
+# Round 2 (2026-11-12): a second gbm seed (gbc2k4o = gbc2k4 params), fwlsb57k8 + the vfeat0
+# features, and the split_3 stacked fwls (fwls15k4, fwls33k16) on the base + the round 1-2
+# gbm / mlp blends (named with -m, so models-1.toml stays the base set). Stacked on K-fold
+# blends, their probe RMSE is optimistic (blend lab 2026-10-29): judged by quiz as well.
+[jobs.gbc2k4o]
+jobtype = "gbmblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core"]
+seeds = [2]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.fwlsb57k8v0]
+jobtype = "fwlsblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["fwls57", "vf0_all"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-vfeat0", "s1-predfeat"]
+extra_args = ["--lambda", "3000", "--folds", "8", "--solver", "lapack"]
+
+[jobs.fwls15k4]
+jobtype = "fwlsblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["fwls15"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "gbc2k4", "gbc2k4o", "mlpr3k4", "mlpr3vk4", "mlpr3k4v0"]
+extra_args = ["--lambda", "30", "--folds", "4", "--solver", "lapack", "-m", "gbc2k4-s1", "-m", "gbc2k4o-s2", "-m", "mlpr3k4-s1", "-m", "mlpr3k4-s2", "-m", "mlpr3vk4-s1", "-m", "mlpr3k4v0-s1"]
+
+[jobs.fwls33k16]
+jobtype = "fwlsblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["fwls33"]
+seeds = [2]
+inputs_from = ["s1-vfeat1", "s1-predfeat", "gbc2k4", "gbc2k4o", "mlpr3k4", "mlpr3vk4", "mlpr3k4v0"]
+extra_args = ["--lambda", "10000", "--folds", "16", "--solver", "lapack", "-m", "gbc2k4-s1", "-m", "gbc2k4o-s2", "-m", "mlpr3k4-s1", "-m", "mlpr3k4-s2", "-m", "mlpr3vk4-s1", "-m", "mlpr3k4v0-s1"]
+
+# --- Latent features for the blends (2026-11-12) ---
+# Small models whose user / item vectors become per-rating blend inputs (predfeat --latent-*,
+# {preds}/lat/), from the training-set model only (no --final: the qual rows get the same
+# model's vectors). s1-tx20lat / s1-rbm50lat are split_3's s3-tx20lat / s3-rbm50lat; s1-mf16lat
+# (pu, qi) and s1-asym-16lat (su = the NSVD user vector, qi) add other factor kinds. The item
+# factors of s1-mf-64u and s1-mf-64u__asym-16 (base columns, IFEAT already on disk) are read as is.
+
+[jobs."s1-tx20lat"]
+inputs_from = ["ingest"]
+inputs = ["src/bin/fit.rs"]
+outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.out", "{preds}/{name}.ufeat.{tr}.npy", "{preds}/{name}.ifeat.{tr}.npy"]
+cmd = "cargo build --release --bin fit && OPENBLAS_NUM_THREADS=4 RAYON_NUM_THREADS=1 EPOCHS=20 F=20 IFEAT=1 LR_W=0.002 NBR=25 UFEAT=1 WF=0.8 ./target/release/fit tx {name} -p pipeline-1.toml --preds {preds}"
+
+[jobs."s1-rbm50lat"]
+inputs_from = ["ingest"]
+inputs = ["src/bin/fit.rs"]
+outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.out", "{preds}/{name}.ufeat.{tr}.npy"]
+cmd = "cargo build --release --bin fit && OPENBLAS_NUM_THREADS=4 RAYON_NUM_THREADS=8 EPOCHS=20 H=50 UFEAT=1 ./target/release/fit rbm {name} -p pipeline-1.toml --preds {preds}"
+
+[jobs."s1-mf16lat"]
+inputs_from = ["ingest"]
+inputs = ["src/bin/fit.rs"]
+outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.out", "{preds}/{name}.ufeat.{tr}.npy", "{preds}/{name}.ifeat.{tr}.npy"]
+cmd = "cargo build --release --bin fit && OPENBLAS_NUM_THREADS=4 EPOCHS=20 F=16 IFEAT=1 UFEAT=1 ./target/release/fit misc {name} -p pipeline-1.toml --preds {preds}"
+
+[jobs."s1-asym-16lat"]
+inputs_from = ["ingest"]
+inputs = ["src/bin/fit.rs"]
+outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.out", "{preds}/{name}.ufeat.{tr}.npy", "{preds}/{name}.ifeat.{tr}.npy"]
+cmd = "cargo build --release --bin fit && OPENBLAS_NUM_THREADS=4 EPOCHS=10 IFEAT=1 UFEAT=1 ./target/release/fit misc {name} -p pipeline-1.toml --preds {preds}"
+
+[jobs.s1-predfeatlat]
+inputs_from = ["ingest", "s1-tx20lat", "s1-rbm50lat", "s1-mf16lat", "s1-asym-16lat", "s1-mf-64u", "s1-mf-64u__asym-16"]
+inputs = ["src/bin/predfeat.rs"]
+outputs = ["{preds}/lat/s1-tx20lat.u00.{pr}.npy", "{preds}/lat/s1-tx20lat.u00.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u01.{pr}.npy", "{preds}/lat/s1-tx20lat.u01.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u02.{pr}.npy", "{preds}/lat/s1-tx20lat.u02.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u03.{pr}.npy", "{preds}/lat/s1-tx20lat.u03.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u04.{pr}.npy", "{preds}/lat/s1-tx20lat.u04.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u05.{pr}.npy", "{preds}/lat/s1-tx20lat.u05.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u06.{pr}.npy", "{preds}/lat/s1-tx20lat.u06.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u07.{pr}.npy", "{preds}/lat/s1-tx20lat.u07.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u08.{pr}.npy", "{preds}/lat/s1-tx20lat.u08.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u09.{pr}.npy", "{preds}/lat/s1-tx20lat.u09.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u10.{pr}.npy", "{preds}/lat/s1-tx20lat.u10.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u11.{pr}.npy", "{preds}/lat/s1-tx20lat.u11.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u12.{pr}.npy", "{preds}/lat/s1-tx20lat.u12.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u13.{pr}.npy", "{preds}/lat/s1-tx20lat.u13.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u14.{pr}.npy", "{preds}/lat/s1-tx20lat.u14.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u15.{pr}.npy", "{preds}/lat/s1-tx20lat.u15.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u16.{pr}.npy", "{preds}/lat/s1-tx20lat.u16.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u17.{pr}.npy", "{preds}/lat/s1-tx20lat.u17.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u18.{pr}.npy", "{preds}/lat/s1-tx20lat.u18.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.u19.{pr}.npy", "{preds}/lat/s1-tx20lat.u19.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i00.{pr}.npy", "{preds}/lat/s1-tx20lat.i00.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i01.{pr}.npy", "{preds}/lat/s1-tx20lat.i01.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i02.{pr}.npy", "{preds}/lat/s1-tx20lat.i02.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i03.{pr}.npy", "{preds}/lat/s1-tx20lat.i03.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i04.{pr}.npy", "{preds}/lat/s1-tx20lat.i04.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i05.{pr}.npy", "{preds}/lat/s1-tx20lat.i05.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i06.{pr}.npy", "{preds}/lat/s1-tx20lat.i06.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i07.{pr}.npy", "{preds}/lat/s1-tx20lat.i07.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i08.{pr}.npy", "{preds}/lat/s1-tx20lat.i08.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i09.{pr}.npy", "{preds}/lat/s1-tx20lat.i09.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i10.{pr}.npy", "{preds}/lat/s1-tx20lat.i10.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i11.{pr}.npy", "{preds}/lat/s1-tx20lat.i11.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i12.{pr}.npy", "{preds}/lat/s1-tx20lat.i12.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i13.{pr}.npy", "{preds}/lat/s1-tx20lat.i13.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i14.{pr}.npy", "{preds}/lat/s1-tx20lat.i14.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i15.{pr}.npy", "{preds}/lat/s1-tx20lat.i15.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i16.{pr}.npy", "{preds}/lat/s1-tx20lat.i16.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i17.{pr}.npy", "{preds}/lat/s1-tx20lat.i17.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i18.{pr}.npy", "{preds}/lat/s1-tx20lat.i18.{fulltrain_pr}.npy", "{preds}/lat/s1-tx20lat.i19.{pr}.npy", "{preds}/lat/s1-tx20lat.i19.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u00.{pr}.npy", "{preds}/lat/s1-rbm50lat.u00.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u01.{pr}.npy", "{preds}/lat/s1-rbm50lat.u01.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u02.{pr}.npy", "{preds}/lat/s1-rbm50lat.u02.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u03.{pr}.npy", "{preds}/lat/s1-rbm50lat.u03.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u04.{pr}.npy", "{preds}/lat/s1-rbm50lat.u04.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u05.{pr}.npy", "{preds}/lat/s1-rbm50lat.u05.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u06.{pr}.npy", "{preds}/lat/s1-rbm50lat.u06.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u07.{pr}.npy", "{preds}/lat/s1-rbm50lat.u07.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u08.{pr}.npy", "{preds}/lat/s1-rbm50lat.u08.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u09.{pr}.npy", "{preds}/lat/s1-rbm50lat.u09.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u10.{pr}.npy", "{preds}/lat/s1-rbm50lat.u10.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u11.{pr}.npy", "{preds}/lat/s1-rbm50lat.u11.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u12.{pr}.npy", "{preds}/lat/s1-rbm50lat.u12.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u13.{pr}.npy", "{preds}/lat/s1-rbm50lat.u13.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u14.{pr}.npy", "{preds}/lat/s1-rbm50lat.u14.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u15.{pr}.npy", "{preds}/lat/s1-rbm50lat.u15.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u16.{pr}.npy", "{preds}/lat/s1-rbm50lat.u16.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u17.{pr}.npy", "{preds}/lat/s1-rbm50lat.u17.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u18.{pr}.npy", "{preds}/lat/s1-rbm50lat.u18.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u19.{pr}.npy", "{preds}/lat/s1-rbm50lat.u19.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u20.{pr}.npy", "{preds}/lat/s1-rbm50lat.u20.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u21.{pr}.npy", "{preds}/lat/s1-rbm50lat.u21.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u22.{pr}.npy", "{preds}/lat/s1-rbm50lat.u22.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u23.{pr}.npy", "{preds}/lat/s1-rbm50lat.u23.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u24.{pr}.npy", "{preds}/lat/s1-rbm50lat.u24.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u25.{pr}.npy", "{preds}/lat/s1-rbm50lat.u25.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u26.{pr}.npy", "{preds}/lat/s1-rbm50lat.u26.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u27.{pr}.npy", "{preds}/lat/s1-rbm50lat.u27.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u28.{pr}.npy", "{preds}/lat/s1-rbm50lat.u28.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u29.{pr}.npy", "{preds}/lat/s1-rbm50lat.u29.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u30.{pr}.npy", "{preds}/lat/s1-rbm50lat.u30.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u31.{pr}.npy", "{preds}/lat/s1-rbm50lat.u31.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u32.{pr}.npy", "{preds}/lat/s1-rbm50lat.u32.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u33.{pr}.npy", "{preds}/lat/s1-rbm50lat.u33.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u34.{pr}.npy", "{preds}/lat/s1-rbm50lat.u34.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u35.{pr}.npy", "{preds}/lat/s1-rbm50lat.u35.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u36.{pr}.npy", "{preds}/lat/s1-rbm50lat.u36.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u37.{pr}.npy", "{preds}/lat/s1-rbm50lat.u37.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u38.{pr}.npy", "{preds}/lat/s1-rbm50lat.u38.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u39.{pr}.npy", "{preds}/lat/s1-rbm50lat.u39.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u40.{pr}.npy", "{preds}/lat/s1-rbm50lat.u40.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u41.{pr}.npy", "{preds}/lat/s1-rbm50lat.u41.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u42.{pr}.npy", "{preds}/lat/s1-rbm50lat.u42.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u43.{pr}.npy", "{preds}/lat/s1-rbm50lat.u43.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u44.{pr}.npy", "{preds}/lat/s1-rbm50lat.u44.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u45.{pr}.npy", "{preds}/lat/s1-rbm50lat.u45.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u46.{pr}.npy", "{preds}/lat/s1-rbm50lat.u46.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u47.{pr}.npy", "{preds}/lat/s1-rbm50lat.u47.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u48.{pr}.npy", "{preds}/lat/s1-rbm50lat.u48.{fulltrain_pr}.npy", "{preds}/lat/s1-rbm50lat.u49.{pr}.npy", "{preds}/lat/s1-rbm50lat.u49.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u00.{pr}.npy", "{preds}/lat/s1-mf16lat.u00.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u01.{pr}.npy", "{preds}/lat/s1-mf16lat.u01.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u02.{pr}.npy", "{preds}/lat/s1-mf16lat.u02.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u03.{pr}.npy", "{preds}/lat/s1-mf16lat.u03.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u04.{pr}.npy", "{preds}/lat/s1-mf16lat.u04.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u05.{pr}.npy", "{preds}/lat/s1-mf16lat.u05.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u06.{pr}.npy", "{preds}/lat/s1-mf16lat.u06.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u07.{pr}.npy", "{preds}/lat/s1-mf16lat.u07.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u08.{pr}.npy", "{preds}/lat/s1-mf16lat.u08.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u09.{pr}.npy", "{preds}/lat/s1-mf16lat.u09.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u10.{pr}.npy", "{preds}/lat/s1-mf16lat.u10.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u11.{pr}.npy", "{preds}/lat/s1-mf16lat.u11.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u12.{pr}.npy", "{preds}/lat/s1-mf16lat.u12.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u13.{pr}.npy", "{preds}/lat/s1-mf16lat.u13.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u14.{pr}.npy", "{preds}/lat/s1-mf16lat.u14.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.u15.{pr}.npy", "{preds}/lat/s1-mf16lat.u15.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i00.{pr}.npy", "{preds}/lat/s1-mf16lat.i00.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i01.{pr}.npy", "{preds}/lat/s1-mf16lat.i01.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i02.{pr}.npy", "{preds}/lat/s1-mf16lat.i02.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i03.{pr}.npy", "{preds}/lat/s1-mf16lat.i03.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i04.{pr}.npy", "{preds}/lat/s1-mf16lat.i04.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i05.{pr}.npy", "{preds}/lat/s1-mf16lat.i05.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i06.{pr}.npy", "{preds}/lat/s1-mf16lat.i06.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i07.{pr}.npy", "{preds}/lat/s1-mf16lat.i07.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i08.{pr}.npy", "{preds}/lat/s1-mf16lat.i08.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i09.{pr}.npy", "{preds}/lat/s1-mf16lat.i09.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i10.{pr}.npy", "{preds}/lat/s1-mf16lat.i10.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i11.{pr}.npy", "{preds}/lat/s1-mf16lat.i11.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i12.{pr}.npy", "{preds}/lat/s1-mf16lat.i12.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i13.{pr}.npy", "{preds}/lat/s1-mf16lat.i13.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i14.{pr}.npy", "{preds}/lat/s1-mf16lat.i14.{fulltrain_pr}.npy", "{preds}/lat/s1-mf16lat.i15.{pr}.npy", "{preds}/lat/s1-mf16lat.i15.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u00.{pr}.npy", "{preds}/lat/s1-asym-16lat.u00.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u01.{pr}.npy", "{preds}/lat/s1-asym-16lat.u01.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u02.{pr}.npy", "{preds}/lat/s1-asym-16lat.u02.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u03.{pr}.npy", "{preds}/lat/s1-asym-16lat.u03.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u04.{pr}.npy", "{preds}/lat/s1-asym-16lat.u04.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u05.{pr}.npy", "{preds}/lat/s1-asym-16lat.u05.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u06.{pr}.npy", "{preds}/lat/s1-asym-16lat.u06.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u07.{pr}.npy", "{preds}/lat/s1-asym-16lat.u07.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u08.{pr}.npy", "{preds}/lat/s1-asym-16lat.u08.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u09.{pr}.npy", "{preds}/lat/s1-asym-16lat.u09.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u10.{pr}.npy", "{preds}/lat/s1-asym-16lat.u10.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u11.{pr}.npy", "{preds}/lat/s1-asym-16lat.u11.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u12.{pr}.npy", "{preds}/lat/s1-asym-16lat.u12.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u13.{pr}.npy", "{preds}/lat/s1-asym-16lat.u13.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u14.{pr}.npy", "{preds}/lat/s1-asym-16lat.u14.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.u15.{pr}.npy", "{preds}/lat/s1-asym-16lat.u15.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i00.{pr}.npy", "{preds}/lat/s1-asym-16lat.i00.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i01.{pr}.npy", "{preds}/lat/s1-asym-16lat.i01.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i02.{pr}.npy", "{preds}/lat/s1-asym-16lat.i02.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i03.{pr}.npy", "{preds}/lat/s1-asym-16lat.i03.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i04.{pr}.npy", "{preds}/lat/s1-asym-16lat.i04.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i05.{pr}.npy", "{preds}/lat/s1-asym-16lat.i05.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i06.{pr}.npy", "{preds}/lat/s1-asym-16lat.i06.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i07.{pr}.npy", "{preds}/lat/s1-asym-16lat.i07.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i08.{pr}.npy", "{preds}/lat/s1-asym-16lat.i08.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i09.{pr}.npy", "{preds}/lat/s1-asym-16lat.i09.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i10.{pr}.npy", "{preds}/lat/s1-asym-16lat.i10.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i11.{pr}.npy", "{preds}/lat/s1-asym-16lat.i11.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i12.{pr}.npy", "{preds}/lat/s1-asym-16lat.i12.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i13.{pr}.npy", "{preds}/lat/s1-asym-16lat.i13.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i14.{pr}.npy", "{preds}/lat/s1-asym-16lat.i14.{fulltrain_pr}.npy", "{preds}/lat/s1-asym-16lat.i15.{pr}.npy", "{preds}/lat/s1-asym-16lat.i15.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i00.{pr}.npy", "{preds}/lat/s1-mf-64u.i00.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i01.{pr}.npy", "{preds}/lat/s1-mf-64u.i01.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i02.{pr}.npy", "{preds}/lat/s1-mf-64u.i02.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i03.{pr}.npy", "{preds}/lat/s1-mf-64u.i03.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i04.{pr}.npy", "{preds}/lat/s1-mf-64u.i04.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i05.{pr}.npy", "{preds}/lat/s1-mf-64u.i05.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i06.{pr}.npy", "{preds}/lat/s1-mf-64u.i06.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i07.{pr}.npy", "{preds}/lat/s1-mf-64u.i07.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i08.{pr}.npy", "{preds}/lat/s1-mf-64u.i08.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i09.{pr}.npy", "{preds}/lat/s1-mf-64u.i09.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i10.{pr}.npy", "{preds}/lat/s1-mf-64u.i10.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i11.{pr}.npy", "{preds}/lat/s1-mf-64u.i11.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i12.{pr}.npy", "{preds}/lat/s1-mf-64u.i12.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i13.{pr}.npy", "{preds}/lat/s1-mf-64u.i13.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i14.{pr}.npy", "{preds}/lat/s1-mf-64u.i14.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i15.{pr}.npy", "{preds}/lat/s1-mf-64u.i15.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i16.{pr}.npy", "{preds}/lat/s1-mf-64u.i16.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i17.{pr}.npy", "{preds}/lat/s1-mf-64u.i17.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i18.{pr}.npy", "{preds}/lat/s1-mf-64u.i18.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i19.{pr}.npy", "{preds}/lat/s1-mf-64u.i19.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i20.{pr}.npy", "{preds}/lat/s1-mf-64u.i20.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i21.{pr}.npy", "{preds}/lat/s1-mf-64u.i21.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i22.{pr}.npy", "{preds}/lat/s1-mf-64u.i22.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i23.{pr}.npy", "{preds}/lat/s1-mf-64u.i23.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i24.{pr}.npy", "{preds}/lat/s1-mf-64u.i24.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i25.{pr}.npy", "{preds}/lat/s1-mf-64u.i25.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i26.{pr}.npy", "{preds}/lat/s1-mf-64u.i26.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i27.{pr}.npy", "{preds}/lat/s1-mf-64u.i27.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i28.{pr}.npy", "{preds}/lat/s1-mf-64u.i28.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i29.{pr}.npy", "{preds}/lat/s1-mf-64u.i29.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i30.{pr}.npy", "{preds}/lat/s1-mf-64u.i30.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i31.{pr}.npy", "{preds}/lat/s1-mf-64u.i31.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i32.{pr}.npy", "{preds}/lat/s1-mf-64u.i32.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i33.{pr}.npy", "{preds}/lat/s1-mf-64u.i33.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i34.{pr}.npy", "{preds}/lat/s1-mf-64u.i34.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i35.{pr}.npy", "{preds}/lat/s1-mf-64u.i35.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i36.{pr}.npy", "{preds}/lat/s1-mf-64u.i36.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i37.{pr}.npy", "{preds}/lat/s1-mf-64u.i37.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i38.{pr}.npy", "{preds}/lat/s1-mf-64u.i38.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i39.{pr}.npy", "{preds}/lat/s1-mf-64u.i39.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i40.{pr}.npy", "{preds}/lat/s1-mf-64u.i40.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i41.{pr}.npy", "{preds}/lat/s1-mf-64u.i41.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i42.{pr}.npy", "{preds}/lat/s1-mf-64u.i42.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i43.{pr}.npy", "{preds}/lat/s1-mf-64u.i43.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i44.{pr}.npy", "{preds}/lat/s1-mf-64u.i44.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i45.{pr}.npy", "{preds}/lat/s1-mf-64u.i45.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i46.{pr}.npy", "{preds}/lat/s1-mf-64u.i46.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i47.{pr}.npy", "{preds}/lat/s1-mf-64u.i47.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i48.{pr}.npy", "{preds}/lat/s1-mf-64u.i48.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i49.{pr}.npy", "{preds}/lat/s1-mf-64u.i49.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i50.{pr}.npy", "{preds}/lat/s1-mf-64u.i50.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i51.{pr}.npy", "{preds}/lat/s1-mf-64u.i51.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i52.{pr}.npy", "{preds}/lat/s1-mf-64u.i52.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i53.{pr}.npy", "{preds}/lat/s1-mf-64u.i53.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i54.{pr}.npy", "{preds}/lat/s1-mf-64u.i54.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i55.{pr}.npy", "{preds}/lat/s1-mf-64u.i55.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i56.{pr}.npy", "{preds}/lat/s1-mf-64u.i56.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i57.{pr}.npy", "{preds}/lat/s1-mf-64u.i57.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i58.{pr}.npy", "{preds}/lat/s1-mf-64u.i58.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i59.{pr}.npy", "{preds}/lat/s1-mf-64u.i59.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i60.{pr}.npy", "{preds}/lat/s1-mf-64u.i60.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i61.{pr}.npy", "{preds}/lat/s1-mf-64u.i61.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i62.{pr}.npy", "{preds}/lat/s1-mf-64u.i62.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u.i63.{pr}.npy", "{preds}/lat/s1-mf-64u.i63.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i00.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i00.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i01.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i01.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i02.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i02.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i03.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i03.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i04.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i04.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i05.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i05.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i06.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i06.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i07.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i07.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i08.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i08.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i09.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i09.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i10.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i10.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i11.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i11.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i12.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i12.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i13.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i13.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i14.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i14.{fulltrain_pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i15.{pr}.npy", "{preds}/lat/s1-mf-64u__asym-16.i15.{fulltrain_pr}.npy"]
+cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-1.toml --latent-users s1-tx20lat --latent-items s1-tx20lat && ./target/release/predfeat -p pipeline-1.toml --latent-users s1-rbm50lat && ./target/release/predfeat -p pipeline-1.toml --latent-users s1-mf16lat --latent-items s1-mf16lat && ./target/release/predfeat -p pipeline-1.toml --latent-users s1-asym-16lat --latent-items s1-asym-16lat && ./target/release/predfeat -p pipeline-1.toml --latent-items s1-mf-64u && ./target/release/predfeat -p pipeline-1.toml --latent-items s1-mf-64u__asym-16"
+
+# Blends with latent inputs next to vf1_core (mlpr3x / gbc2x params, --cv std --folds 4): A = split_3's
+# mlpr3lk4 / mlpr3lak4 / gbc2lk4; B = the item factors of s1-mf-64u and its asym-16 stage (lmk4);
+# C = user + item vectors of s1-mf16lat and s1-asym-16lat (luk4).
+
+[jobs.mlpr3lk4]
+jobtype = "mlpblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core", "lattx"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.mlpr3lak4]
+jobtype = "mlpblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core", "lattx", "latrbm"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.gbc2lk4]
+jobtype = "gbmblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core", "lattx", "latrbm"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.mlpr3lmk4]
+jobtype = "mlpblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core", "latmfi", "latasymi"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.gbc2lmk4]
+jobtype = "gbmblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core", "latmfi", "latasymi"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.mlpr3luk4]
+jobtype = "mlpblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core", "latmf", "latasym"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
+extra_args = ["--cv", "std", "--folds", "4"]
+
+[jobs.gbc2luk4]
+jobtype = "gbmblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core", "latmf", "latasym"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
+extra_args = ["--cv", "std", "--folds", "4"]

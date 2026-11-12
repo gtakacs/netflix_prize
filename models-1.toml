@@ -1,9 +1,189 @@
-# Base-predictor groups for SPLIT_1 (preds_1/): the old split's base predictors
-# rebuilt as pipeline-1.toml jobs (s1-<old name>), by model family as in
-# models-old.toml; a chain or residual model sits with the family of its root.
-# Filled as the columns are reproduced and checked against preds_old/.
+# Base-predictor groups for SPLIT_1 (preds_1/): the first 125 columns of a
+# forward selection over the 182 complete split_1 columns (probe and qual preds
+# plus parameters; ridge --select, 10-fold CV x 3 seeds, lambda 1000; order in
+# preds_lab/s1_select_182.txt). k=125 leaves room to grow the base set later:
+# CV 0.8717412 (minimum 0.8717401 at k=150), quiz 0.862309 (all 182: 0.862289).
+# By model family as in models-old.toml / models-3.toml (bk1/bk3/bk4 in tx,
+# mfrbm/mfrbmx in other); a chain or residual model sits with its root. The blend groups follow
+# the base groups.
 
-tx = []
-rbm = []
-nn = []
-other = []
+tx = [
+    "s1-bk1-10__knn-25c",
+    "s1-bk1-10_ep21",
+    "s1-bk1-150",
+    "s1-bk1-80n",
+    "s1-bk3-30",
+    "s1-bk4-p100",
+    "s1-bk4-p200",
+    "s1-bk4-p200__integ8w06",
+    "s1-bk4-p200__nlpp",
+    "s1-bk4-p200__nlpp__knn-25m",
+    "s1-bk4-p200__nlpp__knn3",
+    "s1-tsvdx-20",
+    "s1-tsvdx-256",
+    "s1-tsvdx-256__knn3",
+    "s1-tsvdx-256__nlpp",
+    "s1-tsvdx4-160_ep19",
+    "s1-tsvdx4-160_ep19__knn-25s",
+    "s1-tsvdx4-16o",
+    "s1-tsvdx4-180f",
+    "s1-tsvdx4-180f__knn-25m",
+    "s1-tsvdx4-180f__nlpp",
+    "s1-tsvdx4-180f__nlpp__knn-25m",
+    "s1-tsvdx4-180f_ep03",
+    "s1-tsvdx4-180f_ep13",
+    "s1-tsvdx4-200o",
+    "s1-tsvdx4-200o__asym-16",
+    "s1-tsvdx4-200o__asym-16__knn3",
+    "s1-tsvdx4-20f_ep13",
+    "s1-tsvdx4-40",
+    "s1-tsvdx4-512_ep19",
+    "s1-tsvdx4-512_ep19__nlpp",
+    "s1-tsvdx4-512_ep19__nlpp__knn3",
+    "s1-tsvdx4-64o",
+    "s1-tsvdx4-64o__knn3",
+    "s1-tsvdx4-72",
+    "s1-tsvdx4-swp02",
+    "s1-tsvdx4-swp03",
+    "s1-tsvdx4-swp09",
+    "s1-tsvdx4-swp14",
+    "s1-tsvdx4-swp16",
+    "s1-tsvdx4-swp21",
+    "s1-tsvdx4-swp24",
+    "s1-tsvdx4-swp27",
+    "s1-tsvdx5-200__nlppd",
+    "s1-tsvdx5-350s__bk3-4w07",
+    "s1-tsvdx5-350s__bk3-4w07__mf-12w06__tx8w07",
+    "s1-tsvdx5-350s__nlpp",
+    "s1-tsvdx5-350s__nlpp__knn-fp",
+    "s1-tsvdx5-350s__nlpp__uknn-rkm",
+    "s1-tsvdx5-p200",
+]
+
+rbm = [
+    "s1-nrbm100ebut_ep17",
+    "s1-nrbm100nf10_ep49",
+    "s1-nrbm100nfbut",
+    "s1-nrbm100nfbut__knn-fp",
+    "s1-nrbm100nfbut__knn3",
+    "s1-nrbm100nfbut__nlpp",
+    "s1-nrbm100nfbut_ep50",
+    "s1-nrbm100pc0_ep01",
+    "s1-nrbm100pnb_ep43",
+    "s1-nrbm100qbut__knn3",
+    "s1-nrbm100qebut__knn-fp",
+    "s1-nrbm100qebut__knn3",
+    "s1-nrbm100qebut__nlpp",
+    "s1-nrbm100qebut__nlpp__knn-fp",
+    "s1-nrbm100qebut__nlpp__knn-m",
+    "s1-nrbm100qnfbut",
+    "s1-nrbm100qnfbut__knn-fp",
+    "s1-nrbm100qnfbut__nlpp",
+    "s1-nrbm100qnfbut__nlpp__knn-m",
+    "s1-nrbm100qpbut__knn3",
+    "s1-nrbm100qpbut__nlpp",
+    "s1-nrbm100qpnb",
+    "s1-nrbm100qpnb__knn-fp",
+    "s1-nrbm100qpnb__knn3",
+    "s1-nrbm100qpnb__nlpp",
+    "s1-nrbm100qpnb__nlpp__knn-fp",
+    "s1-nrbm100qpnb__nlpp__knn-m",
+    "s1-nrbm100rbut_ep49",
+    "s1-nrbm200lr4_ep43",
+    "s1-nrbm200nf",
+    "s1-nrbm200nf60_ep47",
+    "s1-nrbm200nf__nlpp__knn-m",
+    "s1-nrbm200pbut_ep33",
+    "s1-nrbm400lr4",
+    "s1-nrbm400lr4__knn-fps3",
+    "s1-nrbm400lr4__tx4w05",
+    "s1-nrbm400lr4_ep42",
+    "s1-nrbm400pbut_ep01",
+    "s1-nrbm400pbut_ep18",
+]
+
+nn = [
+    "s1-attn20",
+    "s1-attn24",
+    "s1-attn48",
+    "s1-attn48__knn-25m",
+    "s1-attn48__knn-25sw05",
+    "s1-attn48__knn-25sw05__tx12w06",
+    "s1-attn48__knn-25sw05__tx12w06__als-4w08",
+    "s1-attn48__nlpp",
+    "s1-attn48__nlpp__uknn-rk",
+    "s1-dnn20",
+    "s1-dnn20t",
+    "s1-dnn40nm",
+    "s1-dnn40nm__asym-16",
+    "s1-dnn40nm__asym-16__knn3",
+    "s1-dnn48",
+    "s1-nade16s",
+    "s1-nade16s__als-2w06",
+    "s1-nade16s__als-2w06__bk4-10w08__nlpp",
+    "s1-nade16s__knn-25c",
+]
+
+other = [
+    "s1-als8-8",
+    "s1-als8-8__knn-25c",
+    "s1-als8-8__knn-25f",
+    "s1-als8-8__knn-25m",
+    "s1-asym-16",
+    "s1-bknbr-50",
+    "s1-bknbr-50__integ4w08",
+    "s1-bknbrx-300t",
+    "s1-bknbrx-50seq",
+    "s1-integ60-pyuddf",
+    "s1-mf-24",
+    "s1-mf-24__knn-25m",
+    "s1-mf-64u__asym-16",
+    "s1-mf-64u__knn-25f",
+    "s1-mfrbm-48",
+    "s1-mfrbm-96",
+    "s1-mfrbmx-80h",
+]
+
+# --- Second-level blends (pipeline-1.toml, 2026-11-12) ---
+# K-fold gbm / mlp / fwls blends of the 125 base columns + voting features (voting-1.toml),
+# one column per seed. _part1: on vf features only (rounds 1-2); _part2 (gbm, mlp): with latent
+# user / item vectors (preds_1/lat/); fwlsblend_part2: fwls stacked on the base + the part1 gbm /
+# mlp blends. ridge base + all 17: quiz 0.858525 (base alone 0.862309).
+gbmblend_part1 = [
+    "gbc2k4-s1",
+    "gbc2k4o-s2",
+]
+
+gbmblend_part2 = [
+    "gbc2lk4-s1",
+    "gbc2lmk4-s1",
+    "gbc2luk4-s1",
+]
+
+mlpblend_part1 = [
+    "mlpr3k4-s{1,2}",
+    "mlpr3k4v0-s1",
+    "mlpr3vk4-s1",
+]
+
+mlpblend_part2 = [
+    "mlpr3lak4-s1",
+    "mlpr3lk4-s1",
+    "mlpr3lmk4-s1",
+    "mlpr3luk4-s1",
+]
+
+fwlsblend_part1 = [
+    "fwlsb57k8-s1",
+    "fwlsb57k8v0-s1",
+]
+
+fwlsblend_part2 = [
+    "fwls15k4-s1",
+    "fwls33k16-s2",
+]
+
+[meta]
+gbmblend = ["gbmblend_part1", "gbmblend_part2"]
+mlpblend = ["mlpblend_part1", "mlpblend_part2"]
+fwlsblend = ["fwlsblend_part1", "fwlsblend_part2"]
