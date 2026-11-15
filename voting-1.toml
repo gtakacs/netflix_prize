@@ -738,6 +738,56 @@ latasym = [
 ]
 
 
+# fwls46k8 context: the old split fwls A-F set (vf000-vf044 = fwls A-F, vf0 = fwls C5 as the old split had it).
+fwls46 = [
+    "vf/vf000_constant",
+    "vf/vf001_user_gt3_on_date",
+    "vf/vf002_log_movie_cnt",
+    "vf/vf003_log_user_dates",
+    "vf/vf004_log_user_cnt",
+    "vf/vf005_user_std",
+    "vf/vf006_movie_std",
+    "vf/vf007_log_user_tenure",
+    "vf/vf008_log_user_date_cnt",
+    "vf/vf009_log_product",
+    "vf/vf010_bayesian_movie_minus_user",
+    "vf/vf011_bayesian_user_mean",
+    "vf/vf012_log_avg_rater_cnt",
+    "vf/vf013_log_movie_date_std",
+    "vf/vf014_user_date_bias_std",
+    "vf/vf015_movie_single_day_pct",
+    "vf/vf016_user_avg_movie_pop",
+    "vf/vf017_log_sim_sum",
+    "vf/vf018_sim_top20_pct",
+    "vf/vf019_max_sim",
+    "vf/vf020_svd_user_norm",
+    "vf/vf021_svd_movie_norm",
+    "vf/vf022_ordinal_svd_std",
+    "vf/vf023_user_overlap",
+    "vf/vf024_sameday_corr",
+    "vf/vf025_has_r1_same_day",
+    "vf/vf026_has_r2_same_day",
+    "vf/vf027_has_r3_same_day",
+    "vf/vf028_has_r4_same_day",
+    "vf/vf029_has_r5_same_day",
+    "vf/vf030_has_r1_other_day",
+    "vf/vf031_has_r2_other_day",
+    "vf/vf032_has_r3_other_day",
+    "vf/vf033_has_r4_other_day",
+    "vf/vf034_has_r5_other_day",
+    "vf/vf035_log_r1_same_day",
+    "vf/vf036_log_r2_same_day",
+    "vf/vf037_log_r3_same_day",
+    "vf/vf038_log_r4_same_day",
+    "vf/vf039_log_r5_same_day",
+    "vf/vf040_log_r1_other_day",
+    "vf/vf041_log_r2_other_day",
+    "vf/vf042_log_r3_other_day",
+    "vf/vf043_log_r4_other_day",
+    "vf/vf044_log_r5_other_day",
+    "vf0/fwls_c5_user_avg_movie_pop",
+]
+
 # `all` is an explicit meta group, not a builtin (as in voting-old.toml).
 [meta]
 all = ["gold", "silver"]
