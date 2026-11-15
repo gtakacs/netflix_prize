@@ -35,6 +35,10 @@ pub struct JobConfig {
     pub config: Option<String>,
     pub target: Option<String>,
     pub keep_epochs: Option<Vec<u32>>,
+    /// Epoch snapshots kept only as inputs of a secondary blend (e.g. an FWLS over
+    /// snapshots), not as ensemble members: `{name}_ep<NN>.{pr}.npy` and
+    /// `{name}_ep<NN>.{fulltrain_pr}.npy` are job outputs, like keep_epochs ones.
+    pub aux_epochs: Option<Vec<u32>>,
     #[serde(default)]
     pub extras: Vec<String>,
     pub n_epochs: Option<u32>,
@@ -380,6 +384,20 @@ fn expand_features(outputs: &[String], features: &[String]) -> Vec<String> {
 /// If `keep_epochs` is set, append per-epoch variants of any output template
 /// containing `{name}.{pr}.npy` or `{name}.{fulltrain_pr}.npy`. The original
 /// outputs (final-epoch predictions) stay in the list — keep_epochs is additive.
+/// Append the `aux_epochs` snapshot outputs (`{preds}/{name}_ep<NN>.{pr}.npy`
+/// and `.{fulltrain_pr}.npy`), whatever the job's output templates, skipping any
+/// already listed.
+fn expand_aux_epochs(outputs: &[String], aux: &[u32]) -> Vec<String> {
+    let mut out = outputs.to_vec();
+    for &e in aux {
+        for ds in ["{pr}", "{fulltrain_pr}"] {
+            let o = format!("{{preds}}/{{name}}_ep{:02}.{}.npy", e, ds);
+            if !out.contains(&o) { out.push(o); }
+        }
+    }
+    out
+}
+
 fn expand_keep_epochs(outputs: &[String], keep: &[u32]) -> Vec<String> {
     let mut out = outputs.to_vec();
     for tpl in outputs {
@@ -432,6 +450,10 @@ pub fn resolve_pipeline(p: &Pipeline) -> IndexMap<String, ResolvedJob> {
         let outputs_tpl = expand_features(&merged.outputs, &merged.features);
         let outputs_tpl = match &merged.keep_epochs {
             Some(epochs) if !epochs.is_empty() => expand_keep_epochs(&outputs_tpl, epochs),
+            _ => outputs_tpl,
+        };
+        let outputs_tpl = match &merged.aux_epochs {
+            Some(epochs) if !epochs.is_empty() => expand_aux_epochs(&outputs_tpl, epochs),
             _ => outputs_tpl,
         };
         let outputs_tpl = expand_seeds(&outputs_tpl, &merged.seeds);
