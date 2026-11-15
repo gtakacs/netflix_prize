@@ -54,6 +54,8 @@ fn main() {
         save_ufeat: false,
         low_memory: false,
         full_su: true,
+        lazy_day: false,
+        ud_dim: None,
     };
     fit2!(
         TxModel, cfg, "rtg", "tsvdx6-300", SPLIT_NEW,

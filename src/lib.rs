@@ -4,7 +4,7 @@ use ndarray::{Array1, Array2, Array3};
 use ndarray_npy::write_npy;
 use rand::{prelude::SliceRandom, rngs::StdRng, Rng, SeedableRng};
 use rand_distr::{Distribution, Normal, Uniform};
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::{fmt::Debug, fs::File, io::{BufWriter, Write}, sync::Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -681,6 +681,19 @@ pub trait Regressor {
     /// Predict rating residual for user u, item i, on given day
     fn predict(&self, u: usize, i: usize, day: i32) -> f32;
 
+    /// Whether the evaluation helpers should predict user by user through
+    /// `predict_user_rows` (default false: row by row through `predict`).
+    fn groups_by_user(&self) -> bool { false }
+
+    /// Predict the rows `rows` of `ds`, all of user `u`, into `out` (residual
+    /// scale, like `predict`). Lets a model build per-user state once per user
+    /// (e.g. per-day sums) without `&mut self`. Default: `predict` per row.
+    fn predict_user_rows(&self, ds: &Dataset, u: usize, rows: &[usize], out: &mut [f32]) {
+        for (o, &idx) in out.iter_mut().zip(rows) {
+            *o = self.predict(u, ds.item_idxs[idx] as usize, ds.dates[idx] as i32);
+        }
+    }
+
     /// Predict individual sub-scores (for models with multiple components)
     fn predict_subscores(&self, _u: usize, _i: usize, _day: i32) -> Array1::<f32> {
         Array1::zeros(0)
@@ -694,11 +707,70 @@ pub trait Regressor {
 // Evaluation helpers
 // ---------------------------------------------------------------------------
 
+/// Row indices of `ds` grouped by user, in row order within a user: the rows of
+/// user u are `rows[starts[u]..starts[u + 1]]`.
+fn rows_by_user(ds: &Dataset) -> (Vec<usize>, Vec<usize>) {
+    let mut starts = vec![0usize; ds.n_users + 1];
+    for idx in 0..ds.n_ratings { starts[ds.user_idxs[idx] as usize + 1] += 1; }
+    for u in 0..ds.n_users { starts[u + 1] += starts[u]; }
+    let mut fill = starts.clone();
+    let mut rows = vec![0usize; ds.n_ratings];
+    for idx in 0..ds.n_ratings {
+        let u = ds.user_idxs[idx] as usize;
+        rows[fill[u]] = idx;
+        fill[u] += 1;
+    }
+    (rows, starts)
+}
+
+/// Residual-scale predictions of all rows of `ds` through `predict_user_rows`
+/// (for models with `groups_by_user`), in row order.
+fn predict_by_user<M: Regressor>(model: &M, ds: &Dataset) -> Vec<f32> {
+    let (rows, starts) = rows_by_user(ds);
+    let mut preds = vec![0.0_f32; ds.n_ratings];
+    let mut out = Vec::new();
+    for u in 0..ds.n_users {
+        let r = &rows[starts[u]..starts[u + 1]];
+        if r.is_empty() { continue; }
+        out.clear();
+        out.resize(r.len(), 0.0);
+        model.predict_user_rows(ds, u, r, &mut out);
+        for (&idx, &p) in r.iter().zip(&out) { preds[idx] = p; }
+    }
+    preds
+}
+
+/// Parallel `predict_by_user` (users split across the rayon pool).
+fn predict_by_user_parallel<M: Regressor + Sync>(model: &M, ds: &Dataset) -> Vec<f32> {
+    let (rows, starts) = rows_by_user(ds);
+    let per_user: Vec<Vec<f32>> = (0..ds.n_users).into_par_iter().map(|u| {
+        let r = &rows[starts[u]..starts[u + 1]];
+        let mut out = vec![0.0_f32; r.len()];
+        if !r.is_empty() { model.predict_user_rows(ds, u, r, &mut out); }
+        out
+    }).collect();
+    let mut preds = vec![0.0_f32; ds.n_ratings];
+    for u in 0..ds.n_users {
+        for (&idx, &p) in rows[starts[u]..starts[u + 1]].iter().zip(&per_user[u]) { preds[idx] = p; }
+    }
+    preds
+}
+
 /// Compute RMSE on non-test rows (is_test == 0)
 #[inline]
 pub fn calc_rmse<M: Regressor>(model: &mut M, ds: &Dataset) -> f64 {
     let mut cnt = 0.0;
     let mut sse = 0.0;
+    if model.groups_by_user() {
+        let preds = predict_by_user(model, ds);
+        for idx in 0..ds.n_ratings {
+            if ds.is_test[idx] != 0 { continue; }
+            let err = (preds[idx] - ds.residuals[idx]) as f64;
+            cnt += 1.0;
+            sse += err * err;
+        }
+        return (sse / cnt).sqrt();
+    }
     for idx in 0..ds.n_ratings {
         if ds.is_test[idx] != 0 { continue; }
         let u = ds.user_idxs[idx] as usize;
@@ -729,6 +801,13 @@ pub fn report_rmse<M: Regressor>(model: &mut M, epoch: usize, n_epochs: usize, d
 #[inline]
 pub fn gen_preds<M: Regressor>(model: &mut M, ds: &Dataset) -> Array1<f32> {
     let mut preds = Array1::<f32>::zeros(ds.n_ratings);
+    if model.groups_by_user() {
+        let res = predict_by_user(model, ds);
+        for idx in 0..ds.n_ratings {
+            preds[idx] = res[idx] + (ds.raw_ratings[idx] as f32 - ds.residuals[idx]);
+        }
+        return preds;
+    }
     for idx in progress!(0..ds.n_ratings) {
         let u = ds.user_idxs[idx] as usize;
         let i = ds.item_idxs[idx] as usize;
@@ -749,6 +828,13 @@ pub fn save_preds<M: Regressor>(model: &mut M, ds: &Dataset, path: &str) {
 /// Generate predictions in parallel and return as Array1
 pub fn gen_preds_parallel<M: Regressor + Sync>(model: &M, ds: &Dataset) -> Array1<f32> {
     let mut preds = Array1::<f32>::zeros(ds.n_ratings);
+    if model.groups_by_user() {
+        let res = predict_by_user_parallel(model, ds);
+        for idx in 0..ds.n_ratings {
+            preds[idx] = res[idx] + (ds.raw_ratings[idx] as f32 - ds.residuals[idx]);
+        }
+        return preds;
+    }
     let preds_slice = preds.as_slice_mut().unwrap();
     progress_count!(preds_slice.par_iter_mut().enumerate(), ds.n_ratings as u64)
         .for_each(|(idx, out)| {

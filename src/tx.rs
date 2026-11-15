@@ -202,6 +202,9 @@ pub struct TxConfig {
     pub save_ufeat: bool,     // save ufeat + ycache (static user vector) as `.ufeat.<ds>.npy`
     pub low_memory: bool,     // skip per-day NSVD1 buffers (yfeat_day / ufeat_day / ycache_day)
     pub full_su: bool,        // build NSVD1 su from train ∪ probe (else train only)
+    pub lazy_day: bool,       // build the per-(user, day) NSVD1 sums per user at prediction time
+                              // instead of keeping them in ycache_day [n_ud, n_feat]
+    pub ud_dim: Option<usize>, // per-(user, day) factor ufeat_day on the first D dims only (None = n_feat)
 }
 
 // ---------------------------------------------------------------------------
@@ -238,8 +241,11 @@ pub struct TxModel {
     // Per-(user, day) state
     ud: SparseUD,                   // sparse (user, day) → linear index
     ubias_day: Vec<f32>,            // per-(user, day) bias [n_ud]
-    ufeat_day: Array2<f32>,         // per-(user, day) factor [n_ud, n_feat]
-    ycache_day: Array2<f32>,        // cached per-(user, day) NSVD1 sum [n_ud, n_feat]
+    ufeat_day: Array2<f32>,         // per-(user, day) factor [n_ud, ud_dim]
+    ud_dim: usize,                  // dims of ufeat_day (cfg.ud_dim, default n_feat)
+    ycache_day: Array2<f32>,        // cached per-(user, day) NSVD1 sum [n_ud, n_feat] (empty with lazy_day)
+    ud_tr_starts: Vec<usize>,       // lazy_day: train items of (user, day) idx are
+    ud_tr_items: Vec<u16>,          //   ud_tr_items[ud_tr_starts[idx]..ud_tr_starts[idx + 1]], in train order
 
     // Frequency-bin state (per-(item, freq_bin))
     ibias_freq: Array2<f32>,        // per-(item, freq_bin) bias [n_items, n_freq_bins]
@@ -300,8 +306,54 @@ impl TxModel {
         }
     }
 
+    /// Per-(user, day) NSVD1 sum of `ud_idx` as `rebuild_ycache_day` builds it (the
+    /// prediction set's items, then the train items, over √count), for `lazy_day`.
+    fn day_nsvd1(&self, ud_idx: usize, out: &mut [f32]) {
+        out.fill(0.0);
+        let mut cnt = 0.0_f32;
+        let pr_items = &self.probe_items_by_ud[ud_idx];
+        let tr_items = &self.ud_tr_items[self.ud_tr_starts[ud_idx]..self.ud_tr_starts[ud_idx + 1]];
+        for &j in pr_items {
+            cnt += 1.0;
+            for (o, &y) in out.iter_mut().zip(self.yfeat_day.row(j as usize)) { *o += y; }
+        }
+        for &j in tr_items {
+            cnt += 1.0;
+            for (o, &y) in out.iter_mut().zip(self.yfeat_day.row(j as usize)) { *o += y; }
+        }
+        if cnt > 0.0 {
+            let norm = cnt.sqrt();
+            for o in out.iter_mut() { *o /= norm; }
+        }
+    }
+
+    /// `day_nsvd1` of (u, day) into a new vector, or an empty one when the day has no
+    /// (user, day) index or `lazy_day` is off (single-row prediction paths).
+    fn day_nsvd1_of(&self, u: usize, day: i32) -> Vec<f32> {
+        if !self.cfg.lazy_day { return Vec::new(); }
+        match self.ud.index(u, day as i16) {
+            Some(idx) => { let mut v = vec![0.0; self.cfg.n_feat]; self.day_nsvd1(idx, &mut v); v }
+            None => Vec::new(),
+        }
+    }
+
+    /// `predict` with the per-day NSVD1 sum of (u, day) given (`day_nsvd1`; read only
+    /// with `lazy_day`).
+    fn predict_day(&self, u: usize, i: usize, day: i32, day_su: &[f32]) -> f32 {
+        let (bias_part, dot_part) = self.factor_parts(u, i, day, day_su);
+        let nbr_part = if self.has_nbr() { self.nbr_score(u, i, day as i16) } else { 0.0 };
+        let score = bias_part + dot_part + nbr_part;
+        match &self.ordinal_head {
+            Some(ordinal) => {
+                let probs = ordinal.predict_probs(score);
+                1.0 * probs[0] + 2.0 * probs[1] + 3.0 * probs[2] + 4.0 * probs[3] + 5.0 * probs[4]
+            }
+            None => score,
+        }
+    }
+
     #[inline]
-    fn factor_parts(&self, u: usize, i: usize, day: i32) -> (f32, f32) {
+    fn factor_parts(&self, u: usize, i: usize, day: i32, day_su: &[f32]) -> (f32, f32) {
         let cfg = &self.cfg;
         let b = self.time_bin(day);
         let dev = self.dev(u, day);
@@ -329,8 +381,8 @@ impl TxModel {
             let mut pu_eff = pu[k] + su[k] + dev * pu2[k];
             if !cfg.low_memory {
                 if let Some(idx) = ud_idx {
-                    pu_eff += self.ufeat_day[[idx, k]];
-                    pu_eff += self.ycache_day[[idx, k]];
+                    if k < self.ud_dim { pu_eff += self.ufeat_day[[idx, k]]; }
+                    pu_eff += if cfg.lazy_day { day_su[k] } else { self.ycache_day[[idx, k]] };
                 }
             }
             dot += pu_eff * qi_eff;
@@ -479,6 +531,9 @@ impl Regressor for TxModel {
         let n_ud = ud.n_total();
         let n_freq_bins = cfg.n_freq_bins;
         let low_mem = cfg.low_memory;
+        assert!(!(cfg.lazy_day && low_mem), "lazy_day needs the per-day terms (low_memory off)");
+        let ud_dim = cfg.ud_dim.unwrap_or(cfg.n_feat);
+        assert!(ud_dim <= cfg.n_feat, "ud_dim {} > n_feat {}", ud_dim, cfg.n_feat);
         let user_offsets = calc_user_offsets(tr);
         let gbias = calc_gbias(tr);
 
@@ -587,16 +642,37 @@ impl Regressor for TxModel {
 
         let mut probe_items_by_user: Vec<Vec<u32>> = vec![Vec::new(); n_users];
         let mut probe_items_by_ud: Vec<Vec<u32>> = vec![Vec::new(); n_ud];
-        if cfg.full_su {
+        if cfg.full_su || cfg.lazy_day {
+            // lazy_day: the per-day sums at prediction time use the prediction set's
+            // items whatever full_su (as rebuild_ycache_day); training reads them only
+            // with full_su.
             for t in 0..pr.n_ratings {
                 let u = pr.user_idxs[t] as usize;
                 let item = pr.item_idxs[t] as u32;
-                probe_items_by_user[u].push(item);
+                if cfg.full_su { probe_items_by_user[u].push(item); }
                 if let Some(ud_idx) = ud.index(u, pr.dates[t]) {
                     probe_items_by_ud[ud_idx].push(item);
                 }
             }
         }
+
+        let (ud_tr_starts, ud_tr_items) = if cfg.lazy_day {
+            let mut starts = vec![0usize; n_ud + 1];
+            let ud_of: Vec<usize> = (0..tr.n_ratings).map(|t| {
+                ud.index(tr.user_idxs[t] as usize, tr.dates[t]).expect("train (user, day) in the index")
+            }).collect();
+            for &idx in &ud_of { starts[idx + 1] += 1; }
+            for idx in 0..n_ud { starts[idx + 1] += starts[idx]; }
+            let mut fill = starts.clone();
+            let mut items = vec![0u16; tr.n_ratings];
+            for t in 0..tr.n_ratings {
+                items[fill[ud_of[t]]] = tr.item_idxs[t] as u16;
+                fill[ud_of[t]] += 1;
+            }
+            (starts, items)
+        } else {
+            (Vec::new(), Vec::new())
+        };
 
         Self {
             cfg,
@@ -621,10 +697,13 @@ impl Regressor for TxModel {
             ycache_bias: Array1::zeros(n_users),
 
             ubias_day: vec![0.0; n_ud],
-            ufeat_day: if low_mem { Array2::zeros((0, cfg.n_feat)) }
-                       else { Array2::zeros((n_ud, cfg.n_feat)) },
-            ycache_day: if low_mem { Array2::zeros((0, cfg.n_feat)) }
+            ufeat_day: if low_mem { Array2::zeros((0, ud_dim)) }
+                       else { Array2::zeros((n_ud, ud_dim)) },
+            ud_dim,
+            ycache_day: if low_mem || cfg.lazy_day { Array2::zeros((0, cfg.n_feat)) }
                         else { Array2::zeros((n_ud, cfg.n_feat)) },
+            ud_tr_starts,
+            ud_tr_items,
             ud,
 
             ibias_freq: Array2::zeros((n_items, n_freq_bins)),
@@ -688,17 +767,20 @@ impl Regressor for TxModel {
 
         let mut mf = 0.0_f32;
         let mut nsvd1 = 0.0_f32;
+        let day_su = self.day_nsvd1_of(u, day);
 
         for k in 0..cfg.n_feat {
             let qi_eff = qi[k] + qf[k];
             let mut pu_eff = pu[k] + dev * pu2[k];
             if !cfg.low_memory {
-                if let Some(idx) = ud_idx { pu_eff += self.ufeat_day[[idx, k]]; }
+                if let Some(idx) = ud_idx { if k < self.ud_dim { pu_eff += self.ufeat_day[[idx, k]]; } }
             }
             mf += pu_eff * qi_eff;
             let mut su_eff = su[k];
             if !cfg.low_memory {
-                if let Some(idx) = ud_idx { su_eff += self.ycache_day[[idx, k]]; }
+                if let Some(idx) = ud_idx {
+                    su_eff += if cfg.lazy_day { day_su[k] } else { self.ycache_day[[idx, k]] };
+                }
             }
             nsvd1 += su_eff * qi_eff;
         }
@@ -712,15 +794,19 @@ impl Regressor for TxModel {
     }
 
     fn predict(&self, u: usize, i: usize, day: i32) -> f32 {
-        let (bias_part, dot_part) = self.factor_parts(u, i, day);
-        let nbr_part = if self.has_nbr() { self.nbr_score(u, i, day as i16) } else { 0.0 };
-        let score = bias_part + dot_part + nbr_part;
-        match &self.ordinal_head {
-            Some(ordinal) => {
-                let probs = ordinal.predict_probs(score);
-                1.0 * probs[0] + 2.0 * probs[1] + 3.0 * probs[2] + 4.0 * probs[3] + 5.0 * probs[4]
-            }
-            None => score,
+        let day_su = self.day_nsvd1_of(u, day);
+        self.predict_day(u, i, day, &day_su)
+    }
+
+    fn groups_by_user(&self) -> bool { self.cfg.lazy_day }
+
+    fn predict_user_rows(&self, ds: &Dataset, u: usize, rows: &[usize], out: &mut [f32]) {
+        // lazy_day: one per-day NSVD1 sum per (user, day) of the rows, built here
+        let mut sums: std::collections::HashMap<i16, Vec<f32>> = std::collections::HashMap::new();
+        for (o, &idx) in out.iter_mut().zip(rows) {
+            let day = ds.dates[idx];
+            let day_su = sums.entry(day).or_insert_with(|| self.day_nsvd1_of(u, day as i32));
+            *o = self.predict_day(u, ds.item_idxs[idx] as usize, day as i32, day_su);
         }
     }
 
@@ -745,6 +831,7 @@ impl Regressor for TxModel {
         let max_nbr = cfg.max_neighbors;
         let use_probe = cfg.full_su;
         let low_mem = cfg.low_memory;
+        let ud_dim = self.ud_dim;
         let has_nbr = self.has_nbr();
         let has_wd = self.has_w_day();
         let has_cd = self.has_c_day();
@@ -900,7 +987,7 @@ impl Regressor for TxModel {
                     let qi_eff = qi[k] + qf[k];
                     let mut pu_eff = pu[k] + su_row[k] + dev * pu2[k];
                     if !low_mem {
-                        if let Some(idx) = ud_idx { pu_eff += self.ufeat_day[[idx, k]]; }
+                        if let Some(idx) = ud_idx { if k < ud_dim { pu_eff += self.ufeat_day[[idx, k]]; } }
                         pu_eff += su_day[k] + su_freq[k];
                     }
                     dot += pu_eff * qi_eff;
@@ -1015,7 +1102,7 @@ impl Regressor for TxModel {
                     self.ufeat[[u, k]] -= cfg.lr_u * (err_d * qi_eff_k + cfg.reg_u * pu_k);
                     self.ufeat2[[u, k]] -= cfg.lr_u2 * (err_d * qi_eff_k * dev + cfg.reg_u2 * pu2_k);
 
-                    let pud_k = if has_ud {
+                    let pud_k = if has_ud && k < ud_dim {
                         if let Some(idx) = ud_idx {
                             let pud = self.ufeat_day[[idx, k]];
                             self.ufeat_day[[idx, k]] -= cfg.lr_ud * (err_d * qi_eff_k + cfg.reg_ud * pud);
@@ -1114,7 +1201,7 @@ impl Regressor for TxModel {
         }
 
         self.rebuild_ycache(tr, pr);
-        if !low_mem { self.rebuild_ycache_day(tr, pr); }
+        if !low_mem && !cfg.lazy_day { self.rebuild_ycache_day(tr, pr); }
 
         if let Some(ordinal_head) = &mut self.ordinal_head {
             ordinal_head.enforce_sorted_with_gap();

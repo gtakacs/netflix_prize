@@ -150,7 +150,7 @@ fn run_lm(
         w_bias: 1.0, w_factor: 1.0, w_nbr: 1.0,
         sum_err_bug: false, lambda1: 0.0, lambda2: 0.0,
         ordinal_head: None,
-        save_ifeat, low_memory, full_su: true,
+        save_ifeat, low_memory, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     match (save_train, save_subscores, save_probe_each_epoch) {
@@ -195,6 +195,8 @@ fn run_small_o(n_feat: usize, save_train: bool, job_name: &str) {
         save_ufeat: false,
         low_memory: false,
         full_su: true,
+        lazy_day: false,
+        ud_dim: None,
     };
     if save_train {
         fit2!(TxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_probe_each_epoch: true);
@@ -226,7 +228,7 @@ fn run_d0tb(job_name: &str) {
         w_bias: 1.0, w_factor: 1.0, w_nbr: 1.0,
         sum_err_bug: false, lambda1: 0.0, lambda2: 0.0,
         ordinal_head: None,
-        save_ifeat: false, low_memory: true, full_su: true,
+        save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(
@@ -258,7 +260,7 @@ fn run_f1(job_name: &str) {
         w_bias: 1.0, w_factor: 1.0, w_nbr: 1.0,
         sum_err_bug: false, lambda1: 0.0, lambda2: 0.0,
         ordinal_head: None,
-        save_ifeat: false, low_memory: true, full_su: true,
+        save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(
@@ -290,7 +292,7 @@ fn run_h8nb(job_name: &str) {
         w_bias: 1.0, w_factor: 1.0, w_nbr: 1.0,
         sum_err_bug: false, lambda1: 0.0, lambda2: 0.0,
         ordinal_head: None,
-        save_ifeat: false, low_memory: true, full_su: true,
+        save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(
@@ -322,7 +324,7 @@ fn run_l32nb(job_name: &str) {
         w_bias: 1.0, w_factor: 1.0, w_nbr: 1.0,
         sum_err_bug: false, lambda1: 0.0, lambda2: 0.0,
         ordinal_head: None,
-        save_ifeat: false, low_memory: true, full_su: true,
+        save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(
@@ -354,7 +356,7 @@ fn run_m1n(job_name: &str) {
         w_bias: 1.0, w_factor: 1.0, w_nbr: 1.0,
         sum_err_bug: false, lambda1: 0.0, lambda2: 0.0,
         ordinal_head: None,
-        save_ifeat: false, low_memory: true, full_su: true,
+        save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(TxModel, cfg, "rtg", job_name, SPLIT_NEW);
@@ -383,7 +385,7 @@ fn run_q16tb(job_name: &str) {
         w_bias: 1.0, w_factor: 1.0, w_nbr: 1.0,
         sum_err_bug: false, lambda1: 0.0, lambda2: 0.0,
         ordinal_head: None,
-        save_ifeat: false, low_memory: true, full_su: true,
+        save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(
@@ -420,7 +422,7 @@ fn run_s20fo(job_name: &str) {
             lr_t: 0.0,
             reg_t: 0.0,
         }),
-        save_ifeat: false, low_memory: true, full_su: true,
+        save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(
@@ -452,7 +454,7 @@ fn run_t8cu(job_name: &str) {
         w_bias: 1.0, w_factor: 1.0, w_nbr: 1.0,
         sum_err_bug: false, lambda1: 0.0, lambda2: 0.0,
         ordinal_head: None,
-        save_ifeat: false, low_memory: true, full_su: true,
+        save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(
@@ -484,7 +486,7 @@ fn run_16_t(job_name: &str) {
         w_bias: 1.0, w_factor: 1.0, w_nbr: 1.0,
         sum_err_bug: false, lambda1: 0.0, lambda2: 0.0,
         ordinal_head: None,
-        save_ifeat: true, low_memory: true, full_su: true,
+        save_ifeat: true, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(
@@ -521,7 +523,7 @@ fn run_n8nbo(job_name: &str) {
             lr_t: 0.0,
             reg_t: 0.0,
         }),
-        save_ifeat: false, low_memory: true, full_su: true,
+        save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(
@@ -558,7 +560,7 @@ fn run_p0tbo(job_name: &str) {
             lr_t: 0.0,
             reg_t: 0.0,
         }),
-        save_ifeat: false, low_memory: true, full_su: true,
+        save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
     fit2!(

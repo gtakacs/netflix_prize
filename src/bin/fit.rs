@@ -116,6 +116,8 @@ fn tx() {
         save_ufeat: ev("UFEAT", 0) != 0,
         low_memory: ev("LM", 0) != 0,
         full_su: ev("FULL_SU", 1) != 0,
+        lazy_day: ev("LAZY_DAY", 0) != 0,
+        ud_dim: std::env::var("UD_DIM").ok().map(|v| v.parse().expect("UD_DIM")),
     };
 
     if ev("QUAL_ONLY", 0) != 0 {
