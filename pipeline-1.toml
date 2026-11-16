@@ -1335,7 +1335,8 @@ extras = ["@train_preds"]
 inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
 # --- Second-level blends (gbm / mlp / fwls) over the base columns (2026-11-12) ---
-# The split_3 round-3 K-fold blends on the 125 models-1.toml base columns (tx, rbm, nn, other),
+# The split_3 round-3 K-fold blends on the models-1.toml base columns (tx, rbm, nn, other: 125 at
+# first, 148 since the 2026-11-16 rebuild, which replaced every blend and the predfeat vfx/ features),
 # one prediction per seed ({name}-s<seed>). Job names reuse the split_3 ones, so blend_config(NAME)
 # in gbm.rs / mlp.rs gives the same tuned params; --cv std --folds K: fold k trains on the other
 # K-1 folds. Voting groups in voting-1.toml (vf1_core = split_3's subset1-4 as one group).
@@ -1369,27 +1370,27 @@ cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls
 inputs_from = ["ingest"]
 inputs = ["src/bin/predfeat.rs"]
 outputs = ["{preds}/vfx/std_all.{pr}.npy", "{preds}/vfx/std_all.{fulltrain_pr}.npy", "{preds}/vfx/range_all.{pr}.npy", "{preds}/vfx/range_all.{fulltrain_pr}.npy", "{preds}/vfx/mean_c.{pr}.npy", "{preds}/vfx/mean_c.{fulltrain_pr}.npy", "{preds}/vfx/std_tx.{pr}.npy", "{preds}/vfx/std_tx.{fulltrain_pr}.npy", "{preds}/vfx/std_rbm.{pr}.npy", "{preds}/vfx/std_rbm.{fulltrain_pr}.npy", "{preds}/vfx/std_nn.{pr}.npy", "{preds}/vfx/std_nn.{fulltrain_pr}.npy", "{preds}/vfx/std_other.{pr}.npy", "{preds}/vfx/std_other.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_rbm.{pr}.npy", "{preds}/vfx/d_tx_rbm.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_nn.{pr}.npy", "{preds}/vfx/d_tx_nn.{fulltrain_pr}.npy", "{preds}/vfx/d_tx_other.{pr}.npy", "{preds}/vfx/d_tx_other.{fulltrain_pr}.npy"]
-cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-1.toml -t models-1.toml --groups tx=tx_part1,rbm=rbm_part1,nn=nn_part1,other=other_part1"
+cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-1.toml -t models-1.toml --groups tx,rbm,nn,other"
 
 # Round 1 (2026-11-12): gbc2k4 / mlpr3k4 / mlpr3vk4 / fwlsb57k8 as on split_3; mlpr3k4v0 is
 # mlpr3k4 with the 12 vfeat0 features (the old split's own context features) next to vf1_core.
 [jobs.gbc2k4]
 jobtype = "gbmblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core"]
 seeds = [1]
 extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3k4]
 jobtype = "mlpblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core"]
 seeds = [1, 2]
 extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3vk4]
 jobtype = "mlpblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core", "vfx9"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-predfeat"]
@@ -1397,7 +1398,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3k4v0]
 jobtype = "mlpblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core", "vf0_all"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-vfeat0"]
@@ -1405,7 +1406,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.fwlsb57k8]
 jobtype = "fwlsblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["fwls57"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-predfeat"]
@@ -1417,14 +1418,14 @@ extra_args = ["--lambda", "3000", "--folds", "8", "--solver", "lapack"]
 # blends, their probe RMSE is optimistic (blend lab 2026-10-29): judged by quiz as well.
 [jobs.gbc2k4o]
 jobtype = "gbmblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core"]
 seeds = [2]
 extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.fwlsb57k8v0]
 jobtype = "fwlsblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["fwls57", "vf0_all"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-vfeat0", "s1-predfeat"]
@@ -1432,7 +1433,7 @@ extra_args = ["--lambda", "3000", "--folds", "8", "--solver", "lapack"]
 
 [jobs.fwls15k4]
 jobtype = "fwlsblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["fwls15"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "gbc2k4", "gbc2k4o", "mlpr3k4", "mlpr3vk4", "mlpr3k4v0"]
@@ -1440,7 +1441,7 @@ extra_args = ["--lambda", "30", "--folds", "4", "--solver", "lapack", "-m", "gbc
 
 [jobs.fwls33k16]
 jobtype = "fwlsblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["fwls33"]
 seeds = [2]
 inputs_from = ["s1-vfeat1", "s1-predfeat", "gbc2k4", "gbc2k4o", "mlpr3k4", "mlpr3vk4", "mlpr3k4v0"]
@@ -1489,7 +1490,7 @@ cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipe
 
 [jobs.mlpr3lk4]
 jobtype = "mlpblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core", "lattx"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
@@ -1497,7 +1498,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3lak4]
 jobtype = "mlpblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core", "lattx", "latrbm"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
@@ -1505,7 +1506,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.gbc2lk4]
 jobtype = "gbmblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core", "lattx", "latrbm"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
@@ -1513,7 +1514,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3lmk4]
 jobtype = "mlpblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core", "latmfi", "latasymi"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
@@ -1521,7 +1522,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.gbc2lmk4]
 jobtype = "gbmblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core", "latmfi", "latasymi"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
@@ -1529,7 +1530,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.mlpr3luk4]
 jobtype = "mlpblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core", "latmf", "latasym"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
@@ -1537,7 +1538,7 @@ extra_args = ["--cv", "std", "--folds", "4"]
 
 [jobs.gbc2luk4]
 jobtype = "gbmblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1"]
+groups = ["tx", "rbm", "nn", "other"]
 voting = ["vf1_core", "latmf", "latasym"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
@@ -1575,13 +1576,14 @@ keep_epochs = [7, 11, 13, 16]
 
 
 # --- FWLS on the saved snapshots (2026-11-15, user) ---
-# fwls over the 125 base columns (tx/rbm/nn/other_part1) and the 378 epoch snapshots their jobs save
+# fwls over the base columns (tx/rbm/nn/other: 148 since the 2026-11-16 rebuild; first run on the 125
+# _part1 columns) and the 378 epoch snapshots their jobs save
 # (models-1.toml aux_snap, declared above via aux_epochs), context = the old split's fwls
 # A-F set (voting-1.toml fwls46), K=8, lambda 1000. Lab run (preds_lab/s1fwls/lbf1k8l1000): alone
 # 0.869687 / quiz 0.860759; on the s1 set CV -2.14e-4, quiz 0.858525 -> 0.858356. ~76 min, ~45 GB.
 [jobs.fwls46k8]
 jobtype = "fwlsblend"
-groups = ["tx_part1", "rbm_part1", "nn_part1", "other_part1", "aux_snap"]
+groups = ["tx", "rbm", "nn", "other", "aux_snap"]
 voting = ["fwls46"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-vfeat0", "s1-attn20", "s1-attn24", "s1-attn48", "s1-bk1-10", "s1-bk1-150", "s1-bk1-80n", "s1-bk4-p100", "s1-bk4-p200", "s1-bknbrx-300t", "s1-dnn20", "s1-dnn20t", "s1-dnn40nm", "s1-dnn48", "s1-mfrbmx-80h", "s1-nade16s", "s1-nrbm100qnfbut", "s1-nrbm100qpnb", "s1-nrbm400lr4", "s1-tsvdx4-180f", "s1-tsvdx4-20f", "s1-tsvdx5-p200"]

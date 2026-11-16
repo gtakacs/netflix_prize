@@ -118,9 +118,9 @@ groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 "1/rbm" = { quiz = 0.868911 }
 "1/nn" = { quiz = 0.872808 }
 "1/other" = { quiz = 0.872622 }
-"1/gbmblend" = { quiz = 0.860568 }
-"1/mlpblend" = { quiz = 0.859542 }
-"1/fwlsblend" = { quiz = 0.858531 }
+"1/gbmblend" = { quiz = 0.860312 }
+"1/mlpblend" = { quiz = 0.858967 }
+"1/fwlsblend" = { quiz = 0.858037 }
 "new/tx" = { quiz = 0.865052 }
 "new/rbm" = { quiz = 0.870671 }
 "new/nn" = { quiz = 0.875870 }
@@ -135,10 +135,10 @@ groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 "3/gbmblend" = { quiz = 0.860124 }
 "3/mlpblend" = { quiz = 0.858371 }
 "3/fwlsblend" = { quiz = 0.858083 }
-"1/*" = { quiz = 0.857796 }
+"1/*" = { quiz = 0.857613 }
 "new/*" = { quiz = 0.857715 }
 "3/*" = { quiz = 0.857567 }
-ensemble = { quiz = 0.855951 }
+ensemble = { quiz = 0.855903 }
 
 # Single split, fitted on the probe labels: the cheap bench a new column is
 # measured on. It needs only the probex predictions, so an experiment can be
@@ -224,10 +224,10 @@ tx = { probe = 0.874207, quiz = 0.864738 }
 rbm = { probe = 0.878154, quiz = 0.869078 }
 nn = { probe = 0.881752, quiz = 0.872994 }
 other = { probe = 0.881932, quiz = 0.872802 }
-gbmblend = { probe = 0.869520, quiz = 0.860578 }
-mlpblend = { probe = 0.868229, quiz = 0.859690 }
-fwlsblend = { probe = 0.867691, quiz = 0.858554 }
-ensemble = { probe = 0.866907, quiz = 0.858050 }
+gbmblend = { probe = 0.869289, quiz = 0.860319 }
+mlpblend = { probe = 0.867704, quiz = 0.859156 }
+fwlsblend = { probe = 0.867213, quiz = 0.858055 }
+ensemble = { probe = 0.866752, quiz = 0.857837 }
 
 # Split_1 base predictors only (no blend columns), fitted on probe.
 [[ensemble]]

@@ -144,11 +144,12 @@ other_part1 = [
     "s1-mfrbmx-80h",
 ]
 
-# --- Second-level blends (pipeline-1.toml, 2026-11-12) ---
-# K-fold gbm / mlp / fwls blends of the 125 base columns + voting features (voting-1.toml),
-# one column per seed. _part1: on vf features only (rounds 1-2); _part2 (gbm, mlp): with latent
+# --- Second-level blends (pipeline-1.toml, 2026-11-12; rebuilt 2026-11-16) ---
+# K-fold gbm / mlp / fwls blends of the 148 base columns (tx/rbm/nn/other) + voting features
+# (voting-1.toml), one column per seed. _part1: on vf features only; _part2 (gbm, mlp): with latent
 # user / item vectors (preds_1/lat/); fwlsblend_part2: fwls stacked on the base + the part1 gbm /
-# mlp blends. ridge base + all 17: quiz 0.858525 (base alone 0.862309).
+# mlp blends; fwlsblend_part3: fwls46k8 (base + aux_snap). Built on the 125 _part1 columns first
+# (s1 quiz 0.858050), rebuilt on the 148 on 2026-11-16: s1 quiz 0.857837 (base alone 0.861780).
 gbmblend_part1 = [
     "gbc2k4-s1",
     "gbc2k4o-s2",
