@@ -150,6 +150,8 @@ other_part1 = [
 # user / item vectors (preds_1/lat/); fwlsblend_part2: fwls stacked on the base + the part1 gbm /
 # mlp blends; fwlsblend_part3: fwls46k8 (base + aux_snap). Built on the 125 _part1 columns first
 # (s1 quiz 0.858050), rebuilt on the 148 on 2026-11-16: s1 quiz 0.857837 (base alone 0.861780).
+# The blends do NOT use the base columns added after that rebuild: s1-rbmb-512x, s1-rbmb-512x__knn-r
+# (rbm_part2, 2026-11-17); see STALE OUTPUTS in pipeline-1.toml.
 gbmblend_part1 = [
     "gbc2k4-s1",
     "gbc2k4o-s2",
@@ -212,6 +214,9 @@ rbm_part2 = [
     "s1-nrbm100qrbut_ep10",
     "s1-nrbm400lr4__tx4w05__integ16w05__asym-8",
     "s1-nrbm400lr4_ep12",
+    # the old split's rbmb-512x on rx.rs and its knn-r chain (2026-11-17)
+    "s1-rbmb-512x",
+    "s1-rbmb-512x__knn-r",
 ]
 
 nn_part2 = [

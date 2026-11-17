@@ -1340,6 +1340,12 @@ inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr
 # one prediction per seed ({name}-s<seed>). Job names reuse the split_3 ones, so blend_config(NAME)
 # in gbm.rs / mlp.rs gives the same tuned params; --cv std --folds K: fold k trains on the other
 # K-1 folds. Voting groups in voting-1.toml (vf1_core = split_3's subset1-4 as one group).
+#
+# STALE OUTPUTS (2026-11-17): the outputs of every blend job below (gbm / mlp / fwls, incl. fwls15k4,
+# fwls33k16, fwls46k8) and of s1-predfeat (vfx/) were built on the 148 base columns of 2026-11-16. They
+# do NOT use the base columns added since: s1-rbmb-512x and s1-rbmb-512x__knn-r (rbm_part2, 2026-11-17).
+# The jobs read the whole tx / rbm / nn / other groups, so a rerun (after moving the outputs aside)
+# would include them; run is existence-based and keeps the current outputs until then.
 [defaults.gbmblend]
 models        = "models-1.toml"
 voting_models = "voting-1.toml"
@@ -1364,6 +1370,7 @@ inputs_from   = ["s1-vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
 cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-1.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
+# (Outputs from the 148 base columns, without s1-rbmb-512x / __knn-r: see STALE OUTPUTS above.)
 # Context features from base-predictor statistics (src/bin/predfeat.rs): spread of the base
 # columns overall and per family, family-mean differences (voting groups fwls57 / vfx9).
 [jobs.s1-predfeat]
@@ -1581,6 +1588,7 @@ keep_epochs = [7, 11, 13, 16]
 # (models-1.toml aux_snap, declared above via aux_epochs), context = the old split's fwls
 # A-F set (voting-1.toml fwls46), K=8, lambda 1000. Lab run (preds_lab/s1fwls/lbf1k8l1000): alone
 # 0.869687 / quiz 0.860759; on the s1 set CV -2.14e-4, quiz 0.858525 -> 0.858356. ~76 min, ~45 GB.
+# (Output from the 148 base columns, without s1-rbmb-512x / __knn-r: see STALE OUTPUTS above.)
 [jobs.fwls46k8]
 jobtype = "fwlsblend"
 groups = ["tx", "rbm", "nn", "other", "aux_snap"]
@@ -1588,3 +1596,28 @@ voting = ["fwls46"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-vfeat0", "s1-attn20", "s1-attn24", "s1-attn48", "s1-bk1-10", "s1-bk1-150", "s1-bk1-80n", "s1-bk4-p100", "s1-bk4-p200", "s1-bknbrx-300t", "s1-dnn20", "s1-dnn20t", "s1-dnn40nm", "s1-dnn48", "s1-mfrbmx-80h", "s1-nade16s", "s1-nrbm100qnfbut", "s1-nrbm100qpnb", "s1-nrbm400lr4", "s1-tsvdx4-180f", "s1-tsvdx4-20f", "s1-tsvdx5-p200"]
 extra_args = ["--lambda", "1000", "--folds", "8", "--solver", "lapack"]
+
+# --- The old split's rbmb-512x on rx.rs (2026-11-17, user) ---
+# preds_old/rbmb-512x.cfg (RbmConfig: H=512, 30 epochs, lr 0.02, lr_bu 0.002, lr_but 0.001, the rest the
+# fit rbm defaults; the old run's parallel per-chunk RNG is not reproduced). Built as two parallel lab
+# runs, 1 thread each: train -> probe, and fulltrain -> qual with QUAL_ONLY=1 (preds_lab/s1_rbmb512x.sh,
+# ~15 min/epoch, 8.4 GB each); a run of this job does both in turn. probe 0.90292 / quiz 0.89493.
+[jobs."s1-rbmb-512x"]
+jobtype = "s3model_ifeat"
+runner = "rbm"
+env = "EPSAVE=1 H=512 EPOCHS=30 LR_BU=0.002 LR_BUT=0.001 RAYON_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1"
+
+[jobs."s1-rbmb-512x_prod"]
+jobtype = "s3sim"
+inputs_from = ["ingest", "s1-rbmb-512x"]
+inputs = ["src/bin/fit.rs", "{preds}/s1-rbmb-512x.{tr}.npy", "{preds}/s1-rbmb-512x.{fulltrain_tr}.npy"]
+
+# The old split's knn-r stage (preds_old/rbmb-512x__knn-r.cfg, ItemItemConfig): cosine, k 100, shrinkage
+# 100, scaling 2.5, tau 0, threshold 0.01, regression (lambda 0.1), stat2 = the base's prod statistic.
+# probe 0.89796 / quiz 0.88902 (old column 0.89833 / 0.88911); on the s1 set quiz -5.0e-5 with the base.
+[jobs."s1-rbmb-512x__knn-r"]
+jobtype = "s3model"
+runner = "chain"
+env = "KN_K=100 KN_RLAM=0.1 KN_REG=1 KN_SCALE=2.5 KN_SHR=100 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=s1-rbmb-512x_prod KN_TAU=0 KN_THR=0.01"
+extras = ["@train_preds"]
+inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s1-rbmb-512x_prod.{tr}.npy", "sim/s1-rbmb-512x_prod.{fulltrain_tr}.npy"]
