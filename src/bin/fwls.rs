@@ -143,8 +143,8 @@ fn print_help() {
     println!("  NAME                       blend name; a preset (blend_config) or any ad-hoc name");
     println!("                             (ad-hoc requires --lambda). Output goes to NAME-s<seed>.*");
     println!("  -n, --new                  use pipeline-new.toml for [split]");
-    println!("  -p FILE, --pipeline FILE   pipeline TOML (default: pipeline-old.toml)");
-    println!("  -t FILE, --models FILE     base-predictor models TOML (default: models-new.toml)");
+    println!("  -p FILE, --pipeline FILE   pipeline TOML (default: pipeline-1.toml)");
+    println!("  -t FILE, --models FILE     base-predictor models TOML (default: models-1.toml)");
     println!("  --groups G,G,...           model groups (default: the TOML's `all`; omit with -m for manual-only)");
     println!("  -m NAME, --model NAME      add a single model (repeatable; combines with --groups)");
     println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
@@ -175,8 +175,8 @@ fn need(argv: &[String], i: usize) -> String {
 fn parse_args() -> Args {
     let mut a = Args {
         name: String::new(),
-        pipeline: "pipeline-old.toml".to_string(),
-        models: "models-new.toml".to_string(),
+        pipeline: "pipeline-1.toml".to_string(),
+        models: "models-1.toml".to_string(),
         groups: Vec::new(),
         model_manual: Vec::new(),
         exclude: Vec::new(),

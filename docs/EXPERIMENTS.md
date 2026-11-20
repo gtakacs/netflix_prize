@@ -68,7 +68,7 @@ EPOCHS=20 LR=0.01 cargo run --release --bin lab-foo
 
 Useful flags: `--target "0.5*dnn-24"` trains on what another model left over
 (the residual trick most of the project's chains are built on), `-p
-pipeline-old.toml` runs against the other split, and a positional argument
+pipeline-1.toml` runs against another split, and a positional argument
 overrides the model name.
 
 ## 4. Judge it

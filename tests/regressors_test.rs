@@ -251,6 +251,7 @@ fn asym_probe_rmse_regression() {
         sigma_y: 0.005,
         init_with_user_std: true,
         save_ifeat: false,
+        save_ufeat: false,
     };
     let tr = make_tiny_train();
     let pr = make_tiny_probe();
@@ -283,6 +284,7 @@ fn mf_probe_rmse_regression() {
         item_feat_npy: None,
         ordinal_head: None,
         save_ifeat: false,
+        save_ufeat: false,
     };
     let tr = make_tiny_train();
     let pr = make_tiny_probe();

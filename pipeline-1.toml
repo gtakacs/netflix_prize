@@ -2,7 +2,7 @@
 # Data: data/{train,probe,fulltrain,qual}/ (the old split's datasets)
 # Outputs: preds_1/
 #
-# split_1 has the same train / probe split as the old split (pipeline-old.toml),
+# split_1 has the same train / probe split as the old split (pipeline-old.toml, removed 2026-11-20),
 # and rebuilds its base predictors as proper jobs: each column of models-old.toml
 # whose recipe is recorded (preds_old/<name>.cfg, .out) and runs on current code
 # becomes an `s1-<name>` job of the `fit` dispatcher here, checked against the old

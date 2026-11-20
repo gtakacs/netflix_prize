@@ -1,6 +1,6 @@
 //! Pipeline manifest parsing and job resolution.
 //!
-//! Reads a manifest like `pipeline-old.toml` and expands each job's
+//! Reads a manifest like `pipeline-1.toml` and expands each job's
 //! `inputs`/`outputs`/`cmd` templates into concrete paths. Shared by the `run`
 //! runner and the `preds` remote-store tool.
 

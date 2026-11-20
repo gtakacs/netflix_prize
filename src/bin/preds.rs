@@ -13,7 +13,7 @@ use std::process::ExitCode;
 const DEFAULT_JOBS: usize = 8;
 /// Every split's manifest, because the store spans all of them (and `prune`
 /// keeps only what these reference).
-const DEFAULT_MANIFESTS: [&str; 3] = ["pipeline-old.toml", "pipeline-new.toml", "pipeline-3.toml"];
+const DEFAULT_MANIFESTS: [&str; 3] = ["pipeline-1.toml", "pipeline-new.toml", "pipeline-3.toml"];
 /// Where `ridge --ensemble` reads its stored blends from.
 const ENSEMBLES_TOML: &str = "ensembles.toml";
 /// Uploads go through one `hf` process each, so stay gentler than with GETs.

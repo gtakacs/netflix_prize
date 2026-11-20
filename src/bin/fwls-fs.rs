@@ -29,11 +29,11 @@ const IN_CLIP_MIN: f64 = 0.0;
 const IN_CLIP_MAX: f64 = 6.0;
 const OUT_CLIP_MIN: f64 = 1.05;
 const OUT_CLIP_MAX: f64 = 4.95;
-const PIPELINE_OLD: &str = "pipeline-old.toml";
+const PIPELINE_1: &str = "pipeline-1.toml";
 const PIPELINE_NEW: &str = "pipeline-new.toml";
-const MODELS_OLD: &str = "models-old.toml";
+const MODELS_1: &str = "models-1.toml";
 const MODELS_NEW: &str = "models-new.toml";
-const VOTING_OLD: &str = "voting-old.toml";
+const VOTING_1: &str = "voting-1.toml";
 const VOTING_NEW: &str = "voting-new.toml";
 
 // Row-block for the Gram / eval streaming passes, and column-panel width for the
@@ -116,7 +116,7 @@ enum SelectMode {
 
 struct Args {
     pipeline: String,
-    split_hint: &'static str, // "old"/"new"/"?" — picks default model/voting TOMLs
+    split_hint: &'static str, // "1"/"new"/"?" — picks default model/voting TOMLs
     models_toml: Option<String>,
     model_groups: Vec<String>,
     model_manual: Vec<String>,
@@ -143,10 +143,10 @@ struct Args {
 }
 
 fn print_help() {
-    println!("Usage: fwls-fs [-o|-n|-p FILE] [models sel] [feature sel] [--lambda L] [--max-features K]");
+    println!("Usage: fwls-fs [-n|-p FILE] [models sel] [feature sel] [--lambda L] [--max-features K]");
     println!();
-    println!("  Split (default {}):", PIPELINE_OLD);
-    println!("    -o | -n                  pipeline-old / pipeline-new");
+    println!("  Split (default {}):", PIPELINE_1);
+    println!("    -n                       pipeline-new");
     println!("    -p FILE                  explicit pipeline TOML");
     println!();
     println!("  Models M (clipped prediction factors):");
@@ -221,8 +221,8 @@ fn parse_clip(s: &str, flag: &str) -> (f64, f64) {
 
 fn parse_args() -> Args {
     let mut a = Args {
-        pipeline: PIPELINE_OLD.to_string(),
-        split_hint: "old",
+        pipeline: PIPELINE_1.to_string(),
+        split_hint: "1",
         models_toml: None,
         model_groups: Vec::new(),
         model_manual: Vec::new(),
@@ -252,7 +252,6 @@ fn parse_args() -> Args {
     while i < argv.len() {
         match argv[i].as_str() {
             "-h" | "--help" => { print_help(); std::process::exit(0); }
-            "-o" | "--old" => { a.pipeline = PIPELINE_OLD.to_string(); a.split_hint = "old"; i += 1; }
             "-n" | "--new" => { a.pipeline = PIPELINE_NEW.to_string(); a.split_hint = "new"; i += 1; }
             "-p" | "--pipeline" => { a.pipeline = need(&argv, i); a.split_hint = "?"; i += 2; }
             "-t" | "--models" => { a.models_toml = Some(need(&argv, i)); i += 2; }
@@ -325,7 +324,7 @@ fn build_union(args: &Args) -> (Vec<UCol>, usize) {
     // Models: clip flag honours the '>' no-clip prefix via flatten_groups.
     let models_toml = args.models_toml.clone().unwrap_or_else(|| match args.split_hint {
         "new" => MODELS_NEW.to_string(),
-        _ => MODELS_OLD.to_string(),
+        _ => MODELS_1.to_string(),
     });
     let mut mgroups = select_groups(&load_models_toml(&models_toml), &args.model_groups);
     if !args.model_manual.is_empty() {
@@ -336,7 +335,7 @@ fn build_union(args: &Args) -> (Vec<UCol>, usize) {
     // Features: unclipped context columns (predictors usable here too).
     let features_toml = args.features_toml.clone().unwrap_or_else(|| match args.split_hint {
         "new" => VOTING_NEW.to_string(),
-        _ => VOTING_OLD.to_string(),
+        _ => VOTING_1.to_string(),
     });
     let mut fnames = resolve_voting(&features_toml, &args.feature_groups);
     fnames.extend(args.feature_manual.iter().cloned());

@@ -33,9 +33,8 @@ const QUIZ_IN_CLIP_MIN: f64 = 1.0;
 const QUIZ_IN_CLIP_MAX: f64 = 5.0;
 const ROW_BLOCK: usize = 100_000;
 const CV_SEED: u64 = 42;
-const PIPELINE_OLD: &str = "pipeline-old.toml";
+const PIPELINE_1: &str = "pipeline-1.toml";
 const PIPELINE_NEW: &str = "pipeline-new.toml";
-const MODELS_OLD: &str = "models-old.toml";
 const MODELS_NEW: &str = "models-new.toml";
 const PIPELINE_3: &str = "pipeline-3.toml";
 const MODELS_3: &str = "models-3.toml";
@@ -120,7 +119,7 @@ impl NpyF32Reader {
 /// and group/manual/exclude selection to pull from it. Single-split runs have
 /// exactly one source; `--from` builds one per split for cross-split blending.
 struct Source {
-    label: String,               // "old" / "new" (split name, for reporting)
+    label: String,               // "1" / "new" / "3" (split name, for reporting)
     pipeline: String,            // pipeline-<split>.toml
     models_toml: Option<String>, // None → default models-<label>.toml (cross-split) or manual-only (legacy)
     models_manual: Vec<String>,
@@ -164,13 +163,11 @@ struct Args {
 fn print_help() {
     println!("Usage: ridge [SPLIT] [MODELS] [-m NAME ...] [--lambda VALUE]");
     println!();
-    println!("  Split selection (default: {}):", PIPELINE_OLD);
-    println!("    -o, --old                shortcut for -p {}", PIPELINE_OLD);
+    println!("  Split selection (default: {}):", PIPELINE_1);
     println!("    -n, --new                shortcut for -p {}", PIPELINE_NEW);
     println!("    -p FILE, --pipeline FILE explicit pipeline TOML");
     println!();
-    println!("  Models selection (at least one of -O/-N/-t/-m required):");
-    println!("    -O                       -o + default -t {}", MODELS_OLD);
+    println!("  Models selection (at least one of -N/-t/-m required):");
     println!("    -N                       -n + default -t {}", MODELS_NEW);
     println!("    -t FILE, --models FILE   models TOML (groups: list per key)");
     println!("    -g GRP1,GRP2,..., --groups  include only these TOML groups (default: the");
@@ -206,12 +203,12 @@ fn print_help() {
     println!("    --raw-probes             opt out of both: keep '>' columns and probe them raw");
     println!();
     println!("  Cross-split quiz blending (combine qual.npy predictors from several splits):");
-    println!("    --from SPLIT             open a source scope for SPLIT (old|new|3); the models");
+    println!("    --from SPLIT             open a source scope for SPLIT (1|new|3); the models");
     println!("                             flags -t/-g/-m/-x after it apply to that source.");
     println!("                             -t defaults to models-<split>.toml. Repeat --from to");
     println!("                             mix splits. Implies --quiz-blend; the Gram is built");
     println!("                             over the full qual set from each source's preds dir.");
-    println!("                             Example: ridge --quiz-blend --from old -g integrated \\");
+    println!("                             Example: ridge --quiz-blend --from 1 -g tx,rbm \\");
     println!("                                            --from new -g integrated,rbm,other");
     println!();
     println!();
@@ -249,11 +246,11 @@ fn set_models_toml(dst: &mut Option<String>, path: String, flag: &str) {
     *dst = Some(path);
 }
 
-/// A fresh legacy (single-source) selection, defaulting to the old pipeline.
+/// A fresh legacy (single-source) selection, defaulting to split_1.
 fn legacy_source() -> Source {
     Source {
-        label: "old".to_string(),
-        pipeline: PIPELINE_OLD.to_string(),
+        label: "1".to_string(),
+        pipeline: PIPELINE_1.to_string(),
         models_toml: None,
         models_manual: Vec::new(),
         models_exclude: Vec::new(),
@@ -299,10 +296,10 @@ fn parse_args() -> Args {
             "--from" => {
                 let s = need(&argv, i);
                 let pipeline = match s.as_str() {
-                    "old" => PIPELINE_OLD,
+                    "1" => PIPELINE_1,
                     "new" => PIPELINE_NEW,
                     "3" => PIPELINE_3,
-                    _ => { eprintln!("error: --from expects 'old', 'new' or '3' (got '{}')", s); std::process::exit(2); }
+                    _ => { eprintln!("error: --from expects '1', 'new' or '3' (got '{}')", s); std::process::exit(2); }
                 };
                 if legacy_touched {
                     eprintln!("error: cannot mix top-level model/split flags with --from");
@@ -319,20 +316,14 @@ fn parse_args() -> Args {
                 });
                 i += 2;
             }
-            "-o" | "--old" | "-n" | "--new" | "-O" | "-N" | "-p" | "--pipeline" => {
+            "-n" | "--new" | "-N" | "-p" | "--pipeline" => {
                 if using_from {
                     eprintln!("error: '{}' cannot be combined with --from", flag);
                     std::process::exit(2);
                 }
                 legacy_touched = true;
                 match flag {
-                    "-o" | "--old" => { legacy.pipeline = PIPELINE_OLD.to_string(); legacy.label = "old".into(); i += 1; }
                     "-n" | "--new" => { legacy.pipeline = PIPELINE_NEW.to_string(); legacy.label = "new".into(); i += 1; }
-                    "-O" => {
-                        legacy.pipeline = PIPELINE_OLD.to_string(); legacy.label = "old".into();
-                        set_models_toml(&mut legacy.models_toml, MODELS_OLD.to_string(), "-O");
-                        i += 1;
-                    }
                     "-N" => {
                         legacy.pipeline = PIPELINE_NEW.to_string(); legacy.label = "new".into();
                         set_models_toml(&mut legacy.models_toml, MODELS_NEW.to_string(), "-N");
@@ -775,7 +766,7 @@ fn build_registry(
                 Some(match src.label.as_str() {
                     "new" => MODELS_NEW.to_string(),
                     "3" => MODELS_3.to_string(),
-                    _ => MODELS_OLD.to_string(),
+                    l => format!("models-{l}.toml"),
                 })
             } else {
                 None
@@ -1782,7 +1773,7 @@ fn main() -> ExitCode {
             let mt = src.models_toml.clone().unwrap_or_else(|| match src.label.as_str() {
                 "new" => MODELS_NEW.to_string(),
                 "3" => MODELS_3.to_string(),
-                _ => MODELS_OLD.to_string(),
+                l => format!("models-{l}.toml"),
             });
             let g = if src.groups.is_empty() { "all".to_string() } else { src.groups.join(",") };
             let man = if src.models_manual.is_empty() { String::new() }

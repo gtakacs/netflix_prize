@@ -8,7 +8,7 @@
 // In-memory callers (tests, chained workflows) use `build_*`; binaries use
 // `save_*` for the standard "compute + dump to .npy" CLI flow.
 
-use crate::{Dataset, MaskedDataset, Split, SPLIT_NEW, SPLIT_OLD};
+use crate::{Dataset, MaskedDataset, Split, SPLIT_NEW};
 use indicatif::{ProgressIterator, ParallelProgressIterator};
 use ndarray::{Array1, Array2, s};
 use ndarray_npy::write_npy;
@@ -197,12 +197,6 @@ pub fn save_rtg_nbstats(tr_set: &str, rtg: &str, split: Split, stat: &str) {
     let tr = Dataset::load(tr_set, rtg, split.preds_dir);
     let mat = build_rtg_nbstats(&tr, stat);
     write_npy(format!("{}/{}_{}.{}.npy", split.sim_dir, rtg, stat, tr_set), &mat).unwrap();
-}
-
-/// Save nbstats for the standard pipeline (`SPLIT_OLD`): `preds` predictions
-/// over `train`+`probe` and over `fulltrain`+`qual`.
-pub fn save_nbstats(rtg: &str, stat: &str) {
-    save_nbstats_split(rtg, stat, SPLIT_OLD);
 }
 
 /// Save nbstats for the alternative pipeline (`SPLIT_NEW`): `preds_new`

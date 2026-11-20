@@ -9,95 +9,16 @@
 # silently drifted. `--update-expected` writes the numbers below back after a
 # deliberate change to the groups.
 
-[[ensemble]]
-name        = "cross"
-description = "cross-split quiz blend of the old and new splits (the headline number until 2026-10-28)"
-lambda      = 1000
-tolerance   = 1e-5
+# Retired on 2026-11-20 with the old split (pipeline-old.toml and its preds_old/ columns, superseded
+# by the reproducible split_1): cross (old + new, quiz 0.856716), cross3 (old + new + split_3, the
+# headline number 2026-10-28 .. 2026-11-20, quiz 0.855883) and old (old split only, quiz 0.858160).
 
-[[ensemble.source]]
-split  = "old"
-groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
-
-[[ensemble.source]]
-split  = "new"
-groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "mlpblend_part1", "fwlsblend_part1"]
-
-[ensemble.expected]
-"old/tx" = { quiz = 0.863788 }
-"old/rbm" = { quiz = 0.871184 }
-"old/nn" = { quiz = 0.891057 }
-"old/other" = { quiz = 0.871285 }
-"old/gbmblend" = { quiz = 0.859885 }
-"old/mlpblend" = { quiz = 0.859103 }
-"old/fwlsblend" = { quiz = 0.858029 }
-"new/tx" = { quiz = 0.865052 }
-"new/rbm" = { quiz = 0.870671 }
-"new/nn" = { quiz = 0.875870 }
-"new/other" = { quiz = 0.877464 }
-"new/gbmblend_part1" = { quiz = 0.860069 }
-"new/mlpblend_part1" = { quiz = 0.859214 }
-"new/fwlsblend_part1" = { quiz = 0.858014 }
-"old/*" = { quiz = 0.857838 }
-"new/*" = { quiz = 0.857845 }
-ensemble = { quiz = 0.856716 }
-
-# The cross-split blend with split_3 as a third source: the 200-column base
-# blend200 and its gbm / mlp / fwls blends (pipeline-3.toml, models-3.toml,
-# preds_3/; with the round-3 K-fold blends, the _part3 / fwlsblend_part2 groups, since
-# 2026-10-29). Same lambda as `cross` (a scan over 250-8000 had its flat minimum
-# at 500-2000). The headline number since 2026-10-28.
-[[ensemble]]
-name        = "cross3"
-default     = true
-description = "cross-split quiz blend with split_3 (blend200 + its blends), the headline number"
-lambda      = 1000
-tolerance   = 1e-5
-
-[[ensemble.source]]
-split  = "old"
-groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
-
-[[ensemble.source]]
-split  = "new"
-groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
-
-[[ensemble.source]]
-split  = "3"
-groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
-
-[ensemble.expected]
-"old/tx" = { quiz = 0.863788 }
-"old/rbm" = { quiz = 0.871184 }
-"old/nn" = { quiz = 0.891057 }
-"old/other" = { quiz = 0.871285 }
-"old/gbmblend" = { quiz = 0.859885 }
-"old/mlpblend" = { quiz = 0.859103 }
-"old/fwlsblend" = { quiz = 0.858029 }
-"new/tx" = { quiz = 0.865052 }
-"new/rbm" = { quiz = 0.870671 }
-"new/nn" = { quiz = 0.875870 }
-"new/other" = { quiz = 0.877464 }
-"new/gbmblend" = { quiz = 0.860027 }
-"new/mlpblend" = { quiz = 0.858995 }
-"new/fwlsblend" = { quiz = 0.858001 }
-"3/tx" = { quiz = 0.864459 }
-"3/rbm" = { quiz = 0.869937 }
-"3/nn" = { quiz = 0.880428 }
-"3/other" = { quiz = 0.873464 }
-"3/gbmblend" = { quiz = 0.860124 }
-"3/mlpblend" = { quiz = 0.858371 }
-"3/fwlsblend" = { quiz = 0.858083 }
-"old/*" = { quiz = 0.857838 }
-"new/*" = { quiz = 0.857715 }
-"3/*" = { quiz = 0.857567 }
-ensemble = { quiz = 0.855883 }
-
-# The cross-split blend with split_1 in place of the old split: split_1 (the old split's train /
-# probe, rebuilt as pipeline-1.toml jobs; 154 base columns + 18 blends), new and split_3, as cross3.
+# The cross-split blend, the headline number since 2026-11-20: split_1 (the old split's train / probe,
+# rebuilt as reproducible pipeline-1.toml jobs; 154 base columns + 18 blends), new and split_3.
 [[ensemble]]
 name        = "cross1"
-description = "cross-split quiz blend of split_1, new and split_3"
+default     = true
+description = "cross-split quiz blend of split_1, new and split_3, the headline number"
 lambda      = 1000
 tolerance   = 1e-5
 
@@ -185,27 +106,6 @@ gbmblend = { probe = 0.862112, quiz = 0.860185 }
 mlpblend = { probe = 0.860378, quiz = 0.858413 }
 fwlsblend = { probe = 0.860220, quiz = 0.858103 }
 ensemble = { probe = 0.859622, quiz = 0.857762 }
-
-# Old split only, fitted on the probe labels: the single-split bench of the old split.
-[[ensemble]]
-name        = "old"
-description = "old split only, fitted on probe"
-lambda      = 1000
-tolerance   = 1e-5
-
-[[ensemble.source]]
-split  = "old"
-groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
-
-[ensemble.expected]
-tx = { probe = 0.872827, quiz = 0.863999 }
-rbm = { probe = 0.881239, quiz = 0.871393 }
-nn = { probe = 0.896947, quiz = 0.891187 }
-other = { probe = 0.880073, quiz = 0.871526 }
-gbmblend = { probe = 0.868855, quiz = 0.859942 }
-mlpblend = { probe = 0.868091, quiz = 0.859109 }
-fwlsblend = { probe = 0.868043, quiz = 0.858110 }
-ensemble = { probe = 0.867267, quiz = 0.858160 }
 
 # Split_1 only, fitted on the probe labels: the single-split bench of split_1 (the old split's
 # train / probe, rebuilt as pipeline-1.toml jobs): the base columns (154 since 2026-11-19) and their 18 blends.

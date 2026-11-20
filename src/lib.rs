@@ -952,7 +952,6 @@ pub fn fit<M: Regressor + Sync>(
 // ---------------------------------------------------------------------------
 
 /// Train/probe/qual split convention. Constants:
-/// - `SPLIT_OLD` = train → probe, fulltrain → qual, preds_dir = "preds_old"
 /// - `SPLIT_NEW` = trainx → probex, fulltrain → qual, preds_dir = "preds_new"
 /// - `SPLIT_3` = train_3 → probe_3, fulltrain → qual, preds_dir = "preds_3"
 #[derive(Debug, Clone, Copy)]
@@ -964,13 +963,6 @@ pub struct Split {
     pub preds_dir: &'static str,
     pub sim_dir: &'static str,
 }
-
-pub const SPLIT_OLD: Split = Split {
-    tr: "train", pr: "probe",
-    fulltrain_tr: "fulltrain", fulltrain_pr: "qual",
-    preds_dir: "preds_old",
-    sim_dir: "sim",
-};
 
 pub const SPLIT_NEW: Split = Split {
     tr: "trainx", pr: "probex",
@@ -1035,7 +1027,7 @@ pub struct Fit2Opts {
 }
 
 /// Call `fit2_inner` with named optional parameters.
-/// Usage: `fit2!(Model, cfg, "rtg", "name", SPLIT_OLD, save_subscores: true)`
+/// Usage: `fit2!(Model, cfg, "rtg", "name", SPLIT_NEW, save_subscores: true)`
 #[macro_export]
 macro_rules! fit2 {
     ($M:ty, $cfg:expr, $target:expr, $model_name:expr, $split:expr $(, $key:ident : $val:expr)* $(,)?) => {

@@ -1,4 +1,4 @@
-//! Pipeline runner. Reads a manifest like `pipeline-old.toml`, lists every
+//! Pipeline runner. Reads a manifest like `pipeline-1.toml`, lists every
 //! job with its current status, and runs a single job on demand. Status
 //! is computed from input/output file existence; staleness checks and
 //! transitive runs are intentionally out of scope for this initial version.
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Command, ExitCode};
 
-const DEFAULT_PIPELINE: &str = "pipeline-old.toml";
+const DEFAULT_PIPELINE: &str = "pipeline-1.toml";
 
 /// Split missing inputs into the producer jobs (deduplicated, in first-seen
 /// order) and orphan paths (no job produces them — typically source files or

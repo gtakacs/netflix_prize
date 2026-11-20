@@ -66,8 +66,8 @@ a public store, so the interesting part, blending, can be tried straight away:
 
 ```
 cargo build --release --bin preds
-./target/release/preds pull --ensemble cross3      # 6.0 GB, what the reference check reads
-./target/release/preds pull                        # everything, 16.5 GB
+./target/release/preds pull --ensemble cross1      # 6.6 GB, what the reference check reads
+./target/release/preds pull                        # everything, ~33 GB
 ```
 
 `--ensemble NAME` fetches exactly the columns a stored blend of `ensembles.toml`
@@ -87,12 +87,12 @@ cargo build --release --features blas --bin ridge
 
 ```
 row                    quiz (columns)   expected       delta
-old/tx                  0.863788 (52)   0.863788    -2.74e-8  OK
+1/tx                    0.864551 (65)   0.864551    -1.21e-7  OK
 ...
-old/*                  0.857838 (137)   0.857838    -1.62e-7  OK
+1/*                    0.857404 (172)   0.857404    -1.20e-7  OK
 new/*                  0.857715 (175)   0.857715    -1.54e-7  OK
-3/*                    0.857746 (223)   0.857746    -8.47e-8  OK
-ensemble               0.855944 (535)   0.855944    +2.29e-7  OK
+3/*                    0.857567 (223)   0.857567    +1.68e-7  OK
+ensemble               0.855832 (570)   0.855832    +2.72e-7  OK
 
 Reference check: PASS (25 rows within 1e-5)
 ```
@@ -100,10 +100,14 @@ Reference check: PASS (25 rows within 1e-5)
 It takes about half a minute, exits non-zero if the numbers have drifted, and
 needs no dataset download: the qualifying-set labels ship with the repo
 (`data/qual_ratings/qual_ratings.csv.gz`), and the blend reads them directly
-when `data/qual/` has not been ingested. The default blend, `cross3`, combines
-the three splits (old, new and split_3, `pipeline-3.toml`); `--ensemble cross`
-is the earlier two-split one, and `--ensemble new` runs the single-split blend,
-which is fitted on the probe set and reports a probe number too.
+when `data/qual/` has not been ingested. The default blend, `cross1`, combines
+the three splits (split_1 `pipeline-1.toml`, new `pipeline-new.toml` and split_3
+`pipeline-3.toml`); `--ensemble new`, `s1` and `s3` run single-split blends,
+which are fitted on their probe set and report a probe number too.
+
+The original split of the project (`pipeline-old.toml`, `preds_old/`) was retired on
+2026-11-20: split_1 has the same train / probe sets, is stronger, and unlike the old
+split every one of its columns is a reproducible pipeline job.
 
 ### Measure a column of your own
 
@@ -178,11 +182,11 @@ Archive nor the Kaggle release) are bundled with the repo as
 
 The pipeline is described declaratively in a TOML manifest. Each job has a
 `jobtype` (`model`, `paropt`, `legacy_eblend`, ...), explicit `inputs` and
-`outputs`, and a build/run command. The repo holds two manifests, one per
+`outputs`, and a build/run command. The repo holds one manifest per
 train/probe split:
 
-- `pipeline-old.toml` — `data/{train,probe,fulltrain,qual}` →
-  `preds/`, `features/`
+- `pipeline-1.toml` — `data/{train,probe,fulltrain,qual}` → `preds_1/`
+- `pipeline-3.toml` — `data/{train_3,probe_3,fulltrain,qual}` → `preds_3/`
 - `pipeline-new.toml` — `data/{trainx,probex,fulltrain,qual}` →
   `preds_new/`, `features_new/`. Each job `<name>` has a dedicated binary
   at `src/bin/<name>-new.rs` with hardcoded config.
@@ -201,7 +205,7 @@ requested job:
 ```
 
 `-p FILE` selects a manifest explicitly; `-n` is a shorthand for
-`-p pipeline-new.toml` (default is `pipeline-old.toml`).
+`-p pipeline-new.toml` (default is `pipeline-1.toml`).
 
 ## Trying your own predictor
 
