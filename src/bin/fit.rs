@@ -842,6 +842,16 @@ fn nade() {
         ..b
     };
 
+    if ev("QUAL_ONLY", 0) != 0 {
+        // Only the fulltrain -> qual phase (same knobs as the probe run; probe files are left
+        // alone), e.g. next to a train -> probe run. Give MS1 / MS2 / SWA explicitly when the
+        // two runs use different EPOCHS: their defaults follow EPOCHS.
+        let split = args.split();
+        netflix_prize::fit::<CfNadeModel>(cfg, &args.target, split.fulltrain_tr, split.fulltrain_pr,
+            &args.name, false, ev("SAVETR", 0) != 0, ev("EPSAVE", 0) != 0, split.preds_dir, false, false);
+        return;
+    }
+
     fit2!(CfNadeModel, cfg, &args.target, &args.name, args.split(),
           save_train: ev("SAVETR", 0) != 0, save_probe_each_epoch: ev("EPSAVE", 0) != 0,
           skip_fulltrain: !args.final_run);
