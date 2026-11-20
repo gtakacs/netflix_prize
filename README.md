@@ -61,8 +61,10 @@ and how job dependencies are resolved.
 
 ## Predictions without training
 
-Training the ~300 base predictors takes weeks of CPU time. They are published as
-a public store, so the interesting part, blending, can be tried straight away:
+Training the several hundred base predictors of the three splits takes weeks of CPU
+time. They are published as a public store (its README is
+[`docs/BUCKET_README.md`](docs/BUCKET_README.md)), so the interesting part,
+blending, can be tried straight away:
 
 ```
 cargo build --release --bin preds
