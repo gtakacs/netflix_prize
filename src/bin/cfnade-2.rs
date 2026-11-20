@@ -1,12 +1,12 @@
-//! CF-NADE dispatcher (SPLIT_NEW). `args[1]` selects a job:
+//! CF-NADE dispatcher (SPLIT_2). `args[1]` selects a job:
 //!   cfnade-96   -> canonical preset, run through the standard fit2 pipeline
-//!   --test ...  -> flag-driven tuning loop on trainx/probex (no qual/train save)
+//!   --test ...  -> flag-driven tuning loop on train_2/probe_2 (no qual/train save)
 
 use std::env;
 use std::time::Instant;
 
 use netflix_prize::{
-    Dataset, MaskedDataset, Regressor, calc_rmse, fit2, save_preds, SPLIT_NEW,
+    Dataset, MaskedDataset, Regressor, calc_rmse, fit2, save_preds, SPLIT_2,
     cfnade::{CfNadeConfig, CfNadeModel},
 };
 
@@ -33,7 +33,7 @@ fn main() {
 }
 
 /// Run a capacity-scaled preset through the standard fit2 pipeline.
-/// `save_probe_each_epoch` writes per-epoch predictions: `{name}_ep{NN}.probex.npy`
+/// `save_probe_each_epoch` writes per-epoch predictions: `{name}_ep{NN}.probe_2.npy`
 /// in phase 1 and `{name}_ep{NN}.qual.npy` in the fulltrain phase.
 fn run_preset(job_name: &str, n_hidden: usize, rank: usize, n_epochs: usize) {
     run_preset_swa(job_name, n_hidden, rank, n_epochs, CfNadeConfig::default().swa_start);
@@ -48,7 +48,7 @@ fn run_preset_noswa(job_name: &str, n_hidden: usize, rank: usize, n_epochs: usiz
 
 fn run_preset_swa(job_name: &str, n_hidden: usize, rank: usize, n_epochs: usize, swa_start: usize) {
     let cfg = CfNadeConfig { n_hidden, rank, n_epochs, swa_start, ..CfNadeConfig::default() };
-    fit2!(CfNadeModel, cfg, "rtg", job_name, SPLIT_NEW, save_probe_each_epoch: true);
+    fit2!(CfNadeModel, cfg, "rtg", job_name, SPLIT_2, save_probe_each_epoch: true);
 }
 
 fn cli_arg(key: &str) -> Option<String> {
@@ -60,8 +60,8 @@ fn has_flag(key: &str) -> bool {
     env::args().any(|a| a == key)
 }
 
-/// Flag-driven tuning loop: trains on trainx (or train{N} via --data) and
-/// reports probex RMSE each `--eval-every` epochs. Final-epoch RMSE reflects
+/// Flag-driven tuning loop: trains on train_2 (or train{N} via --data) and
+/// reports probe_2 RMSE each `--eval-every` epochs. Final-epoch RMSE reflects
 /// the SWA-averaged weights (the model swaps to them inside fit_epoch).
 fn run_test() {
     let mut cfg = CfNadeConfig::default();
@@ -114,7 +114,7 @@ fn run_test() {
     let save_prefix = cli_arg("--save");
     let dataset = cli_arg("--data").unwrap_or_else(|| "x".to_string());
     let (tr_name, pr_name) = match dataset.as_str() {
-        "x" => ("trainx".to_string(), "probex".to_string()),
+        "x" => ("train_2".to_string(), "probe_2".to_string()),
         "full" => ("train".to_string(), "probe".to_string()),
         "qual" => ("fulltrain".to_string(), "qual".to_string()),
         n => (format!("train{n}"), format!("probe{n}")),
@@ -133,8 +133,8 @@ fn run_test() {
         cfg.use_implicit_probe_ctx, cfg.use_side_features, dataset,
     );
 
-    let tr = Dataset::load(&tr_name, "rtg", SPLIT_NEW.preds_dir);
-    let pr = Dataset::load(&pr_name, "rtg", SPLIT_NEW.preds_dir);
+    let tr = Dataset::load(&tr_name, "rtg", SPLIT_2.preds_dir);
+    let pr = Dataset::load(&pr_name, "rtg", SPLIT_2.preds_dir);
     let pr_masked = MaskedDataset::from(&pr);
     let mut model = CfNadeModel::new(&tr, &pr_masked, cfg);
 
@@ -149,7 +149,7 @@ fn run_test() {
             if rmse < best {
                 best = rmse;
                 if let Some(prefix) = save_prefix.as_ref() {
-                    let path = format!("{}/{}.{}.npy", SPLIT_NEW.preds_dir, prefix, pr_name);
+                    let path = format!("{}/{}.{}.npy", SPLIT_2.preds_dir, prefix, pr_name);
                     save_preds(&mut model, &pr, &path);
                 }
             }

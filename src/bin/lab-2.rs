@@ -4,7 +4,7 @@
 // (`n_threads: 1`) so anything that pays can go straight into the standard set.
 
 use netflix_prize::{
-    OrdinalHeadConfig, SPLIT_NEW,
+    OrdinalHeadConfig, SPLIT_2,
     asym::{AsymConfig, AsymModel},
     attn::{AttnConfig, AttnModel},
     dnn::{DnnConfig, DnnModel},
@@ -25,7 +25,7 @@ fn ev<T: std::str::FromStr>(key: &str, default: T) -> T {
 fn nlpp_cfg(base: &'static str) -> NlppConfig {
     NlppConfig {
         base_model: base,
-        preds_dir: SPLIT_NEW.preds_dir,
+        preds_dir: SPLIT_2.preds_dir,
         n_als_iters: 2,
         reg_a: [(4.74449, 0.489646), (1.86309, 4.83715e5),
                 (118.959, 1.19996e-6), (2.37045e5, 6.54512e-4)],
@@ -45,7 +45,7 @@ fn main() {
     // base, including bases produced by the other dispatchers.
     if let Some(base) = job_name.strip_suffix("__knn3") {
         let target = format!("1.0*{}", base);
-        fit2!(Knn3Model, Knn3Config::default(), &target, job_name, SPLIT_NEW);
+        fit2!(Knn3Model, Knn3Config::default(), &target, job_name, SPLIT_2);
         return;
     }
     // `__knnf`: neighborhood from the base model's own *item factors* (cosine
@@ -60,14 +60,14 @@ fn main() {
             job_name.strip_suffix(&suffix).map(|b| (b, *w))
         })
     {
-        let factors: &'static str = format!("{}/{}.ifeat", SPLIT_NEW.preds_dir, base).leak();
+        let factors: &'static str = format!("{}/{}.ifeat", SPLIT_2.preds_dir, base).leak();
         let cfg = match width {
             'b' => KnnfConfig { factors, k: 60, scaling: 2.0, tau: 0.0 },
             'c' => KnnfConfig { factors, k: 10, scaling: 0.5, tau: 0.06 },
             _ => KnnfConfig::with_factors(factors),
         };
         let target = format!("1.0*{}", base);
-        fit2!(KnnfModel, cfg, &target, job_name, SPLIT_NEW);
+        fit2!(KnnfModel, cfg, &target, job_name, SPLIT_2);
         return;
     }
 
@@ -76,7 +76,7 @@ fn main() {
     // paid for the dnn and asym stages, and it had never been tried here.
     if let Some(base) = job_name.strip_suffix("__knn3p") {
         let target = format!("0.5*{}", base);
-        fit2!(Knn3Model, Knn3Config::default(), &target, job_name, SPLIT_NEW);
+        fit2!(Knn3Model, Knn3Config::default(), &target, job_name, SPLIT_2);
         return;
     }
     // `__knn3b` / `__knn3c`: the same chain at a far wider and a far narrower
@@ -107,12 +107,12 @@ fn main() {
             },
         };
         let target = format!("1.0*{}", base);
-        fit2!(Knn3Model, cfg, &target, job_name, SPLIT_NEW);
+        fit2!(Knn3Model, cfg, &target, job_name, SPLIT_2);
         return;
     }
     if let Some(base) = job_name.strip_suffix("__nlpp") {
         let cfg = nlpp_cfg(base.to_string().leak());
-        fit2!(NlppModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+        fit2!(NlppModel, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         return;
     }
 
@@ -127,12 +127,12 @@ fn main() {
             let cfg = DnnConfig {
                 n_feat: 32, h1: 96, h2: 48, n_mf: 192, n_epochs: 7, lr_decay: 0.85, ..dnn
             };
-            fit2!(DnnModel, cfg, "rtg", job_name, SPLIT_NEW,
+            fit2!(DnnModel, cfg, "rtg", job_name, SPLIT_2,
                   save_train: true, save_probe_each_epoch: true, save_subscores: true);
         }
         "lab-d16" => {
             let cfg = DnnConfig { n_feat: 16, h1: 64, h2: 32, n_mf: 192, n_epochs: 14, ..dnn };
-            fit2!(DnnModel, cfg, "rtg", job_name, SPLIT_NEW,
+            fit2!(DnnModel, cfg, "rtg", job_name, SPLIT_2,
                   save_train: true, save_probe_each_epoch: true, save_subscores: true);
         }
 
@@ -147,7 +147,7 @@ fn main() {
                 ..attn
             };
             let target = if job_name == "lab-a24p" { "0.5*dnn-24" } else { "1.0*dnn-24" };
-            fit2!(AttnModel, cfg, target, job_name, SPLIT_NEW, save_train: true);
+            fit2!(AttnModel, cfg, target, job_name, SPLIT_2, save_train: true);
         }
 
         // The partial-residual recipe at the capacity of its own base: does a
@@ -158,7 +158,7 @@ fn main() {
             let cfg = DnnConfig {
                 n_feat: 24, h1: 96, h2: 64, n_mf: 256, n_epochs: 8, lr_decay: 0.87, ..dnn
             };
-            fit2!(DnnModel, cfg, "0.5*dnn-24", job_name, SPLIT_NEW,
+            fit2!(DnnModel, cfg, "0.5*dnn-24", job_name, SPLIT_2,
                   save_train: true, save_probe_each_epoch: true);
         }
 
@@ -233,7 +233,7 @@ fn main() {
         lazy_day: false,
         ud_dim: None,
             };
-            fit2!(TxModel, cfg, "0.5*dnn-24", job_name, SPLIT_NEW,
+            fit2!(TxModel, cfg, "0.5*dnn-24", job_name, SPLIT_2,
                   save_train: true, save_probe_each_epoch: true);
         }
 
@@ -248,7 +248,7 @@ fn main() {
                 "lab-mix1" => "0.25*dnn-24 + 0.25*tsvdx5-120o",
                 _ => "0.25*dnn-24 + 0.25*rbmx2-500",
             };
-            fit2!(DnnModel, cfg, target, job_name, SPLIT_NEW,
+            fit2!(DnnModel, cfg, target, job_name, SPLIT_2,
                   save_train: true, save_probe_each_epoch: true);
         }
 
@@ -258,7 +258,7 @@ fn main() {
         // at zero, but the partial one at this depth never was.
         "dnn-24__dnn-16p50__dnn-16p50" => {
             let cfg = DnnConfig { n_feat: 16, h1: 64, h2: 32, n_mf: 192, n_epochs: 8, ..dnn };
-            fit2!(DnnModel, cfg, "0.5*dnn-24__dnn-16p50", job_name, SPLIT_NEW,
+            fit2!(DnnModel, cfg, "0.5*dnn-24__dnn-16p50", job_name, SPLIT_2,
                   save_train: true, save_probe_each_epoch: true);
         }
 
@@ -291,7 +291,7 @@ fn main() {
                 save_ufeat: false,
             };
             let target: &'static str = format!("{}*{}", weight, residual_base).leak();
-            fit2!(AsymModel, cfg, target, job_name, SPLIT_NEW, save_train: true);
+            fit2!(AsymModel, cfg, target, job_name, SPLIT_2, save_train: true);
         }
 
         // Free-form probe: model, target and every knob from the environment.
@@ -309,7 +309,7 @@ fn main() {
                 ..attn
             };
             let target: &'static str = env::var("TARGET").unwrap_or_else(|_| "rtg".into()).leak();
-            fit2!(AttnModel, cfg, target, job_name, SPLIT_NEW, no_fulltrain: true);
+            fit2!(AttnModel, cfg, target, job_name, SPLIT_2, no_fulltrain: true);
         }
         _ => panic!("invalid job name: {}", job_name),
     }

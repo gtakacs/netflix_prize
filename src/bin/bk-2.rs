@@ -4,7 +4,7 @@ use netflix_prize::{
     bk3::{Bk3Config, Bk3Model},
     fit2,
     knns::{KnnsConfig, KnnsModel, SuppSource},
-    SPLIT_NEW,
+    SPLIT_2,
 };
 
 fn main() {
@@ -38,7 +38,7 @@ fn main() {
                 reg_h: 0.0,
             };
             fit2!(
-                Bk1Model, cfg, "rtg", job_name, SPLIT_NEW,
+                Bk1Model, cfg, "rtg", job_name, SPLIT_2,
                 save_train: true,
                 save_probe_each_epoch: true
             );
@@ -76,7 +76,7 @@ fn main() {
                 reg_nbr: 0.030711,
                 reg_h: 0.000373603,
             };
-            fit2!(Bk3Model, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+            fit2!(Bk3Model, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         }
 
         "bk3-30" => {
@@ -111,7 +111,7 @@ fn main() {
                 reg_nbr: 0.030711,
                 reg_h: 0.000373603,
             };
-            fit2!(Bk3Model, cfg, "rtg", job_name, SPLIT_NEW);
+            fit2!(Bk3Model, cfg, "rtg", job_name, SPLIT_2);
         }
 
         "bk3-20__knns" => {
@@ -122,7 +122,7 @@ fn main() {
                 tau: 0.05,
                 supp_source: SuppSource::Compute,
             };
-            fit2!(KnnsModel, cfg, "0.8*bk3-20", job_name, SPLIT_NEW);
+            fit2!(KnnsModel, cfg, "0.8*bk3-20", job_name, SPLIT_2);
         }
 
         _ => panic!("invalid job name: {}", job_name),

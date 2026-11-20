@@ -1,6 +1,6 @@
 use std::env;
 use netflix_prize::{
-    OrdinalHeadConfig, SPLIT_NEW,
+    OrdinalHeadConfig, SPLIT_2,
     epoch_blend_apply, fit2,
     knn::{KnnConfig, KnnModel, SimType},
     knn3::{Knn3Config, Knn3Model},
@@ -154,11 +154,11 @@ fn run_lm(
         save_ufeat: false,
     };
     match (save_train, save_subscores, save_probe_each_epoch) {
-        (true,  false, true)  => fit2!(TxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_probe_each_epoch: true),
-        (true,  true,  true)  => fit2!(TxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_subscores: true, save_probe_each_epoch: true),
-        (false, false, true)  => fit2!(TxModel, cfg, "rtg", job_name, SPLIT_NEW, save_probe_each_epoch: true),
-        (true,  true,  false) => fit2!(TxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_subscores: true),
-        (true,  false, false) => fit2!(TxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true),
+        (true,  false, true)  => fit2!(TxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, save_probe_each_epoch: true),
+        (true,  true,  true)  => fit2!(TxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, save_subscores: true, save_probe_each_epoch: true),
+        (false, false, true)  => fit2!(TxModel, cfg, "rtg", job_name, SPLIT_2, save_probe_each_epoch: true),
+        (true,  true,  false) => fit2!(TxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, save_subscores: true),
+        (true,  false, false) => fit2!(TxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true),
         _ => panic!("unsupported opts combination for {}", job_name),
     }
 }
@@ -199,9 +199,9 @@ fn run_small_o(n_feat: usize, save_train: bool, job_name: &str) {
         ud_dim: None,
     };
     if save_train {
-        fit2!(TxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_probe_each_epoch: true);
+        fit2!(TxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, save_probe_each_epoch: true);
     } else {
-        fit2!(TxModel, cfg, "rtg", job_name, SPLIT_NEW, save_subscores: true);
+        fit2!(TxModel, cfg, "rtg", job_name, SPLIT_2, save_subscores: true);
     }
 }
 
@@ -232,7 +232,7 @@ fn run_d0tb(job_name: &str) {
         save_ufeat: false,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_train: true, save_probe_each_epoch: true
     );
 }
@@ -264,7 +264,7 @@ fn run_f1(job_name: &str) {
         save_ufeat: false,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_probe_each_epoch: true
     );
 }
@@ -296,7 +296,7 @@ fn run_h8nb(job_name: &str) {
         save_ufeat: false,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_train: true, save_probe_each_epoch: true
     );
 }
@@ -328,7 +328,7 @@ fn run_l32nb(job_name: &str) {
         save_ufeat: false,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_probe_each_epoch: true
     );
 }
@@ -359,7 +359,7 @@ fn run_m1n(job_name: &str) {
         save_ifeat: false, low_memory: true, full_su: true, lazy_day: false, ud_dim: None,
         save_ufeat: false,
     };
-    fit2!(TxModel, cfg, "rtg", job_name, SPLIT_NEW);
+    fit2!(TxModel, cfg, "rtg", job_name, SPLIT_2);
 }
 
 fn run_q16tb(job_name: &str) {
@@ -389,7 +389,7 @@ fn run_q16tb(job_name: &str) {
         save_ufeat: false,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_train: true, save_probe_each_epoch: true
     );
 }
@@ -426,7 +426,7 @@ fn run_s20fo(job_name: &str) {
         save_ufeat: false,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_train: true, save_probe_each_epoch: true
     );
 }
@@ -458,7 +458,7 @@ fn run_t8cu(job_name: &str) {
         save_ufeat: false,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_train: true, save_probe_each_epoch: true
     );
 }
@@ -490,7 +490,7 @@ fn run_16_t(job_name: &str) {
         save_ufeat: false,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_train: true, save_probe_each_epoch: true, transpose: true
     );
 }
@@ -527,7 +527,7 @@ fn run_n8nbo(job_name: &str) {
         save_ufeat: false,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_train: true
     );
 }
@@ -564,7 +564,7 @@ fn run_p0tbo(job_name: &str) {
         save_ufeat: false,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_train: true
     );
 }
@@ -572,7 +572,7 @@ fn run_p0tbo(job_name: &str) {
 fn run_knn3(job_name: &str) {
     let base = job_name.strip_suffix("__knn3").unwrap();
     let target = format!("1.0*{}", base);
-    fit2!(Knn3Model, Knn3Config::default(), &target, job_name, SPLIT_NEW);
+    fit2!(Knn3Model, Knn3Config::default(), &target, job_name, SPLIT_2);
 }
 
 fn run_knns(k: usize, scaling: f32, tau: f32, target_weight: &str, job_name: &str) {
@@ -585,20 +585,20 @@ fn run_knns(k: usize, scaling: f32, tau: f32, target_weight: &str, job_name: &st
     };
     let base = job_name.strip_suffix("__knns").unwrap();
     let target = format!("{}*{}", target_weight, base);
-    fit2!(KnnsModel, cfg, &target, job_name, SPLIT_NEW);
+    fit2!(KnnsModel, cfg, &target, job_name, SPLIT_2);
 }
 
 fn run_knnf(job_name: &str) {
     let base = job_name.strip_suffix("__knnf").unwrap();
     let factors_path: &'static str =
-        format!("{}/{}.ifeat", SPLIT_NEW.preds_dir, base).leak();
+        format!("{}/{}.ifeat", SPLIT_2.preds_dir, base).leak();
     let target = format!("1.0*{}", base);
     fit2!(
         KnnfModel,
         KnnfConfig::with_factors(factors_path),
         &target,
         job_name,
-        SPLIT_NEW
+        SPLIT_2
     );
 }
 
@@ -617,14 +617,14 @@ fn run_knn_d(job_name: &str) {
         use_stat1: true,
         regression: false,
         regression_lambda: 0.1,
-        sim_dir: SPLIT_NEW.sim_dir,
-        preds_dir: SPLIT_NEW.preds_dir,
+        sim_dir: SPLIT_2.sim_dir,
+        preds_dir: SPLIT_2.preds_dir,
     };
-    fit2!(KnnModel, cfg, "1.0*tsvdx4-4800lm", job_name, SPLIT_NEW);
+    fit2!(KnnModel, cfg, "1.0*tsvdx4-4800lm", job_name, SPLIT_2);
 }
 
 fn run_eblend(weights: &[f64], offset: f64, job_name: &str) {
     // Weights and offset extracted from predsx/<base>.out (truncated to 6 decimals).
     let base = job_name.strip_suffix("__epochs").unwrap();
-    epoch_blend_apply(base, weights, offset, SPLIT_NEW);
+    epoch_blend_apply(base, weights, offset, SPLIT_2);
 }

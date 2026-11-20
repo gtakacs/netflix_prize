@@ -17,7 +17,7 @@ fn ev<T: std::str::FromStr>(key: &str, default: T) -> T {
 fn split_arg(args: &[String]) -> Split {
     let path = args.iter().position(|a| a == "-p")
         .map(|i| args.get(i + 1).expect("'-p' requires a manifest path").as_str())
-        .unwrap_or("pipeline-new.toml");
+        .unwrap_or("pipeline-2.toml");
     Split::from_pipeline(path)
 }
 

@@ -1,6 +1,6 @@
 target/
 *.pyc
-preds_new/
+preds_2/
 preds_old/
 preds_lab/
 meetup/
@@ -9,9 +9,9 @@ sim/
 data/fulltrain/
 data/probe/
 data/probe_3/
-data/probex/
+data/probe_2/
 data/qual/
 data/raw/
 data/train/
 data/train_3/
-data/trainx/
+data/train_2/

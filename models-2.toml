@@ -414,7 +414,7 @@ fwlsblend_orig = [
 ]
 
 # The fwls layer after a leave-one-out sweep on the quiz-fitted blend
-# (--from new): fwls1x dropped, since fwls7x1/fwls7g took over its role.
+# (--from 2): fwls1x dropped, since fwls7x1/fwls7g took over its role.
 # Ordered by the quiz RMSE cost of dropping the column, largest first.
 fwlsblend_part1 = [
     "fwls5-s1",               # 11.5e-5

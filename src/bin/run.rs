@@ -136,7 +136,7 @@ fn run_one(job_name: &str, resolved: &IndexMap<String, ResolvedJob>, force: bool
     }
 }
 
-const NEW_PIPELINE: &str = "pipeline-new.toml";
+const PIPELINE_2: &str = "pipeline-2.toml";
 
 /// Total size of a directory tree, for the closing summary.
 fn dir_size(path: &str) -> u64 {
@@ -167,7 +167,7 @@ fn cmd_setup(pipeline_path: &str, force: bool) -> ExitCode {
     println!("  build      {}", build);
     println!("  download   data/raw/  (697 MB archive, md5 verified, resumable)");
     println!("  ingest     data/{{train,probe,fulltrain,qual}}/   [{}]", pipeline_path);
-    println!("  newsplit   data/{{trainx,probex}}/                [{}]", NEW_PIPELINE);
+    println!("  newsplit   data/{{train_2,probe_2}}/                [{}]", PIPELINE_2);
     println!();
     println!("About 3.3 GB on disk when finished. Steps whose outputs exist are skipped.");
     println!();
@@ -186,8 +186,8 @@ fn cmd_setup(pipeline_path: &str, force: bool) -> ExitCode {
     }
 
     // download and ingest come from the selected manifest, newsplit only exists
-    // in the new-split one.
-    for (path, jobs) in [(pipeline_path, &["download", "ingest"][..]), (NEW_PIPELINE, &["newsplit"][..])] {
+    // in the split_2 one.
+    for (path, jobs) in [(pipeline_path, &["download", "ingest"][..]), (PIPELINE_2, &["newsplit"][..])] {
         let pipeline = match Pipeline::load(path) {
             Ok(p) => p,
             Err(e) => {
@@ -207,7 +207,7 @@ fn cmd_setup(pipeline_path: &str, force: bool) -> ExitCode {
 
     println!();
     println!("Datasets ready:");
-    for d in ["train", "probe", "fulltrain", "qual", "trainx", "probex"] {
+    for d in ["train", "probe", "fulltrain", "qual", "train_2", "probe_2"] {
         let path = format!("data/{}", d);
         let size = dir_size(&path);
         if size > 0 {
@@ -215,16 +215,15 @@ fn cmd_setup(pipeline_path: &str, force: bool) -> ExitCode {
         }
     }
     println!();
-    println!("Next: ./target/release/run -n            # list the jobs and their status");
+    println!("Next: ./target/release/run              # list the jobs and their status");
     println!("      ./target/release/preds pull        # the published predictions, no training needed");
     ExitCode::SUCCESS
 }
 
 fn print_help() {
-    println!("Usage: run [-p FILE | -n] [-l] [-c] [-f] [--setup] [JOB]");
+    println!("Usage: run [-p FILE] [-l] [-c] [-f] [--setup] [JOB]");
     println!();
     println!("  -p FILE, --pipeline FILE   pipeline manifest (default: {})", DEFAULT_PIPELINE);
-    println!("  -n, --new                  shortcut for -p pipeline-new.toml");
     println!("  -l, --list                 list jobs with status (default if no JOB)");
     println!("  -c, --clean                list (or delete with -f) files in preds dir");
     println!("                             not referenced by any active job");
@@ -311,7 +310,6 @@ fn main() -> ExitCode {
             "-f" | "--force" => { force = true; i += 1; }
             "-c" | "--clean" => { clean_mode = true; i += 1; }
             "--setup" => { setup_mode = true; i += 1; }
-            "-n" | "--new" => { pipeline_path = "pipeline-new.toml".to_string(); i += 1; }
             "-p" | "--pipeline" => {
                 if i + 1 >= args.len() {
                     eprintln!("error: {} requires an argument", args[i]);

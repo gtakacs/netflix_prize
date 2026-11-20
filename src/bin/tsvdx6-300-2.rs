@@ -1,4 +1,4 @@
-use netflix_prize::{fit2, tx::{TxConfig, TxModel}, SPLIT_NEW};
+use netflix_prize::{fit2, tx::{TxConfig, TxModel}, SPLIT_2};
 
 fn main() {
     let cfg = TxConfig {
@@ -58,7 +58,7 @@ fn main() {
         ud_dim: None,
     };
     fit2!(
-        TxModel, cfg, "rtg", "tsvdx6-300", SPLIT_NEW,
+        TxModel, cfg, "rtg", "tsvdx6-300", SPLIT_2,
         save_train: true,
         save_probe_each_epoch: true
     );

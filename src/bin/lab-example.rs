@@ -3,7 +3,7 @@
 // predictions land in preds_lab/, so nothing here can disturb the stable set.
 //
 //   cargo run --release --bin lab-example -- --smoke   # minutes: does it run?
-//   cargo run --release --bin lab-example              # full trainx -> probex
+//   cargo run --release --bin lab-example              # full train_2 -> probe_2
 //   cargo run --release --bin lab-example -- --final   # + fulltrain -> qual
 //
 // See docs/EXPERIMENTS.md.

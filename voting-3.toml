@@ -1,4 +1,4 @@
-# Voting-feature groups for SPLIT_3 (mirrors voting-new.toml). Specs are names
+# Voting-feature groups for SPLIT_3 (mirrors voting-2.toml). Specs are names
 # relative to preds_3/: 'vf/<name>' for the vfeat1 features in preds_3/vf/.
 # The `all` group is the full vfeat1 output set (must match its Selection).
 
@@ -135,7 +135,7 @@ all = [
     "vf/vf129_movie_avg_rater_entropy",
 ]
 
-# Pure-vf subsets copied from voting-new.toml (the gbm/mlp blends' voting input).
+# Pure-vf subsets copied from voting-2.toml (the gbm/mlp blends' voting input).
 subset1 = [
     "vf/vf000_constant",
     "vf/vf001_user_gt3_on_date",
@@ -274,7 +274,7 @@ subset4 = [
     "vf/vf125_user_avg_item_year"
 ]
 
-# The vf part (14 of 20) of voting-new.toml's fwls2 context group, in its order:
+# The vf part (14 of 20) of voting-2.toml's fwls2 context group, in its order:
 # the fwls2x context features on split_3.
 fwls2vf = [
     "vf/vf000_constant",

@@ -3,7 +3,7 @@ use netflix_prize::{
     als8::{Als8Config, Als8Model},
     fit2,
     knn3::{Knn3Config, Knn3Model},
-    SPLIT_NEW,
+    SPLIT_2,
 };
 
 fn main() {
@@ -26,10 +26,10 @@ fn main() {
                 use_probe: true,
                 n_bias_used: 8,
             };
-            fit2!(Als8Model, cfg, "rtg", "als8-8", SPLIT_NEW, save_train: true);
+            fit2!(Als8Model, cfg, "rtg", "als8-8", SPLIT_2, save_train: true);
         }
         "als8-8__knn3" => {
-            fit2!(Knn3Model, Knn3Config::default(), "1.0*als8-8", "als8-8__knn3", SPLIT_NEW);
+            fit2!(Knn3Model, Knn3Config::default(), "1.0*als8-8", "als8-8__knn3", SPLIT_2);
         }
         _ => panic!("invalid job name: {}", job_name),
     }

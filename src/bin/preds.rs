@@ -13,7 +13,7 @@ use std::process::ExitCode;
 const DEFAULT_JOBS: usize = 8;
 /// Every split's manifest, because the store spans all of them (and `prune`
 /// keeps only what these reference).
-const DEFAULT_MANIFESTS: [&str; 3] = ["pipeline-1.toml", "pipeline-new.toml", "pipeline-3.toml"];
+const DEFAULT_MANIFESTS: [&str; 3] = ["pipeline-1.toml", "pipeline-2.toml", "pipeline-3.toml"];
 /// Where `ridge --ensemble` reads its stored blends from.
 const ENSEMBLES_TOML: &str = "ensembles.toml";
 /// Uploads go through one `hf` process each, so stay gentler than with GETs.
@@ -29,7 +29,7 @@ fn print_help() {
     println!("  pull [PATTERN...]          download the files an index lists, verifying each");
     println!("                             md5; PATTERN globs the path ('*' matches anything)");
     println!("  --ensemble NAME            pull: (also) the files the stored blend NAME of {ENSEMBLES_TOML}");
-    println!("                             reads, e.g. cross3: each column's qual predictions,");
+    println!("                             reads, e.g. cross1: each column's qual predictions,");
     println!("                             and its probe ones for a single-split ensemble");
     println!("  push                       upload what the manifests reference, then the index");
     println!("                             (needs 'hf auth login'; never deletes)");

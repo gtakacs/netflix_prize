@@ -4,7 +4,7 @@ use netflix_prize::{
     fit2,
     knn3::{Knn3Config, Knn3Model},
     mf::{MfConfig, MfModel},
-    SPLIT_NEW,
+    SPLIT_2,
 };
 
 fn run_mf(n_feat: usize, n_epochs: usize, job_name: &str) {
@@ -27,7 +27,7 @@ fn run_mf(n_feat: usize, n_epochs: usize, job_name: &str) {
         save_ifeat: false,
         save_ufeat: false,
     };
-    fit2!(MfModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+    fit2!(MfModel, cfg, "rtg", job_name, SPLIT_2, save_train: true);
 }
 
 fn main() {
@@ -40,7 +40,7 @@ fn main() {
 
         "mf-60__knn3" | "mf-61__knn3" => {
             let target = format!("1.0*{}", job_name.strip_suffix("__knn3").unwrap());
-            fit2!(Knn3Model, Knn3Config::default(), &target, job_name, SPLIT_NEW);
+            fit2!(Knn3Model, Knn3Config::default(), &target, job_name, SPLIT_2);
         }
 
         "mf-61__asym-16" => {
@@ -64,7 +64,7 @@ fn main() {
                 save_ufeat: false,
             };
             fit2!(
-                AsymModel, cfg, "mf-61", job_name, SPLIT_NEW,
+                AsymModel, cfg, "mf-61", job_name, SPLIT_2,
                 save_probe_each_epoch: true
             );
         }

@@ -1,5 +1,5 @@
 use std::env;
-use netflix_prize::{aex::{AexConfig, AexModel}, fit2, SPLIT_NEW};
+use netflix_prize::{aex::{AexConfig, AexModel}, fit2, SPLIT_2};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -27,5 +27,5 @@ fn main() {
         lr_ubias: 0.0001,
         lr_udbias: 5e-5,
     };
-    fit2!(AexModel, cfg, "rtg", job_name, SPLIT_NEW);
+    fit2!(AexModel, cfg, "rtg", job_name, SPLIT_2);
 }

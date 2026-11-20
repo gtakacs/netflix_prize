@@ -3,7 +3,7 @@ use netflix_prize::{
     fit2,
     knnf::{KnnfConfig, KnnfModel},
     tsvdx4p::{Tsvdx4pConfig, Tsvdx4pModel},
-    SPLIT_NEW,
+    SPLIT_2,
 };
 
 fn main() {
@@ -80,10 +80,10 @@ fn run_lm(
         seq_epochs,
     };
     if save_train {
-        fit2!(Tsvdx4pModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+        fit2!(Tsvdx4pModel, cfg, "rtg", job_name, SPLIT_2, save_train: true);
     } else {
         fit2!(
-            Tsvdx4pModel, cfg, "rtg", job_name, SPLIT_NEW,
+            Tsvdx4pModel, cfg, "rtg", job_name, SPLIT_2,
             save_probe_each_epoch: true
         );
     }
@@ -94,13 +94,13 @@ fn run_knnf(job_name: &str) {
     // Leak the formatted path so it satisfies KnnfConfig's `&'static str`
     // requirement. The leak is one-shot per process — negligible.
     let factors_path: &'static str =
-        format!("{}/{}.ifeat", SPLIT_NEW.preds_dir, base).leak();
+        format!("{}/{}.ifeat", SPLIT_2.preds_dir, base).leak();
     let target = format!("1.0*{}", base);
     fit2!(
         KnnfModel,
         KnnfConfig::with_factors(factors_path),
         &target,
         job_name,
-        SPLIT_NEW
+        SPLIT_2
     );
 }

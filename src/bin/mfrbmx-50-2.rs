@@ -1,7 +1,7 @@
 use netflix_prize::{
     fit2,
     mfrbmx::{MfConfig, MfRbmxConfig, MfRbmxModel, RbmGvConfig},
-    SPLIT_NEW,
+    SPLIT_2,
 };
 
 fn main() {
@@ -39,7 +39,7 @@ fn main() {
         w_rbm: 1.0,
     };
     fit2!(
-        MfRbmxModel, cfg, "rtg", "mfrbmx-50", SPLIT_NEW,
+        MfRbmxModel, cfg, "rtg", "mfrbmx-50", SPLIT_2,
         save_subscores: true
     );
 }

@@ -173,9 +173,9 @@ outputs = [
 cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 ./target/release/fit vfeat1 {name} -p pipeline-3.toml --preds {preds}"
 
 # --- Second-level blends (gbm / mlp / fwls) over the base columns ---
-# As in pipeline-new.toml: cross-fit blends of the base columns (+ voting
+# As in pipeline-2.toml: cross-fit blends of the base columns (+ voting
 # features), one prediction per seed ({name}-s<seed>). Job names reuse the
-# new-split blends (gbr2x, gbc2x, mlpr2x, mlpc3x, fwls2x) so blend_config(NAME)
+# split_2 blends (gbr2x, gbc2x, mlpr2x, mlpc3x, fwls2x) so blend_config(NAME)
 # gives their tuned params.
 [defaults.gbmblend]
 models        = "models-3.toml"
@@ -1483,7 +1483,7 @@ voting = ["subset1", "subset2", "subset3", "subset4"]
 seeds = [1]
 
 # fwls2x over the base columns + the gbm/mlp blends; context = the vf part of the
-# new-split fwls2 group (14 of 20), lambda as there.
+# split_2 fwls2 group (14 of 20), lambda as there.
 [jobs.fwls2x]
 jobtype = "fwlsblend"
 groups = ["tx", "rbm", "nn", "other", "gbmblend_part1", "mlpblend_part1"]

@@ -1,6 +1,6 @@
-# Voting-feature groups for SPLIT_NEW (mirrors models-new.toml).
-# Specs are names relative to preds_new/: 'vf/<name>' for computed voting
-# features (in preds_new/vf/), or a bare predictor name to use a normal
+# Voting-feature groups for SPLIT_2 (mirrors models-2.toml).
+# Specs are names relative to preds_2/: 'vf/<name>' for computed voting
+# features (in preds_2/vf/), or a bare predictor name to use a normal
 # prediction as a context feature. Brace/`..` expansion supported; no glob.
 # The `all` group is the full vfeat1 output set (must match its Selection). It
 # is an ordinary group, not a builtin: a new group added below is only used by

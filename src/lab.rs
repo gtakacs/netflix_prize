@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 pub const LAB_PREDS_DIR: &str = "preds_lab";
 
 /// Manifest a lab run takes its datasets from when `-p` is absent.
-pub const DEFAULT_MANIFEST: &str = "pipeline-new.toml";
+pub const DEFAULT_MANIFEST: &str = "pipeline-2.toml";
 
 /// Fraction of users a `--smoke` run keeps.
 const SMOKE_SAMPLE: f64 = 0.02;

@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 use std::env;
 use netflix_prize::{
-    SPLIT_NEW,
+    SPLIT_2,
     asym::{AsymConfig, AsymModel},
     epoch_blend_apply, fit2,
     knn3::{Knn3Config, Knn3Model},
@@ -49,7 +49,7 @@ fn main() {
             lr_bif: 0.0002,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         }
 
         "rbmx2-8e" => {
@@ -83,7 +83,7 @@ fn main() {
             lr_bif: 0.0,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         }
 
         "rbmx2-12" => {
@@ -117,7 +117,7 @@ fn main() {
             lr_bif: 0.0002,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         }
 
         "rbmx2-14e" => {
@@ -151,7 +151,7 @@ fn main() {
             lr_bif: 0.0002,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2);
         }
 
         "rbmx2-16-t" => {
@@ -185,7 +185,7 @@ fn main() {
             lr_bif: 0.0,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, transpose: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, transpose: true);
         }
 
         "rbmx2-32-t" => {
@@ -219,7 +219,7 @@ fn main() {
             lr_bif: 0.0,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, transpose: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, transpose: true);
         }
 
         "rbmx2-100e" => {
@@ -253,7 +253,7 @@ fn main() {
             lr_bif: 0.0003,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_probe_each_epoch: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, save_probe_each_epoch: true);
         }
 
         "rbmx2-160f" => {
@@ -287,7 +287,7 @@ fn main() {
             lr_bif: 0.0,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_probe_each_epoch: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, save_probe_each_epoch: true);
         }
 
         "rbmx2-300s" => {
@@ -321,7 +321,7 @@ fn main() {
             lr_bif: 0.0005,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_probe_each_epoch: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, save_probe_each_epoch: true);
         }
 
         "rbmx2-350e" => {
@@ -355,7 +355,7 @@ fn main() {
             lr_bif: 0.0,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_probe_each_epoch: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, save_probe_each_epoch: true);
         }
 
         "rbmx2-400" => {
@@ -389,7 +389,7 @@ fn main() {
             lr_bif: 0.0,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_subscores: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, save_subscores: true);
         }
 
         "rbmx2-500" => {
@@ -423,7 +423,7 @@ fn main() {
             lr_bif: 0.0,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         }
 
         "rbmx2-500bp" => {
@@ -457,7 +457,7 @@ fn main() {
             lr_bif: 0.0003,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true, save_probe_each_epoch: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_train: true, save_probe_each_epoch: true);
         }
 
         "rbmx2-600" => {
@@ -491,7 +491,7 @@ fn main() {
             lr_bif: 0.0,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_probe_each_epoch: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_probe_each_epoch: true);
         }
 
         "rbmx2-800bp" => {
@@ -525,7 +525,7 @@ fn main() {
             lr_bif: 0.0,
             wd_bif: 0.01,
             };
-            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_NEW, save_probe_each_epoch: true);
+            fit2!(RxModel, cfg, "rtg", job_name, SPLIT_2, save_probe_each_epoch: true);
         }
 
         // === Rbmx2Model base jobs (deprecated) ===
@@ -564,7 +564,7 @@ fn main() {
             wd_bif: 0.01,
             lr_bif_bug: true,
             };
-            fit2!(Rbmx2Model, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+            fit2!(Rbmx2Model, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         }
 
         "rbmx2-40" => {
@@ -602,7 +602,7 @@ fn main() {
             wd_bif: 0.01,
             lr_bif_bug: true,
             };
-            fit2!(Rbmx2Model, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+            fit2!(Rbmx2Model, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         }
 
         "rbmx2-60" => {
@@ -640,7 +640,7 @@ fn main() {
             wd_bif: 0.01,
             lr_bif_bug: true,
             };
-            fit2!(Rbmx2Model, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+            fit2!(Rbmx2Model, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         }
 
         "rbmx2-150" => {
@@ -678,7 +678,7 @@ fn main() {
             wd_bif: 0.01,
             lr_bif_bug: true,
             };
-            fit2!(Rbmx2Model, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+            fit2!(Rbmx2Model, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         }
 
         "rbmx2-200" => {
@@ -716,7 +716,7 @@ fn main() {
             wd_bif: 0.01,
             lr_bif_bug: true,
             };
-            fit2!(Rbmx2Model, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+            fit2!(Rbmx2Model, cfg, "rtg", job_name, SPLIT_2, save_train: true);
         }
 
         // === TxModel residual chain ===
@@ -776,7 +776,7 @@ fn main() {
             lazy_day: false,
             ud_dim: None,
             };
-            fit2!(TxModel, cfg, "0.9*rbmx2-10", job_name, SPLIT_NEW, save_train: true, save_subscores: true, save_probe_each_epoch: true);
+            fit2!(TxModel, cfg, "0.9*rbmx2-10", job_name, SPLIT_2, save_train: true, save_subscores: true, save_probe_each_epoch: true);
         }
 
         // === AsymModel chain ===
@@ -800,7 +800,7 @@ fn main() {
             save_ifeat: true,
             save_ufeat: false,
             };
-            fit2!(AsymModel, cfg, "rbmx2-12", job_name, SPLIT_NEW, save_train: true);
+            fit2!(AsymModel, cfg, "rbmx2-12", job_name, SPLIT_2, save_train: true);
         }
 
         // === Knn3 chains ===
@@ -815,56 +815,56 @@ fn main() {
         // === Knnf chains ===
         "rbmx2-12__asym-16__knnf" => {
             let factors_path: &'static str =
-                format!("{}/rbmx2-12__asym-16.ifeat", SPLIT_NEW.preds_dir).leak();
+                format!("{}/rbmx2-12__asym-16.ifeat", SPLIT_2.preds_dir).leak();
             let cfg = KnnfConfig::with_factors(factors_path);
-            fit2!(KnnfModel, cfg, "1.0*rbmx2-12__asym-16", job_name, SPLIT_NEW);
+            fit2!(KnnfModel, cfg, "1.0*rbmx2-12__asym-16", job_name, SPLIT_2);
         }
 
         "rbmx2-150__knnf" => {
             let factors_path: &'static str =
-                format!("{}/rbmx2-150.ifeat", SPLIT_NEW.preds_dir).leak();
+                format!("{}/rbmx2-150.ifeat", SPLIT_2.preds_dir).leak();
             let cfg = KnnfConfig::with_factors(factors_path);
-            fit2!(KnnfModel, cfg, "rbmx2-150", job_name, SPLIT_NEW);
+            fit2!(KnnfModel, cfg, "rbmx2-150", job_name, SPLIT_2);
         }
 
         "rbmx2-300s__knnf" => {
             let factors_path: &'static str =
-                format!("{}/rbmx2-300s.ifeat", SPLIT_NEW.preds_dir).leak();
+                format!("{}/rbmx2-300s.ifeat", SPLIT_2.preds_dir).leak();
             let cfg = KnnfConfig::with_factors(factors_path);
-            fit2!(KnnfModel, cfg, "1.0*rbmx2-300s", job_name, SPLIT_NEW);
+            fit2!(KnnfModel, cfg, "1.0*rbmx2-300s", job_name, SPLIT_2);
         }
 
         "rbmx2-400__knnf" => {
             let factors_path: &'static str =
-                format!("{}/rbmx2-400.ifeat", SPLIT_NEW.preds_dir).leak();
+                format!("{}/rbmx2-400.ifeat", SPLIT_2.preds_dir).leak();
             let cfg = KnnfConfig::with_factors(factors_path);
-            fit2!(KnnfModel, cfg, "1.0*rbmx2-400", job_name, SPLIT_NEW);
+            fit2!(KnnfModel, cfg, "1.0*rbmx2-400", job_name, SPLIT_2);
         }
 
         "rbmx2-500__knnf" => {
             let factors_path: &'static str =
-                format!("{}/rbmx2-500.ifeat", SPLIT_NEW.preds_dir).leak();
+                format!("{}/rbmx2-500.ifeat", SPLIT_2.preds_dir).leak();
             let cfg = KnnfConfig {
     factors: factors_path,
             k: 15,
             scaling: 1.5,
             tau: 0.0,
             };
-            fit2!(KnnfModel, cfg, "1.1*rbmx2-500", job_name, SPLIT_NEW);
+            fit2!(KnnfModel, cfg, "1.1*rbmx2-500", job_name, SPLIT_2);
         }
 
         "rbmx2-500bp__knnf" => {
             let factors_path: &'static str =
-                format!("{}/rbmx2-500bp.ifeat", SPLIT_NEW.preds_dir).leak();
+                format!("{}/rbmx2-500bp.ifeat", SPLIT_2.preds_dir).leak();
             let cfg = KnnfConfig::with_factors(factors_path);
-            fit2!(KnnfModel, cfg, "1.0*rbmx2-500bp", job_name, SPLIT_NEW);
+            fit2!(KnnfModel, cfg, "1.0*rbmx2-500bp", job_name, SPLIT_2);
         }
 
         "rbmx2-8e__knnf" => {
             let factors_path: &'static str =
-                format!("{}/rbmx2-8e.ifeat", SPLIT_NEW.preds_dir).leak();
+                format!("{}/rbmx2-8e.ifeat", SPLIT_2.preds_dir).leak();
             let cfg = KnnfConfig::with_factors(factors_path);
-            fit2!(KnnfModel, cfg, "1.0*rbmx2-8e", job_name, SPLIT_NEW);
+            fit2!(KnnfModel, cfg, "1.0*rbmx2-8e", job_name, SPLIT_2);
         }
 
         // === Knns chain ===
@@ -876,7 +876,7 @@ fn main() {
             tau: 0.025,
             supp_source: SuppSource::Compute,
             };
-            fit2!(KnnsModel, cfg, "0.9*rbmx2-150", job_name, SPLIT_NEW);
+            fit2!(KnnsModel, cfg, "0.9*rbmx2-150", job_name, SPLIT_2);
         }
 
         // === Epoch blends ===
@@ -915,10 +915,10 @@ fn main() {
 }
 
 fn run_knn3(target: &str, job_name: &str) {
-    fit2!(Knn3Model, Knn3Config::default(), target, job_name, SPLIT_NEW);
+    fit2!(Knn3Model, Knn3Config::default(), target, job_name, SPLIT_2);
 }
 
 fn run_eblend(weights: &[f64], offset: f64, job_name: &str) {
     let base = job_name.strip_suffix("__epochs").unwrap();
-    epoch_blend_apply(base, weights, offset, SPLIT_NEW);
+    epoch_blend_apply(base, weights, offset, SPLIT_2);
 }

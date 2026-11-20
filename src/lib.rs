@@ -15,8 +15,8 @@ pub fn suppress_progress() { NO_PROGRESS.store(true, Ordering::Relaxed); }
 pub const N_USERS: usize = 480_189;
 
 /// Number of distinct rating dates: day 0 is 1999-11-11 and day 2242 is
-/// 2005-12-31, the last day in the data. Every dataset (train, probe, trainx,
-/// probex, fulltrain and qual alike) has 2242 as its largest date.
+/// 2005-12-31, the last day in the data. Every dataset (train, probe, train_2,
+/// probe_2, fulltrain and qual alike) has 2242 as its largest date.
 pub const N_DAYS: usize = 2243;
 
 // ---------------------------------------------------------------------------
@@ -952,7 +952,7 @@ pub fn fit<M: Regressor + Sync>(
 // ---------------------------------------------------------------------------
 
 /// Train/probe/qual split convention. Constants:
-/// - `SPLIT_NEW` = trainx → probex, fulltrain → qual, preds_dir = "preds_new"
+/// - `SPLIT_2` = train_2 → probe_2, fulltrain → qual, preds_dir = "preds_2"
 /// - `SPLIT_3` = train_3 → probe_3, fulltrain → qual, preds_dir = "preds_3"
 #[derive(Debug, Clone, Copy)]
 pub struct Split {
@@ -964,10 +964,10 @@ pub struct Split {
     pub sim_dir: &'static str,
 }
 
-pub const SPLIT_NEW: Split = Split {
-    tr: "trainx", pr: "probex",
+pub const SPLIT_2: Split = Split {
+    tr: "train_2", pr: "probe_2",
     fulltrain_tr: "fulltrain", fulltrain_pr: "qual",
-    preds_dir: "preds_new",
+    preds_dir: "preds_2",
     sim_dir: "sim",
 };
 
@@ -1027,7 +1027,7 @@ pub struct Fit2Opts {
 }
 
 /// Call `fit2_inner` with named optional parameters.
-/// Usage: `fit2!(Model, cfg, "rtg", "name", SPLIT_NEW, save_subscores: true)`
+/// Usage: `fit2!(Model, cfg, "rtg", "name", SPLIT_2, save_subscores: true)`
 #[macro_export]
 macro_rules! fit2 {
     ($M:ty, $cfg:expr, $target:expr, $model_name:expr, $split:expr $(, $key:ident : $val:expr)* $(,)?) => {
@@ -1432,7 +1432,7 @@ pub struct Fit3Opts {
 }
 
 /// Call `fit3_inner` with named optional parameters.
-/// Usage: `fit3!(Model, cfg, "rtg", "name", SPLIT_NEW, keep_train_preds: true)`
+/// Usage: `fit3!(Model, cfg, "rtg", "name", SPLIT_2, keep_train_preds: true)`
 #[macro_export]
 macro_rules! fit3 {
     ($M:ty, $cfg:expr, $target:expr, $model_name:expr, $split:expr $(, $key:ident : $val:expr)* $(,)?) => {

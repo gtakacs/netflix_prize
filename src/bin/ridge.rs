@@ -34,8 +34,8 @@ const QUIZ_IN_CLIP_MAX: f64 = 5.0;
 const ROW_BLOCK: usize = 100_000;
 const CV_SEED: u64 = 42;
 const PIPELINE_1: &str = "pipeline-1.toml";
-const PIPELINE_NEW: &str = "pipeline-new.toml";
-const MODELS_NEW: &str = "models-new.toml";
+const PIPELINE_2: &str = "pipeline-2.toml";
+const MODELS_2: &str = "models-2.toml";
 const PIPELINE_3: &str = "pipeline-3.toml";
 const MODELS_3: &str = "models-3.toml";
 const ENSEMBLES_TOML: &str = "ensembles.toml";
@@ -119,7 +119,7 @@ impl NpyF32Reader {
 /// and group/manual/exclude selection to pull from it. Single-split runs have
 /// exactly one source; `--from` builds one per split for cross-split blending.
 struct Source {
-    label: String,               // "1" / "new" / "3" (split name, for reporting)
+    label: String,               // "1" / "2" / "3" (split name, for reporting)
     pipeline: String,            // pipeline-<split>.toml
     models_toml: Option<String>, // None → default models-<label>.toml (cross-split) or manual-only (legacy)
     models_manual: Vec<String>,
@@ -164,11 +164,9 @@ fn print_help() {
     println!("Usage: ridge [SPLIT] [MODELS] [-m NAME ...] [--lambda VALUE]");
     println!();
     println!("  Split selection (default: {}):", PIPELINE_1);
-    println!("    -n, --new                shortcut for -p {}", PIPELINE_NEW);
     println!("    -p FILE, --pipeline FILE explicit pipeline TOML");
     println!();
-    println!("  Models selection (at least one of -N/-t/-m required):");
-    println!("    -N                       -n + default -t {}", MODELS_NEW);
+    println!("  Models selection (at least one of -t/-m required):");
     println!("    -t FILE, --models FILE   models TOML (groups: list per key)");
     println!("    -g GRP1,GRP2,..., --groups  include only these TOML groups (default: the");
     println!("                             TOML's `all` group; e.g. -g integrated,rbm,other). A row");
@@ -203,13 +201,13 @@ fn print_help() {
     println!("    --raw-probes             opt out of both: keep '>' columns and probe them raw");
     println!();
     println!("  Cross-split quiz blending (combine qual.npy predictors from several splits):");
-    println!("    --from SPLIT             open a source scope for SPLIT (1|new|3); the models");
+    println!("    --from SPLIT             open a source scope for SPLIT (1|2|3); the models");
     println!("                             flags -t/-g/-m/-x after it apply to that source.");
     println!("                             -t defaults to models-<split>.toml. Repeat --from to");
     println!("                             mix splits. Implies --quiz-blend; the Gram is built");
     println!("                             over the full qual set from each source's preds dir.");
     println!("                             Example: ridge --quiz-blend --from 1 -g tx,rbm \\");
-    println!("                                            --from new -g integrated,rbm,other");
+    println!("                                            --from 2 -g integrated,rbm,other");
     println!();
     println!();
     println!("  Stored ensembles ({}):", ENSEMBLES_TOML);
@@ -297,9 +295,9 @@ fn parse_args() -> Args {
                 let s = need(&argv, i);
                 let pipeline = match s.as_str() {
                     "1" => PIPELINE_1,
-                    "new" => PIPELINE_NEW,
+                    "2" => PIPELINE_2,
                     "3" => PIPELINE_3,
-                    _ => { eprintln!("error: --from expects '1', 'new' or '3' (got '{}')", s); std::process::exit(2); }
+                    _ => { eprintln!("error: --from expects '1', '2' or '3' (got '{}')", s); std::process::exit(2); }
                 };
                 if legacy_touched {
                     eprintln!("error: cannot mix top-level model/split flags with --from");
@@ -316,21 +314,14 @@ fn parse_args() -> Args {
                 });
                 i += 2;
             }
-            "-n" | "--new" | "-N" | "-p" | "--pipeline" => {
+            "-p" | "--pipeline" => {
                 if using_from {
                     eprintln!("error: '{}' cannot be combined with --from", flag);
                     std::process::exit(2);
                 }
                 legacy_touched = true;
-                match flag {
-                    "-n" | "--new" => { legacy.pipeline = PIPELINE_NEW.to_string(); legacy.label = "new".into(); i += 1; }
-                    "-N" => {
-                        legacy.pipeline = PIPELINE_NEW.to_string(); legacy.label = "new".into();
-                        set_models_toml(&mut legacy.models_toml, MODELS_NEW.to_string(), "-N");
-                        i += 1;
-                    }
-                    _ => { legacy.pipeline = need(&argv, i); i += 2; }
-                }
+                legacy.pipeline = need(&argv, i);
+                i += 2;
             }
             "-t" | "--models" | "-g" | "--groups" | "-m" | "--model" | "-x" | "--exclude" => {
                 let src = if using_from {
@@ -343,7 +334,7 @@ fn parse_args() -> Args {
                     "-t" | "--models" => {
                         let path = need(&argv, i);
                         // In a --from scope -t overrides the split default; the
-                        // conflict guard only applies to legacy -t/-O/-N clashes.
+                        // conflict guard only applies to legacy -t clashes.
                         if using_from { src.models_toml = Some(path); }
                         else { set_models_toml(&mut src.models_toml, path, flag); }
                         i += 2;
@@ -485,11 +476,11 @@ fn parse_args() -> Args {
         from_sources
     } else {
         if legacy.models_toml.is_none() && legacy.models_manual.is_empty() {
-            eprintln!("error: provide -N/-O, -t MODELS_TOML, and/or -m NAME (or --from SPLIT ...)");
+            eprintln!("error: provide -t MODELS_TOML and/or -m NAME (or --from SPLIT ...)");
             std::process::exit(2);
         }
         if !legacy.groups.is_empty() && legacy.models_toml.is_none() {
-            eprintln!("error: -g/--groups requires a models TOML (-t/-N/-O)");
+            eprintln!("error: -g/--groups requires a models TOML (-t)");
             std::process::exit(2);
         }
         vec![legacy]
@@ -764,7 +755,7 @@ fn build_registry(
         let models_toml: Option<String> = src.models_toml.clone().or_else(|| {
             if args.cross_split {
                 Some(match src.label.as_str() {
-                    "new" => MODELS_NEW.to_string(),
+                    "2" => MODELS_2.to_string(),
                     "3" => MODELS_3.to_string(),
                     l => format!("models-{l}.toml"),
                 })
@@ -1771,7 +1762,7 @@ fn main() -> ExitCode {
         println!("Mode:      cross-split quiz blend ({} sources)", args.sources.len());
         for src in &args.sources {
             let mt = src.models_toml.clone().unwrap_or_else(|| match src.label.as_str() {
-                "new" => MODELS_NEW.to_string(),
+                "2" => MODELS_2.to_string(),
                 "3" => MODELS_3.to_string(),
                 l => format!("models-{l}.toml"),
             });

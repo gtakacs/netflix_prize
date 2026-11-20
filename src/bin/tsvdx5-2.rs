@@ -5,7 +5,7 @@ use std::io::BufWriter;
 use ndarray::Array1;
 use ndarray_npy::write_npy;
 use netflix_prize::{
-    Dataset, OrdinalHeadConfig, SPLIT_NEW,
+    Dataset, OrdinalHeadConfig, SPLIT_2,
     epoch_blend_apply, fit2,
     knn::{KnnConfig, KnnModel, SimType},
     knn3::{Knn3Config, Knn3Model},
@@ -166,19 +166,19 @@ fn run_base(
     };
     match (save_subscores, save_probe_each_epoch) {
         (false, false) => fit2!(
-            TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+            TxModel, cfg, "rtg", job_name, SPLIT_2,
             save_train: true
         ),
         (true, false) => fit2!(
-            TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+            TxModel, cfg, "rtg", job_name, SPLIT_2,
             save_train: true, save_subscores: true
         ),
         (false, true) => fit2!(
-            TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+            TxModel, cfg, "rtg", job_name, SPLIT_2,
             save_train: true, save_probe_each_epoch: true
         ),
         (true, true) => fit2!(
-            TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+            TxModel, cfg, "rtg", job_name, SPLIT_2,
             save_train: true, save_subscores: true, save_probe_each_epoch: true
         ),
     }
@@ -221,7 +221,7 @@ fn run_ord(n_feat: usize, n_epochs: usize, max_neighbors: usize, w_factor: f32, 
         ud_dim: None,
     };
     fit2!(
-        TxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        TxModel, cfg, "rtg", job_name, SPLIT_2,
         save_train: true, save_subscores: true, save_probe_each_epoch: true
     );
 }
@@ -230,10 +230,10 @@ fn run_nlpp(job_name: &str) {
     let base_model: &'static str =
         job_name.strip_suffix("__nlpp").unwrap().to_string().leak();
     let regs_path: &'static str =
-        format!("{}/{}__nlpp_regs.npy", SPLIT_NEW.preds_dir, base_model).leak();
+        format!("{}/{}__nlpp_regs.npy", SPLIT_2.preds_dir, base_model).leak();
     let cfg = NlppConfig {
         base_model,
-        preds_dir: SPLIT_NEW.preds_dir,
+        preds_dir: SPLIT_2.preds_dir,
         n_als_iters: 2,
         // Placeholder values; overridden at construction by `regs_path`.
         reg_a: [(0.0, 0.0); 4],
@@ -242,7 +242,7 @@ fn run_nlpp(job_name: &str) {
         shrinkage_i: 25.0,
         regs_path: Some(regs_path),
     };
-    fit2!(NlppModel, cfg, "rtg", job_name, SPLIT_NEW, save_train: true);
+    fit2!(NlppModel, cfg, "rtg", job_name, SPLIT_2, save_train: true);
 }
 
 fn run_paropt(reg_a: [(f32, f32); 4], reg_b: [(f32, f32); 4], job_name: &str) {
@@ -251,7 +251,7 @@ fn run_paropt(reg_a: [(f32, f32); 4], reg_b: [(f32, f32); 4], job_name: &str) {
 
     let init_cfg = NlppConfig {
         base_model,
-        preds_dir: SPLIT_NEW.preds_dir,
+        preds_dir: SPLIT_2.preds_dir,
         n_als_iters: 2,
         reg_a, reg_b,
         shrinkage_u: 10.0,
@@ -269,8 +269,8 @@ fn run_paropt(reg_a: [(f32, f32); 4], reg_b: [(f32, f32); 4], job_name: &str) {
     netflix_prize::teeln!("[{}__nlpp_paropt]", init_cfg.base_model);
     netflix_prize::teeln!("{:?}", init_cfg);
 
-    let tr = Dataset::load(SPLIT_NEW.tr, "rtg", init_cfg.preds_dir);
-    let pr = Dataset::load(SPLIT_NEW.pr, "rtg", init_cfg.preds_dir);
+    let tr = Dataset::load(SPLIT_2.tr, "rtg", init_cfg.preds_dir);
+    let pr = Dataset::load(SPLIT_2.pr, "rtg", init_cfg.preds_dir);
     let mut model = NlppModel::new_with_dataset(&tr, &pr, init_cfg);
     let (best_reg_a, best_reg_b) = model.fit_with_nm(&tr, &pr, 150, 0.5);
 
@@ -294,19 +294,19 @@ fn run_paropt(reg_a: [(f32, f32); 4], reg_b: [(f32, f32); 4], job_name: &str) {
 fn run_knn3(job_name: &str, cfg: Knn3Config) {
     let base = job_name.strip_suffix("__knn3").unwrap();
     let target = format!("1.0*{}", base);
-    fit2!(Knn3Model, cfg, &target, job_name, SPLIT_NEW);
+    fit2!(Knn3Model, cfg, &target, job_name, SPLIT_2);
 }
 
 fn run_knnf(job_name: &str) {
     let factors_path: &'static str =
-        format!("{}/tsvdx5-120.ifeat", SPLIT_NEW.preds_dir).leak();
+        format!("{}/tsvdx5-120.ifeat", SPLIT_2.preds_dir).leak();
     let cfg = KnnfConfig {
         factors: factors_path,
         k: 25,
         scaling: 3.5,
         tau: 0.1,
     };
-    fit2!(KnnfModel, cfg, "1.0*tsvdx5-150__nlpp", job_name, SPLIT_NEW);
+    fit2!(KnnfModel, cfg, "1.0*tsvdx5-150__nlpp", job_name, SPLIT_2);
 }
 
 fn run_knn_w(job_name: &str) {
@@ -324,10 +324,10 @@ fn run_knn_w(job_name: &str) {
         use_stat1: false,
         regression: false,
         regression_lambda: 0.1,
-        sim_dir: SPLIT_NEW.sim_dir,
-        preds_dir: SPLIT_NEW.preds_dir,
+        sim_dir: SPLIT_2.sim_dir,
+        preds_dir: SPLIT_2.preds_dir,
     };
-    fit2!(KnnModel, cfg, "1.0*tsvdx5-300__nlpp", job_name, SPLIT_NEW);
+    fit2!(KnnModel, cfg, "1.0*tsvdx5-300__nlpp", job_name, SPLIT_2);
 }
 
 fn run_eblend(weights: &[f64], offset: f64, job_name: &str) {
@@ -335,5 +335,5 @@ fn run_eblend(weights: &[f64], offset: f64, job_name: &str) {
     // Original eblend included non-epoch columns; their contribution is absorbed
     // into the constant offset (means × weights).
     let base = job_name.strip_suffix("__epochs").unwrap();
-    epoch_blend_apply(base, weights, offset, SPLIT_NEW);
+    epoch_blend_apply(base, weights, offset, SPLIT_2);
 }

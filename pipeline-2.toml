@@ -1,14 +1,14 @@
-# Pipeline definition for SPLIT_NEW
-# Data: data/{trainx,probex,fulltrain,qual}/
-# Outputs: preds_new/
+# Pipeline definition for SPLIT_2
+# Data: data/{train_2,probe_2,fulltrain,qual}/
+# Outputs: preds_2/
 
 [split]
-name         = "new"
-tr           = "trainx"
-pr           = "probex"
+name         = "2"
+tr           = "train_2"
+pr           = "probe_2"
 fulltrain_tr = "fulltrain"
 fulltrain_pr = "qual"
-preds        = "preds_new"
+preds        = "preds_2"
 sim          = "sim"
 
 # --- Defaults per job type ---
@@ -33,24 +33,24 @@ outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy"]
 # come from the `groups` of {models} (default: all groups) + the voting (vf*)
 # glob. Built with the 'lgbm' feature (compiles LightGBM C++ on first build).
 [defaults.gbmblend]
-models        = "models-new.toml"
-voting_models = "voting-new.toml"
+models        = "models-2.toml"
+voting_models = "voting-2.toml"
 inputs        = ["src/bin/gbm.rs"]
 inputs_from   = ["vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
+cmd = "cargo build --release --features lgbm --bin gbm && ./target/release/gbm {name} -p pipeline-2.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
 # MLP cross-fit blend of base predictors + voting features. Like gbmblend but
 # with the mlp binary; one prediction per seed ({name}-s<seed>). MLP
 # params come from blend_config(NAME). Built with the 'blas' feature so the dense
 # products go through OpenBLAS (dgemm).
 [defaults.mlpblend]
-models        = "models-new.toml"
-voting_models = "voting-new.toml"
+models        = "models-2.toml"
+voting_models = "voting-2.toml"
 inputs        = ["src/bin/mlp.rs"]
 inputs_from   = ["vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
+cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {name} -p pipeline-2.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
 # FWLS (feature-weighted linear stacking) cross-fit blend: ridge on the
 # interaction features (base prediction × voting feature) with a 2-fold split,
@@ -58,12 +58,12 @@ cmd = "cargo build --release --features blas --bin mlp && ./target/release/mlp {
 # {models} via {groups}; context features from {voting_models} via {voting}. The `fwls`
 # binary is split-agnostic (the split comes from -p). Built with 'blas'.
 [defaults.fwlsblend]
-models        = "models-new.toml"
-voting_models = "voting-new.toml"
+models        = "models-2.toml"
+voting_models = "voting-2.toml"
 inputs        = ["src/bin/fwls.rs"]
 inputs_from   = ["vfeat1"]
 outputs       = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.{fulltrain_pr}.npy", "{preds}/{name}.out"]
-cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-new.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
+cmd = "cargo build --release --features blas --bin fwls && ./target/release/fwls {name} -p pipeline-2.toml -t {models} {model_sel} --voting-models {voting_models} --voting {voting} --seeds {seeds} {exclude} {extra}"
 
 # Model job whose dispatcher serves any split: one binary at src/bin/{binary}.rs,
 # the split comes from -p (cf. the gbm/mlp/fwls blenders). Everything else
@@ -76,7 +76,7 @@ outputs = [
     "{preds}/{name}.{fulltrain_pr}.npy",
     "{preds}/{name}.out",
 ]
-cmd = "cargo build --release --bin {binary} && ./target/release/{binary} {name} -p pipeline-new.toml"
+cmd = "cargo build --release --bin {binary} && ./target/release/{binary} {name} -p pipeline-2.toml"
 
 [defaults.paropt]
 inputs_from = ["ingest", "newsplit"]
@@ -98,12 +98,12 @@ cmd = "cargo build --release --bin nbstats-{split.name} && ./target/release/nbst
 [defaults.s3model]
 inputs_from = ["ingest", "newsplit"]
 inputs  = ["src/bin/fit.rs"]
-cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/fit {runner} {name} -p pipeline-new.toml --final --preds {preds} {extra}"
+cmd = "cargo build --release --bin fit && RAYON_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 {env} ./target/release/fit {runner} {name} -p pipeline-2.toml --final --preds {preds} {extra}"
 
 [defaults.vfeat]
 inputs_from = ["ingest", "newsplit"]
 inputs = ["src/bin/{name}-{split.name}.rs"]
-voting_models = "voting-new.toml"
+voting_models = "voting-2.toml"
 # `{feature}` expands once per resolved voting spec (from `voting_models`/`voting`);
 # specs carry the `vf/` prefix, so outputs land in `{preds}/vf/`.
 outputs = [
@@ -950,16 +950,16 @@ jobtype = "vfeat"
 voting = ["all"]
 
 # Context features from base-predictor statistics (src/bin/predfeat.rs) over the
-# gold + silver columns by family (models-new.toml fam_*), for the round-3 blends.
+# gold + silver columns by family (models-2.toml fam_*), for the round-3 blends.
 [jobs.predfeat]
 inputs_from = ["ingest", "newsplit"]
 inputs = ["src/bin/predfeat.rs"]
 outputs = ["{preds}/vfx/std_all.{pr}.npy", "{preds}/vfx/std_all.{fulltrain_pr}.npy", "{preds}/vfx/range_all.{pr}.npy", "{preds}/vfx/range_all.{fulltrain_pr}.npy", "{preds}/vfx/mean_c.{pr}.npy", "{preds}/vfx/mean_c.{fulltrain_pr}.npy", "{preds}/vfx/std_fam_tx.{pr}.npy", "{preds}/vfx/std_fam_tx.{fulltrain_pr}.npy", "{preds}/vfx/std_fam_rbm.{pr}.npy", "{preds}/vfx/std_fam_rbm.{fulltrain_pr}.npy", "{preds}/vfx/std_fam_nn.{pr}.npy", "{preds}/vfx/std_fam_nn.{fulltrain_pr}.npy", "{preds}/vfx/std_fam_other.{pr}.npy", "{preds}/vfx/std_fam_other.{fulltrain_pr}.npy", "{preds}/vfx/d_fam_tx_fam_rbm.{pr}.npy", "{preds}/vfx/d_fam_tx_fam_rbm.{fulltrain_pr}.npy", "{preds}/vfx/d_fam_tx_fam_nn.{pr}.npy", "{preds}/vfx/d_fam_tx_fam_nn.{fulltrain_pr}.npy", "{preds}/vfx/d_fam_tx_fam_other.{pr}.npy", "{preds}/vfx/d_fam_tx_fam_other.{fulltrain_pr}.npy"]
-cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-new.toml -t models-new.toml --groups fam_tx,fam_rbm,fam_nn,fam_other"
+cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-2.toml -t models-2.toml --groups fam_tx,fam_rbm,fam_nn,fam_other"
 
 # Latent features for the round-4 blends (2026-10-30): the user / item vectors of a
 # small tx and the expected hidden units of an RBM, from the training-set models
-# (only their trainx artifacts are read), as per-rating columns in {preds}/lat/.
+# (only their train_2 artifacts are read), as per-rating columns in {preds}/lat/.
 [jobs.tx20lat]
 jobtype = "s3model"
 runner = "tx"
@@ -976,7 +976,7 @@ outputs = ["{preds}/{name}.{pr}.npy", "{preds}/{name}.out", "{preds}/{name}.ufea
 inputs_from = ["ingest", "newsplit", "tx20lat", "rbm50lat"]
 inputs = ["src/bin/predfeat.rs"]
 outputs = ["{preds}/lat/tx20lat.u00.{pr}.npy", "{preds}/lat/tx20lat.u00.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u01.{pr}.npy", "{preds}/lat/tx20lat.u01.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u02.{pr}.npy", "{preds}/lat/tx20lat.u02.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u03.{pr}.npy", "{preds}/lat/tx20lat.u03.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u04.{pr}.npy", "{preds}/lat/tx20lat.u04.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u05.{pr}.npy", "{preds}/lat/tx20lat.u05.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u06.{pr}.npy", "{preds}/lat/tx20lat.u06.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u07.{pr}.npy", "{preds}/lat/tx20lat.u07.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u08.{pr}.npy", "{preds}/lat/tx20lat.u08.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u09.{pr}.npy", "{preds}/lat/tx20lat.u09.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u10.{pr}.npy", "{preds}/lat/tx20lat.u10.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u11.{pr}.npy", "{preds}/lat/tx20lat.u11.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u12.{pr}.npy", "{preds}/lat/tx20lat.u12.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u13.{pr}.npy", "{preds}/lat/tx20lat.u13.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u14.{pr}.npy", "{preds}/lat/tx20lat.u14.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u15.{pr}.npy", "{preds}/lat/tx20lat.u15.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u16.{pr}.npy", "{preds}/lat/tx20lat.u16.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u17.{pr}.npy", "{preds}/lat/tx20lat.u17.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u18.{pr}.npy", "{preds}/lat/tx20lat.u18.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.u19.{pr}.npy", "{preds}/lat/tx20lat.u19.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i00.{pr}.npy", "{preds}/lat/tx20lat.i00.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i01.{pr}.npy", "{preds}/lat/tx20lat.i01.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i02.{pr}.npy", "{preds}/lat/tx20lat.i02.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i03.{pr}.npy", "{preds}/lat/tx20lat.i03.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i04.{pr}.npy", "{preds}/lat/tx20lat.i04.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i05.{pr}.npy", "{preds}/lat/tx20lat.i05.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i06.{pr}.npy", "{preds}/lat/tx20lat.i06.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i07.{pr}.npy", "{preds}/lat/tx20lat.i07.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i08.{pr}.npy", "{preds}/lat/tx20lat.i08.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i09.{pr}.npy", "{preds}/lat/tx20lat.i09.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i10.{pr}.npy", "{preds}/lat/tx20lat.i10.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i11.{pr}.npy", "{preds}/lat/tx20lat.i11.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i12.{pr}.npy", "{preds}/lat/tx20lat.i12.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i13.{pr}.npy", "{preds}/lat/tx20lat.i13.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i14.{pr}.npy", "{preds}/lat/tx20lat.i14.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i15.{pr}.npy", "{preds}/lat/tx20lat.i15.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i16.{pr}.npy", "{preds}/lat/tx20lat.i16.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i17.{pr}.npy", "{preds}/lat/tx20lat.i17.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i18.{pr}.npy", "{preds}/lat/tx20lat.i18.{fulltrain_pr}.npy", "{preds}/lat/tx20lat.i19.{pr}.npy", "{preds}/lat/tx20lat.i19.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u00.{pr}.npy", "{preds}/lat/rbm50lat.u00.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u01.{pr}.npy", "{preds}/lat/rbm50lat.u01.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u02.{pr}.npy", "{preds}/lat/rbm50lat.u02.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u03.{pr}.npy", "{preds}/lat/rbm50lat.u03.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u04.{pr}.npy", "{preds}/lat/rbm50lat.u04.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u05.{pr}.npy", "{preds}/lat/rbm50lat.u05.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u06.{pr}.npy", "{preds}/lat/rbm50lat.u06.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u07.{pr}.npy", "{preds}/lat/rbm50lat.u07.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u08.{pr}.npy", "{preds}/lat/rbm50lat.u08.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u09.{pr}.npy", "{preds}/lat/rbm50lat.u09.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u10.{pr}.npy", "{preds}/lat/rbm50lat.u10.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u11.{pr}.npy", "{preds}/lat/rbm50lat.u11.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u12.{pr}.npy", "{preds}/lat/rbm50lat.u12.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u13.{pr}.npy", "{preds}/lat/rbm50lat.u13.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u14.{pr}.npy", "{preds}/lat/rbm50lat.u14.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u15.{pr}.npy", "{preds}/lat/rbm50lat.u15.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u16.{pr}.npy", "{preds}/lat/rbm50lat.u16.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u17.{pr}.npy", "{preds}/lat/rbm50lat.u17.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u18.{pr}.npy", "{preds}/lat/rbm50lat.u18.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u19.{pr}.npy", "{preds}/lat/rbm50lat.u19.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u20.{pr}.npy", "{preds}/lat/rbm50lat.u20.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u21.{pr}.npy", "{preds}/lat/rbm50lat.u21.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u22.{pr}.npy", "{preds}/lat/rbm50lat.u22.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u23.{pr}.npy", "{preds}/lat/rbm50lat.u23.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u24.{pr}.npy", "{preds}/lat/rbm50lat.u24.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u25.{pr}.npy", "{preds}/lat/rbm50lat.u25.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u26.{pr}.npy", "{preds}/lat/rbm50lat.u26.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u27.{pr}.npy", "{preds}/lat/rbm50lat.u27.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u28.{pr}.npy", "{preds}/lat/rbm50lat.u28.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u29.{pr}.npy", "{preds}/lat/rbm50lat.u29.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u30.{pr}.npy", "{preds}/lat/rbm50lat.u30.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u31.{pr}.npy", "{preds}/lat/rbm50lat.u31.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u32.{pr}.npy", "{preds}/lat/rbm50lat.u32.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u33.{pr}.npy", "{preds}/lat/rbm50lat.u33.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u34.{pr}.npy", "{preds}/lat/rbm50lat.u34.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u35.{pr}.npy", "{preds}/lat/rbm50lat.u35.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u36.{pr}.npy", "{preds}/lat/rbm50lat.u36.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u37.{pr}.npy", "{preds}/lat/rbm50lat.u37.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u38.{pr}.npy", "{preds}/lat/rbm50lat.u38.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u39.{pr}.npy", "{preds}/lat/rbm50lat.u39.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u40.{pr}.npy", "{preds}/lat/rbm50lat.u40.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u41.{pr}.npy", "{preds}/lat/rbm50lat.u41.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u42.{pr}.npy", "{preds}/lat/rbm50lat.u42.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u43.{pr}.npy", "{preds}/lat/rbm50lat.u43.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u44.{pr}.npy", "{preds}/lat/rbm50lat.u44.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u45.{pr}.npy", "{preds}/lat/rbm50lat.u45.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u46.{pr}.npy", "{preds}/lat/rbm50lat.u46.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u47.{pr}.npy", "{preds}/lat/rbm50lat.u47.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u48.{pr}.npy", "{preds}/lat/rbm50lat.u48.{fulltrain_pr}.npy", "{preds}/lat/rbm50lat.u49.{pr}.npy", "{preds}/lat/rbm50lat.u49.{fulltrain_pr}.npy"]
-cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-new.toml --latent-users tx20lat --latent-items tx20lat && ./target/release/predfeat -p pipeline-new.toml --latent-users rbm50lat"
+cmd = "cargo build --release --bin predfeat && ./target/release/predfeat -p pipeline-2.toml --latent-users tx20lat --latent-items tx20lat && ./target/release/predfeat -p pipeline-2.toml --latent-users rbm50lat"
 
 # --- LightGBM blends ---
 
@@ -1154,7 +1154,7 @@ seeds = [1]
 extra_args = ["--lambda", "10000"]
 
 # --- Rounds 3 and 4 (2026-10-30): K-fold blends, fwls with predfeat features,
-# blends with latent inputs (models-new.toml *_part2). The fwls read the gbm / mlp
+# blends with latent inputs (models-2.toml *_part2). The fwls read the gbm / mlp
 # blends of part 1 only.
 [jobs.fwls38k8]
 jobtype = "fwlsblend"

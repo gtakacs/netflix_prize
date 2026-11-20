@@ -30,7 +30,7 @@ subsequent builds are incremental.
 ```
 cargo build --release                 # build the whole workspace
 cargo build --release --bin run       # build a single binary
-cargo build --release --bin tsvdx4-new
+cargo build --release --bin tsvdx4-2
 ```
 
 The resulting executables land in `target/release/`.
@@ -46,17 +46,17 @@ skipped, so it is safe to re-run:
 
 ```
 ./target/release/run --setup         # data/raw/ -> data/{train,probe,fulltrain,qual}/
-                                     #           -> data/{trainx,probex}/  (~3.3 GB)
-./target/release/run -n              # list all jobs and their status
-./target/release/run -n tsvdx4-64    # train a single model
+                                     #           -> data/{train_2,probe_2}/  (~3.3 GB)
+./target/release/run                 # list all jobs (pipeline-1.toml) and their status
+./target/release/run -p pipeline-2.toml tsvdx4-64    # train a single model
 ```
 
 The three steps are ordinary jobs and can also be run one at a time:
 `download` fetches the archive into `data/raw/`, `ingest` parses it, and
-`newsplit` (in `pipeline-new.toml` only) derives `trainx`/`probex` from
+`newsplit` (in `pipeline-2.toml` only) derives `train_2`/`probe_2` from
 `train`/`probe`.
 
-See [Pipeline](#pipeline) below for the available flags, the two manifests,
+See [Pipeline](#pipeline) below for the available flags, the three manifests,
 and how job dependencies are resolved.
 
 ## Predictions without training
@@ -71,7 +71,7 @@ cargo build --release --bin preds
 ```
 
 `--ensemble NAME` fetches exactly the columns a stored blend of `ensembles.toml`
-reads (the qual side; a single-split blend such as `new` also its probe side);
+reads (the qual side; a single-split blend such as `s2` also its probe side);
 the full pull adds the probe-set predictions of every split, which is what
 measuring a new column needs.
 
@@ -90,7 +90,7 @@ row                    quiz (columns)   expected       delta
 1/tx                    0.864551 (65)   0.864551    -1.21e-7  OK
 ...
 1/*                    0.857404 (172)   0.857404    -1.20e-7  OK
-new/*                  0.857715 (175)   0.857715    -1.54e-7  OK
+2/*                    0.857715 (175)   0.857715    -1.54e-7  OK
 3/*                    0.857567 (223)   0.857567    +1.68e-7  OK
 ensemble               0.855832 (570)   0.855832    +2.72e-7  OK
 
@@ -101,8 +101,9 @@ It takes about half a minute, exits non-zero if the numbers have drifted, and
 needs no dataset download: the qualifying-set labels ship with the repo
 (`data/qual_ratings/qual_ratings.csv.gz`), and the blend reads them directly
 when `data/qual/` has not been ingested. The default blend, `cross1`, combines
-the three splits (split_1 `pipeline-1.toml`, new `pipeline-new.toml` and split_3
-`pipeline-3.toml`); `--ensemble new`, `s1` and `s3` run single-split blends,
+the three splits (split_1 `pipeline-1.toml`, split_2 `pipeline-2.toml` and split_3
+`pipeline-3.toml`; split_2 was called the new split until 2026-11-20); `--ensemble s1`,
+`s2` and `s3` run single-split blends,
 which are fitted on their probe set and report a probe number too.
 
 The original split of the project (`pipeline-old.toml`, `preds_old/`) was retired on
@@ -114,7 +115,7 @@ split every one of its columns is a reproducible pipeline job.
 The same command, with the column added:
 
 ```
-./target/release/ridge --ensemble new -m preds_lab/lab-foo
+./target/release/ridge --ensemble s2 -m preds_lab/lab-foo
 ```
 
 It fits the reference and the reference-plus-your-column from one shared Gram
@@ -186,26 +187,25 @@ The pipeline is described declaratively in a TOML manifest. Each job has a
 train/probe split:
 
 - `pipeline-1.toml` — `data/{train,probe,fulltrain,qual}` → `preds_1/`
+- `pipeline-2.toml` — `data/{train_2,probe_2,fulltrain,qual}` → `preds_2/`.
+  Many of its jobs have a dedicated binary at `src/bin/<name>-2.rs` with
+  hardcoded config.
 - `pipeline-3.toml` — `data/{train_3,probe_3,fulltrain,qual}` → `preds_3/`
-- `pipeline-new.toml` — `data/{trainx,probex,fulltrain,qual}` →
-  `preds_new/`, `features_new/`. Each job `<name>` has a dedicated binary
-  at `src/bin/<name>-new.rs` with hardcoded config.
 
 The orchestrator `src/bin/run.rs` reads a manifest, computes each job's
 status (`READY` / `BLOCKED` / `DONE`) from file existence, and runs the
 requested job:
 
 ```
-./target/release/run -n              # list jobs (pipeline-new.toml)
-./target/release/run -n JOB          # run JOB
-./target/release/run -n -f JOB       # force re-run
+./target/release/run                 # list jobs (pipeline-1.toml)
+./target/release/run JOB             # run JOB
+./target/release/run -f JOB          # force re-run
 ./target/release/run --setup         # download + ingest + newsplit in one go
-./target/release/run -n -c -f        # delete preds/features files no
-                                     # active job references
+./target/release/run -c -f           # delete preds files no active job references
 ```
 
-`-p FILE` selects a manifest explicitly; `-n` is a shorthand for
-`-p pipeline-new.toml` (default is `pipeline-1.toml`).
+`-p FILE` selects another manifest, e.g. `-p pipeline-2.toml` (default is
+`pipeline-1.toml`).
 
 ## Trying your own predictor
 
@@ -218,7 +218,7 @@ the file, and dropping the experiment is one `rm`.
 ```
 cp src/bin/lab-example.rs src/bin/lab-foo.rs
 cargo run --release --bin lab-foo -- --smoke   # seconds: does it run?
-cargo run --release --bin lab-foo              # full trainx -> probex
+cargo run --release --bin lab-foo              # full train_2 -> probe_2
 ```
 
 See [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) for the whole loop, including how

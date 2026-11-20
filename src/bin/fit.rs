@@ -902,9 +902,9 @@ fn vfeat0() {
 // vfeat1
 // ----------------------------------------------------------------------------
 // Voting features: vfeat1 (Selection::All, the `all` group of
-// voting-new.toml) on the lab split, into preds_lab/vf/<feature>.{probe_3,qual}.npy.
+// voting-2.toml) on the lab split, into preds_lab/vf/<feature>.{probe_3,qual}.npy.
 // The qual side depends only on fulltrain -> qual, so it must match
-// preds_new/vf/*.qual.npy; that is the check of a run.
+// preds_2/vf/*.qual.npy; that is the check of a run.
 //
 //   cargo run --release --bin fit -- vfeat1 s3-vfeat1 -p pipeline-3.toml
 

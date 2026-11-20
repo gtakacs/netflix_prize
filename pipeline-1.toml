@@ -1620,7 +1620,7 @@ extras = ["@train_preds"]
 inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/s1-rbmb-512x_prod.{tr}.npy", "sim/s1-rbmb-512x_prod.{fulltrain_tr}.npy"]
 
 # --- A larger CF-NADE, off the shared cfnade recipe (2026-11-19, user) ---
-# The cfnade recipe of every other split (new cfnade-96 / -48 / -12, split_3 nade12s, the old split's
+# The cfnade recipe of every other split (split_2 cfnade-96 / -48 / -12, split_3 nade12s, the old split's
 # cfnade_rmsew010_ep38) at H=320 RANK=96 with SEED=7, DAYB=1 (day bias), ITB=1 (item time bias),
 # RMSEW=0.2. Built as two parallel lab runs, 1 thread each: train -> probe, and fulltrain -> qual with
 # QUAL_ONLY=1 (preds_lab/s1_cfnade320t.sh; 56-90 min/epoch on the shared box); a run of this job does

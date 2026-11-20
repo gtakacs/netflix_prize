@@ -10,15 +10,16 @@
 # deliberate change to the groups.
 
 # Retired on 2026-11-20 with the old split (pipeline-old.toml and its preds_old/ columns, superseded
-# by the reproducible split_1): cross (old + new, quiz 0.856716), cross3 (old + new + split_3, the
+# by the reproducible split_1): cross (old + new = split_2, quiz 0.856716), cross3 (old + new + split_3, the
 # headline number 2026-10-28 .. 2026-11-20, quiz 0.855883) and old (old split only, quiz 0.858160).
 
 # The cross-split blend, the headline number since 2026-11-20: split_1 (the old split's train / probe,
-# rebuilt as reproducible pipeline-1.toml jobs; 154 base columns + 18 blends), new and split_3.
+# rebuilt as reproducible pipeline-1.toml jobs; 154 base columns + 18 blends), split_2 (called the
+# new split until 2026-11-20) and split_3.
 [[ensemble]]
 name        = "cross1"
 default     = true
-description = "cross-split quiz blend of split_1, new and split_3, the headline number"
+description = "cross-split quiz blend of split_1, split_2 and split_3, the headline number"
 lambda      = 1000
 tolerance   = 1e-5
 
@@ -27,7 +28,7 @@ split  = "1"
 groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [[ensemble.source]]
-split  = "new"
+split  = "2"
 groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [[ensemble.source]]
@@ -42,13 +43,13 @@ groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 "1/gbmblend" = { quiz = 0.860070 }
 "1/mlpblend" = { quiz = 0.858714 }
 "1/fwlsblend" = { quiz = 0.857820 }
-"new/tx" = { quiz = 0.865052 }
-"new/rbm" = { quiz = 0.870671 }
-"new/nn" = { quiz = 0.875870 }
-"new/other" = { quiz = 0.877464 }
-"new/gbmblend" = { quiz = 0.860027 }
-"new/mlpblend" = { quiz = 0.858995 }
-"new/fwlsblend" = { quiz = 0.858001 }
+"2/tx" = { quiz = 0.865052 }
+"2/rbm" = { quiz = 0.870671 }
+"2/nn" = { quiz = 0.875870 }
+"2/other" = { quiz = 0.877464 }
+"2/gbmblend" = { quiz = 0.860027 }
+"2/mlpblend" = { quiz = 0.858995 }
+"2/fwlsblend" = { quiz = 0.858001 }
 "3/tx" = { quiz = 0.864459 }
 "3/rbm" = { quiz = 0.869937 }
 "3/nn" = { quiz = 0.880428 }
@@ -57,21 +58,21 @@ groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 "3/mlpblend" = { quiz = 0.858371 }
 "3/fwlsblend" = { quiz = 0.858083 }
 "1/*" = { quiz = 0.857404 }
-"new/*" = { quiz = 0.857715 }
+"2/*" = { quiz = 0.857715 }
 "3/*" = { quiz = 0.857567 }
 ensemble = { quiz = 0.855832 }
 
 # Single split, fitted on the probe labels: the cheap bench a new column is
-# measured on. It needs only the probex predictions, so an experiment can be
+# measured on. It needs only the probe_2 predictions, so an experiment can be
 # judged before it has run its fulltrain -> qual phase.
 [[ensemble]]
-name        = "new"
-description = "new split only, fitted on probex"
+name        = "s2"
+description = "split_2 only, fitted on probe_2"
 lambda      = 1000
 tolerance   = 1e-5
 
 [[ensemble.source]]
-split  = "new"
+split  = "2"
 groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [ensemble.expected]

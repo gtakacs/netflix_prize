@@ -1,7 +1,7 @@
 //! Build an alternative train/probe split: for each user with >1 probe rating,
 //! move one randomly chosen probe rating into train (provided the chosen rating's
 //! date is not already represented for that user in train, and a 90% probability
-//! check passes). The result is written as data/trainx and data/probex.
+//! check passes). The result is written as data/train_2 and data/probe_2.
 //!
 //! Originally implemented in Python; ported here to keep the data-prep pipeline
 //! pure Rust. The randomization must be bit-identical to the Python original,
@@ -21,8 +21,8 @@ const DATE_MUL: u32 = 2500;
 
 const TRAIN_DIR: &str = "data/train";
 const PROBE_DIR: &str = "data/probe";
-const TRAINX_OUT: &str = "data/trainx";
-const PROBEX_OUT: &str = "data/probex";
+const TRAINX_OUT: &str = "data/train_2";
+const PROBEX_OUT: &str = "data/probe_2";
 
 // ---- numpy RNG port ----
 
@@ -274,13 +274,13 @@ fn main() {
         n_moved, pct, n_skipped
     );
 
-    println!("Phase 5/6: Build trainx & probex (sorted)");
-    // trainx = train ∪ moved probe, sorted by (user, item)
-    let n_trainx = n_train + n_moved;
-    let mut tx_user: Vec<i32> = Vec::with_capacity(n_trainx);
-    let mut tx_item: Vec<i16> = Vec::with_capacity(n_trainx);
-    let mut tx_rate: Vec<i8> = Vec::with_capacity(n_trainx);
-    let mut tx_date: Vec<i16> = Vec::with_capacity(n_trainx);
+    println!("Phase 5/6: Build train_2 & probe_2 (sorted)");
+    // train_2 = train ∪ moved probe, sorted by (user, item)
+    let n_train_2 = n_train + n_moved;
+    let mut tx_user: Vec<i32> = Vec::with_capacity(n_train_2);
+    let mut tx_item: Vec<i16> = Vec::with_capacity(n_train_2);
+    let mut tx_rate: Vec<i8> = Vec::with_capacity(n_train_2);
+    let mut tx_date: Vec<i16> = Vec::with_capacity(n_train_2);
     tx_user.extend_from_slice(&tu);
     tx_item.extend_from_slice(&ti);
     tx_rate.extend_from_slice(&tr);
@@ -293,26 +293,26 @@ fn main() {
             tx_date.push(pd[i]);
         }
     }
-    assert_eq!(tx_user.len(), n_trainx);
+    assert_eq!(tx_user.len(), n_train_2);
 
-    let mut perm: Vec<u32> = (0..n_trainx as u32).collect();
+    let mut perm: Vec<u32> = (0..n_train_2 as u32).collect();
     perm.sort_unstable_by_key(|&k| (tx_user[k as usize], tx_item[k as usize]));
-    let trainx_user: Vec<i32> = perm.iter().map(|&k| tx_user[k as usize]).collect();
-    let trainx_item: Vec<i16> = perm.iter().map(|&k| tx_item[k as usize]).collect();
-    let trainx_rate: Vec<i8> = perm.iter().map(|&k| tx_rate[k as usize]).collect();
-    let trainx_date: Vec<i16> = perm.iter().map(|&k| tx_date[k as usize]).collect();
+    let train_2_user: Vec<i32> = perm.iter().map(|&k| tx_user[k as usize]).collect();
+    let train_2_item: Vec<i16> = perm.iter().map(|&k| tx_item[k as usize]).collect();
+    let train_2_rate: Vec<i8> = perm.iter().map(|&k| tx_rate[k as usize]).collect();
+    let train_2_date: Vec<i16> = perm.iter().map(|&k| tx_date[k as usize]).collect();
     drop(perm);
     drop(tx_user);
     drop(tx_item);
     drop(tx_rate);
     drop(tx_date);
 
-    // probex = probe \ moved, sorted by (item, user)
-    let n_probex = n_probe - n_moved;
-    let mut px_user: Vec<i32> = Vec::with_capacity(n_probex);
-    let mut px_item: Vec<i16> = Vec::with_capacity(n_probex);
-    let mut px_rate: Vec<i8> = Vec::with_capacity(n_probex);
-    let mut px_date: Vec<i16> = Vec::with_capacity(n_probex);
+    // probe_2 = probe \ moved, sorted by (item, user)
+    let n_probe_2 = n_probe - n_moved;
+    let mut px_user: Vec<i32> = Vec::with_capacity(n_probe_2);
+    let mut px_item: Vec<i16> = Vec::with_capacity(n_probe_2);
+    let mut px_rate: Vec<i8> = Vec::with_capacity(n_probe_2);
+    let mut px_date: Vec<i16> = Vec::with_capacity(n_probe_2);
     for i in 0..n_probe {
         if !to_train_mask[i] {
             px_user.push(pu[i]);
@@ -321,14 +321,14 @@ fn main() {
             px_date.push(pd[i]);
         }
     }
-    assert_eq!(px_user.len(), n_probex);
+    assert_eq!(px_user.len(), n_probe_2);
 
-    let mut perm: Vec<u32> = (0..n_probex as u32).collect();
+    let mut perm: Vec<u32> = (0..n_probe_2 as u32).collect();
     perm.sort_unstable_by_key(|&k| (px_item[k as usize], px_user[k as usize]));
-    let probex_user: Vec<i32> = perm.iter().map(|&k| px_user[k as usize]).collect();
-    let probex_item: Vec<i16> = perm.iter().map(|&k| px_item[k as usize]).collect();
-    let probex_rate: Vec<i8> = perm.iter().map(|&k| px_rate[k as usize]).collect();
-    let probex_date: Vec<i16> = perm.iter().map(|&k| px_date[k as usize]).collect();
+    let probe_2_user: Vec<i32> = perm.iter().map(|&k| px_user[k as usize]).collect();
+    let probe_2_item: Vec<i16> = perm.iter().map(|&k| px_item[k as usize]).collect();
+    let probe_2_rate: Vec<i8> = perm.iter().map(|&k| px_rate[k as usize]).collect();
+    let probe_2_date: Vec<i16> = perm.iter().map(|&k| px_date[k as usize]).collect();
     drop(perm);
     drop(px_user);
     drop(px_item);
@@ -338,23 +338,23 @@ fn main() {
     // counts
     let mut tx_user_cnts = vec![0i32; N_USERS];
     let mut tx_item_cnts = vec![0i32; N_ITEMS];
-    for k in 0..n_trainx {
-        tx_user_cnts[trainx_user[k] as usize] += 1;
-        tx_item_cnts[trainx_item[k] as usize] += 1;
+    for k in 0..n_train_2 {
+        tx_user_cnts[train_2_user[k] as usize] += 1;
+        tx_item_cnts[train_2_item[k] as usize] += 1;
     }
     let mut px_user_cnts = vec![0i32; N_USERS];
     let mut px_item_cnts = vec![0i32; N_ITEMS];
-    for k in 0..n_probex {
-        px_user_cnts[probex_user[k] as usize] += 1;
-        px_item_cnts[probex_item[k] as usize] += 1;
+    for k in 0..n_probe_2 {
+        px_user_cnts[probe_2_user[k] as usize] += 1;
+        px_item_cnts[probe_2_item[k] as usize] += 1;
     }
 
     // shared arrays from train
     let item_years: Vec<i32> = load_i32(&format!("{}/item_years.npy", TRAIN_DIR));
     let uidx_to_uid: Vec<i32> = load_i32(&format!("{}/uidx_to_uid.npy", TRAIN_DIR));
     let iidx_to_iid: Vec<i16> = load_i16(&format!("{}/iidx_to_iid.npy", TRAIN_DIR));
-    let tx_is_test = vec![0i8; n_trainx];
-    let px_is_test = vec![0i8; n_probex];
+    let tx_is_test = vec![0i8; n_train_2];
+    let px_is_test = vec![0i8; n_probe_2];
 
     println!("Phase 6/6: Save");
     fs::create_dir_all(TRAINX_OUT).unwrap();
@@ -366,10 +366,10 @@ fn main() {
         };
     }
 
-    save!(TRAINX_OUT, "user_idxs", trainx_user);
-    save!(TRAINX_OUT, "item_idxs", trainx_item);
-    save!(TRAINX_OUT, "ratings", trainx_rate);
-    save!(TRAINX_OUT, "dates", trainx_date);
+    save!(TRAINX_OUT, "user_idxs", train_2_user);
+    save!(TRAINX_OUT, "item_idxs", train_2_item);
+    save!(TRAINX_OUT, "ratings", train_2_rate);
+    save!(TRAINX_OUT, "dates", train_2_date);
     save!(TRAINX_OUT, "is_test", tx_is_test);
     save!(TRAINX_OUT, "user_cnts", tx_user_cnts);
     save!(TRAINX_OUT, "item_cnts", tx_item_cnts);
@@ -377,17 +377,17 @@ fn main() {
     save!(TRAINX_OUT, "uidx_to_uid", uidx_to_uid);
     save!(TRAINX_OUT, "iidx_to_iid", iidx_to_iid);
 
-    save!(PROBEX_OUT, "user_idxs", probex_user);
-    save!(PROBEX_OUT, "item_idxs", probex_item);
-    save!(PROBEX_OUT, "ratings", probex_rate);
-    save!(PROBEX_OUT, "dates", probex_date);
+    save!(PROBEX_OUT, "user_idxs", probe_2_user);
+    save!(PROBEX_OUT, "item_idxs", probe_2_item);
+    save!(PROBEX_OUT, "ratings", probe_2_rate);
+    save!(PROBEX_OUT, "dates", probe_2_date);
     save!(PROBEX_OUT, "is_test", px_is_test);
     save!(PROBEX_OUT, "user_cnts", px_user_cnts);
     save!(PROBEX_OUT, "item_cnts", px_item_cnts);
     save!(PROBEX_OUT, "item_years", item_years);
 
     println!(
-        "Done. trainx: {} ratings, probex: {} ratings",
-        n_trainx, n_probex
+        "Done. train_2: {} ratings, probe_2: {} ratings",
+        n_train_2, n_probe_2
     );
 }

@@ -138,17 +138,16 @@ fn blend_config(name: &str) -> Option<BlendParams> {
 }
 
 fn print_help() {
-    println!("Usage: fwls NAME [-n | -p FILE] [-t FILE] [--groups G,...] (--seeds N,... | --seed N)");
+    println!("Usage: fwls NAME [-p FILE] [-t FILE] [--groups G,...] (--seeds N,... | --seed N)");
     println!();
     println!("  NAME                       blend name; a preset (blend_config) or any ad-hoc name");
     println!("                             (ad-hoc requires --lambda). Output goes to NAME-s<seed>.*");
-    println!("  -n, --new                  use pipeline-new.toml for [split]");
     println!("  -p FILE, --pipeline FILE   pipeline TOML (default: pipeline-1.toml)");
     println!("  -t FILE, --models FILE     base-predictor models TOML (default: models-1.toml)");
     println!("  --groups G,G,...           model groups (default: the TOML's `all`; omit with -m for manual-only)");
     println!("  -m NAME, --model NAME      add a single model (repeatable; combines with --groups)");
     println!("  -x NAME, --exclude NAME    drop a model by name (repeatable; brace-expanded)");
-    println!("  --voting-models FILE       voting-feature groups TOML (default: voting-new.toml)");
+    println!("  --voting-models FILE       voting-feature groups TOML (default: voting-1.toml)");
     println!("  --voting G,G,...           voting-feature groups from the TOML; optional if -f given");
     println!("  -f NAME, --feature NAME    add a single voting feature (repeatable; may be the only source)");
     println!("  --lambda VALUE             ridge λ; overrides the preset, required for an ad-hoc name");
@@ -180,7 +179,7 @@ fn parse_args() -> Args {
         groups: Vec::new(),
         model_manual: Vec::new(),
         exclude: Vec::new(),
-        voting_models: "voting-new.toml".to_string(),
+        voting_models: "voting-1.toml".to_string(),
         voting: Vec::new(),
         feature_manual: Vec::new(),
         lambda: None,
@@ -194,7 +193,6 @@ fn parse_args() -> Args {
     while i < argv.len() {
         match argv[i].as_str() {
             "-h" | "--help" => { print_help(); std::process::exit(0); }
-            "-n" | "--new" => { a.pipeline = "pipeline-new.toml".to_string(); i += 1; }
             "-p" | "--pipeline" => { a.pipeline = need(&argv, i); i += 2; }
             "-t" | "--models" => { a.models = need(&argv, i); i += 2; }
             "--groups" => {

@@ -41,7 +41,7 @@ mod real {
     }
 
     /// LightGBM + cross-fit parameters for a named blend. Add a branch per blend
-    /// (mirrors the base-predictor dispatchers in `tsvdx4-new.rs` etc.).
+    /// (mirrors the base-predictor dispatchers in `tsvdx4-2.rs` etc.).
     #[derive(Debug)]
     struct BlendParams {
         num_leaves: usize,

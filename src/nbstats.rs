@@ -8,7 +8,7 @@
 // In-memory callers (tests, chained workflows) use `build_*`; binaries use
 // `save_*` for the standard "compute + dump to .npy" CLI flow.
 
-use crate::{Dataset, MaskedDataset, Split, SPLIT_NEW};
+use crate::{Dataset, MaskedDataset, Split, SPLIT_2};
 use indicatif::{ProgressIterator, ParallelProgressIterator};
 use ndarray::{Array1, Array2, s};
 use ndarray_npy::write_npy;
@@ -199,10 +199,10 @@ pub fn save_rtg_nbstats(tr_set: &str, rtg: &str, split: Split, stat: &str) {
     write_npy(format!("{}/{}_{}.{}.npy", split.sim_dir, rtg, stat, tr_set), &mat).unwrap();
 }
 
-/// Save nbstats for the alternative pipeline (`SPLIT_NEW`): `preds_new`
-/// predictions over `trainx`+`probex` and over `fulltrain`+`qual`.
-pub fn save_nbstatsx(rtg: &str, stat: &str) {
-    save_nbstats_split(rtg, stat, SPLIT_NEW);
+/// Save nbstats for the alternative pipeline (`SPLIT_2`): `preds_2`
+/// predictions over `train_2`+`probe_2` and over `fulltrain`+`qual`.
+pub fn save_nbstats2(rtg: &str, stat: &str) {
+    save_nbstats_split(rtg, stat, SPLIT_2);
 }
 
 /// Save nbstats for a (target spec, stat name, split) triple — covers both
@@ -210,7 +210,7 @@ pub fn save_nbstatsx(rtg: &str, stat: &str) {
 ///
 /// Creates `split.sim_dir` if missing. The fulltrain output is skipped if its
 /// `.npy` already exists (those files are expensive to compute and never need
-/// to be regenerated as long as `data/fulltrain/` is unchanged); the trainx
+/// to be regenerated as long as `data/fulltrain/` is unchanged); the train_2
 /// output is always (re)written.
 ///
 /// `rtg == "bin"` triggers the binary co-occurrence path (`save_bin_nbstats`);

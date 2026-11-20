@@ -2,7 +2,7 @@ use std::env;
 use netflix_prize::{
     bknbrx::{BknbrxConfig, BknbrxModel, ParallelMode},
     fit2,
-    SPLIT_NEW,
+    SPLIT_2,
 };
 
 fn main() {
@@ -61,7 +61,7 @@ fn run_bknbrx(max_neighbors: usize, n_epochs: usize, lr_alpha: f32, lr_beta_u: f
         lambda2: 10.0,
     };
     fit2!(
-        BknbrxModel, cfg, "rtg", job_name, SPLIT_NEW,
+        BknbrxModel, cfg, "rtg", job_name, SPLIT_2,
         save_probe_each_epoch: true
     );
 }

@@ -17,10 +17,10 @@ do not have to train them:
 
 ```
 cargo build --release --bin preds
-./target/release/preds pull 'preds_new/*'
+./target/release/preds pull 'preds_2/*'
 ```
 
-You also need `data/` (`run -n download`, `run -n ingest`, `run -n newsplit`).
+You also need `data/` (`run --setup`: download, ingest, newsplit).
 
 ## 1. Copy the template
 
@@ -55,7 +55,7 @@ sampled rows, so it can neither overwrite nor be mistaken for a real column.
 cargo run --release --bin lab-foo
 ```
 
-This is the `trainx -> probex` phase only, and it prints the probe RMSE per
+This is the `train_2 -> probe_2` phase only, and it prints the probe RMSE per
 epoch. The `fulltrain -> qual` phase costs as much again and only matters once
 the column has earned a place, so it is off by default; `--final` turns it on.
 
@@ -78,10 +78,10 @@ number. What matters is what the column adds to the ensemble:
 
 ```
 cargo build --release --features blas --bin ridge
-./target/release/ridge --ensemble new -m preds_lab/lab-foo
+./target/release/ridge --ensemble s2 -m preds_lab/lab-foo
 ```
 
-`--ensemble new` is the stored single-split blend from `ensembles.toml`. The
+`--ensemble s2` is the stored single-split blend of split_2 from `ensembles.toml`. The
 command fits it twice out of one shared Gram matrix, with and without your
 column, and prints:
 
@@ -94,7 +94,7 @@ column, and prints:
 - the reference rows against their recorded values, so a gain is never read off
   a baseline that has silently drifted.
 
-Nothing is copied into `preds_new/`: a `dir/name` column is read where it lies.
+Nothing is copied into `preds_2/`: a `dir/name` column is read where it lies.
 Without a `--final` run there are no qual predictions, so the quiz column shows
 `-` and the probe numbers carry the measurement. Run `--final` once the probe
 delta justifies it.
@@ -113,16 +113,16 @@ Once a column is worth keeping:
 
 1. Move the model into `src/<name>.rs` and declare it in `src/lib.rs` if anything
    else will reuse it. A one-off can stay in its binary.
-2. Add a job to `pipeline-new.toml`. `jobtype = "anysplit_model"` lets one
+2. Add a job to `pipeline-2.toml`. `jobtype = "anysplit_model"` lets one
    binary serve both splits (it takes its `Split` from `-p`).
 3. Run it with `--final` for the qual column, and move the files from
-   `preds_lab/` to `preds_new/`.
-4. Add the name to the right group in `models-new.toml`.
+   `preds_lab/` to `preds_2/`.
+4. Add the name to the right group in `models-2.toml`.
 5. `./target/release/preds push`.
 
 ## What to know before writing the model
 
-- **Sort order differs by set.** Training sets (`train`, `trainx`, `fulltrain`)
+- **Sort order differs by set.** Training sets (`train`, `train_2`, `fulltrain`)
   are user-sorted, so `calc_user_offsets` gives each user's contiguous block.
   Probe and qual are item-sorted; user offsets are meaningless there, scan
   instead.
