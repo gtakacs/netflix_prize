@@ -144,14 +144,14 @@ other_part1 = [
     "s1-mfrbmx-80h",
 ]
 
-# --- Second-level blends (pipeline-1.toml, 2026-11-12; rebuilt 2026-11-16) ---
-# K-fold gbm / mlp / fwls blends of the 148 base columns (tx/rbm/nn/other) + voting features
+# --- Second-level blends (pipeline-1.toml, 2026-11-12; rebuilt 2026-11-16 and 2026-11-20) ---
+# K-fold gbm / mlp / fwls blends of the 154 base columns (tx/rbm/nn/other) + voting features
 # (voting-1.toml), one column per seed. _part1: on vf features only; _part2 (gbm, mlp): with latent
 # user / item vectors (preds_1/lat/); fwlsblend_part2: fwls stacked on the base + the part1 gbm /
 # mlp blends; fwlsblend_part3: fwls46k8 (base + aux_snap). Built on the 125 _part1 columns first
 # (s1 quiz 0.858050), rebuilt on the 148 on 2026-11-16: s1 quiz 0.857837 (base alone 0.861780).
-# The blends do NOT use the base columns added after that rebuild: s1-rbmb-512x, s1-rbmb-512x__knn-r
-# (rbm_part2, 2026-11-17); see STALE OUTPUTS in pipeline-1.toml.
+# Rebuilt again on the 154 base columns on 2026-11-20 (+ s1-rbmb-512x / __knn-r, s1-cfnade320t /
+# __knn-r / __knn-25m / __knn-25c): s1 quiz 0.857620.
 gbmblend_part1 = [
     "gbc2k4-s1",
     "gbc2k4o-s2",
@@ -222,6 +222,11 @@ rbm_part2 = [
 nn_part2 = [
     "s1-cfnade160_ep35",
     "s1-dnn20t_ep03",
+    # a larger CF-NADE off the shared recipe and its kNN chains (2026-11-19)
+    "s1-cfnade320t",
+    "s1-cfnade320t__knn-25c",
+    "s1-cfnade320t__knn-25m",
+    "s1-cfnade320t__knn-r",
 ]
 
 other_part2 = [
