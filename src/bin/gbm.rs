@@ -38,6 +38,7 @@ mod real {
         seeds: Vec<u64>,
         cv: CrossFit,
         folds: Option<usize>,
+        resid: Option<String>,
     }
 
     /// LightGBM + cross-fit parameters for a named blend. Add a branch per blend
@@ -105,6 +106,12 @@ mod real {
             // Bayesian-optimized multiclass classifier GBC.
             // gbc2k4: the same model, run with --cv std --folds 4 (round 3; gbc2k4o: more seeds);
             // gbc2lk4: with latent-vector inputs (lab); gbc2lmk4 / gbc2luk4: split_1, mf / asym factors.
+            // Residual gbm (split_1, 2026-11-21; lab lx-gresid): run with --resid fwls46k8-s1.
+            "gbr3rk4" => BlendParams {
+                num_leaves: 63, iters: 600, lr: 0.02, min_data_in_leaf: 1000,
+                feature_fraction: 0.5, bagging_fraction: 0.9756, bagging_freq: 3,
+                max_bin: 127, folds: 4, threads: 12, ..Default::default()
+            },
             "gbc2o" | "gbc2x" | "gbc2k4" | "gbc2k4o" | "gbc2lk4" | "gbc2lmk4" | "gbc2luk4" | "gbc2laok4" => BlendParams {
                 num_leaves: 191, iters: 400, lr: 0.019929113104398585,
                 min_data_in_leaf: 527, feature_fraction: 0.6706351917324398,
@@ -133,6 +140,8 @@ mod real {
         println!("  --seed N                   add a single fold seed (repeatable)");
         println!("  --cv inv|std               cross-fit: inv = fold k trains on 1/K (default), std = on the other K-1 folds");
         println!("  --folds K                  number of folds (default: the preset's)");
+        println!("  --resid COL                learn y - COL and add COL back (regression only): a gbm");
+        println!("                             stacked on the residual of another column, e.g. a blend");
         println!("  -h, --help                 show this help");
     }
 
@@ -158,6 +167,7 @@ mod real {
             seeds: Vec::new(),
             cv: CrossFit::Inv,
             folds: None,
+            resid: None,
         };
         let argv: Vec<String> = std::env::args().skip(1).collect();
         let mut i = 0;
@@ -195,6 +205,7 @@ mod real {
                 }
                 "--seed" => { a.seeds.push(need(&argv, i).parse().expect("bad --seed")); i += 2; }
             "--folds" => { a.folds = Some(need(&argv, i).parse().expect("bad --folds value")); i += 2; }
+            "--resid" => { a.resid = Some(need(&argv, i)); i += 2; }
             "--cv" => {
                 a.cv = CrossFit::parse(&need(&argv, i)).unwrap_or_else(|| {
                     eprintln!("error: --cv must be inv or std"); std::process::exit(2)
@@ -316,6 +327,23 @@ mod real {
         let qz = load_quiz_mask(&fulltrain_pr);
         println!("Probe: {} rows, Qual: {} rows", y_pr.len(), y_ql.len());
 
+        // --resid: the target is y - COL (COL clipped like a model column), COL is added back.
+        let (r_pr, r_ql) = match &args.resid {
+            None => (None, None),
+            Some(col) => {
+                assert!(!p.multiclass, "--resid needs a regression blend");
+                for set in [&pr, &fulltrain_pr] {
+                    let path = netflix_prize::preds_path(&preds, col, set);
+                    assert!(std::path::Path::new(&path).exists(), "--resid column missing: {path}");
+                }
+                teeln!("Residual target: y - {}", col);
+                (Some(netflix_prize::blend::load_preds(col, &preds, &pr, y_pr.len(), args.in_clip)),
+                 Some(netflix_prize::blend::load_preds(col, &preds, &fulltrain_pr, y_ql.len(), args.in_clip)))
+            }
+        };
+        let y_pr = match &r_pr { Some(r) => &y_pr - r, None => y_pr };
+        let y_ql = match &r_ql { Some(r) => &y_ql - r, None => y_ql };
+
         let mode = if p.multiclass {
             LgbmMode::Multiclass { values: vec![1.0, 2.0, 3.0, 4.0, 5.0] }
         } else {
@@ -354,6 +382,8 @@ mod real {
             );
             let pr_path = format!("{preds}/{}-s{seed}.{pr}.npy", args.name);
             let ql_path = format!("{preds}/{}-s{seed}.{fulltrain_pr}.npy", args.name);
+            let p_pr = match &r_pr { Some(r) => &p_pr + r, None => p_pr };
+            let p_ql = match &r_ql { Some(r) => &p_ql + r, None => p_ql };
             save_preds(&pr_path, &p_pr);
             save_preds(&ql_path, &p_ql);
             teeln!("Saved {} / {}", pr_path, ql_path);

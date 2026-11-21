@@ -144,11 +144,11 @@ other_part1 = [
     "s1-mfrbmx-80h",
 ]
 
-# --- Second-level blends (pipeline-1.toml, 2026-11-12; rebuilt 2026-11-16 and 2026-11-20) ---
+# --- First-level blends (pipeline-1.toml, 2026-11-12; rebuilt 2026-11-16 and 2026-11-20) ---
 # K-fold gbm / mlp / fwls blends of the 154 base columns (tx/rbm/nn/other) + voting features
 # (voting-1.toml), one column per seed. _part1: on vf features only; _part2 (gbm, mlp): with latent
-# user / item vectors (preds_1/lat/); fwlsblend_part2: fwls stacked on the base + the part1 gbm /
-# mlp blends; fwlsblend_part3: fwls46k8 (base + aux_snap). Built on the 125 _part1 columns first
+# user / item vectors (preds_1/lat/); fwlsblend_part3: fwls46k8 (base + aux_snap); the fwls stacked on
+# the base + the part1 gbm / mlp blends are in stackblend (fwlsblend_part2 until 2026-11-21). Built on the 125 _part1 columns first
 # (s1 quiz 0.858050), rebuilt on the 148 on 2026-11-16: s1 quiz 0.857837 (base alone 0.861780).
 # Rebuilt again on the 154 base columns on 2026-11-20 (+ s1-rbmb-512x / __knn-r, s1-cfnade320t /
 # __knn-r / __knn-25m / __knn-25c): s1 quiz 0.857620.
@@ -181,9 +181,13 @@ fwlsblend_part1 = [
     "fwlsb57k8v0-s1",
 ]
 
-fwlsblend_part2 = [
+# Second-level blends (stackblend, 2026-11-21): fitted on first-level blend columns, so they rerun
+# after those. fwls15k4 / fwls33k16: fwls on the base + the round 1-2 gbm / mlp blends (fwlsblend_part2
+# until 2026-11-21); gbr3rk4: a gbm on the residual of fwls46k8 (creative blend lab, preds_lab/s1bx).
+stackblend = [
     "fwls15k4-s1",
     "fwls33k16-s2",
+    "gbr3rk4-s1",
 ]
 
 # --- Base additions of 2026-11-15 (_part2) ---
@@ -237,6 +241,17 @@ other_part2 = [
 
 fwlsblend_part3 = [
     "fwls46k8-s1",
+]
+
+# --- Latent-context FWLS (2026-11-21, creative blend lab preds_lab/s1bx, user) ---
+# First-level fwls whose context is user / item factor vectors (preds_1/lat/): with gbr3rk4 the top 5
+# of a forward selection over the lab's columns (s1 quiz 0.857620 -> 0.857541, cross1 0.855832 ->
+# 0.855785). Outputs copied from the lab runs.
+fwlsblend_part4 = [
+    "fwlssnmfk8-s1",
+    "fwlsb57txk8-s1",
+    "fwlslrbmk8-s1",
+    "fwlslasik8-s1",
 ]
 
 # --- Secondary columns (aux_) ---
@@ -626,11 +641,11 @@ aux_snap = [
 ]
 
 [meta]
-all = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
+all = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend", "stackblend"]
 tx = ["tx_part1", "tx_part2"]
 rbm = ["rbm_part1", "rbm_part2"]
 nn = ["nn_part1", "nn_part2"]
 other = ["other_part1", "other_part2"]
 gbmblend = ["gbmblend_part1", "gbmblend_part2"]
 mlpblend = ["mlpblend_part1", "mlpblend_part2"]
-fwlsblend = ["fwlsblend_part1", "fwlsblend_part2", "fwlsblend_part3"]
+fwlsblend = ["fwlsblend_part1", "fwlsblend_part3", "fwlsblend_part4"]

@@ -1334,7 +1334,7 @@ env = "KN_K=25 KN_SCALE=7.5 KN_SIM=mse KN_STAT0=rtg_supp KN_STAT2=rtg_diff2 KN_T
 extras = ["@train_preds"]
 inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_diff2.{tr}.npy", "sim/rtg_diff2.{fulltrain_tr}.npy"]
 
-# --- Second-level blends (gbm / mlp / fwls) over the base columns (2026-11-12) ---
+# --- First-level blends (gbm / mlp / fwls) over the base columns (2026-11-12) ---
 # The split_3 round-3 K-fold blends on the models-1.toml base columns (tx, rbm, nn, other: 125 at
 # first, 148 since the 2026-11-16 rebuild, 154 since the 2026-11-20 one; each rebuild replaced every
 # blend and the predfeat vfx/ features),
@@ -1657,3 +1657,57 @@ runner = "chain"
 env = "KN_K=25 KN_SCALE=2.5 KN_SIM=cosine KN_STAT0=rtg_supp KN_STAT2=rtg_prod KN_TAU=0.05"
 extras = ["@train_preds"]
 inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr}.npy", "sim/rtg_prod.{tr}.npy", "sim/rtg_prod.{fulltrain_tr}.npy"]
+
+# --- Creative blend lab promotions (2026-11-21, user; preds_lab/s1bx/REPORT.md) ---
+# The top 5 of a forward selection over the night lab's columns on the s1 set (CV -7.8e-5; s1 quiz
+# 0.857620 -> 0.857541, cross1 0.855832 -> 0.855785). Outputs copied from the lab runs (lab names in
+# brackets); a check run of these jobs is still to come.
+# Four first-level fwls with latent context: the base columns' weights depend on the user / item
+# factors (preds_1/lat/) instead of only the vf support features. K=8, lapack, seed 1.
+
+# [lx-fsnapmf] base + aux_snap snapshots x latmf (s1-mf16lat user + item vectors) + constant.
+[jobs.fwlssnmfk8]
+jobtype = "fwlsblend"
+groups = ["tx", "rbm", "nn", "other", "aux_snap"]
+voting = ["latmf"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-vfeat0", "s1-attn20", "s1-attn24", "s1-attn48", "s1-bk1-10", "s1-bk1-150", "s1-bk1-80n", "s1-bk4-p100", "s1-bk4-p200", "s1-bknbrx-300t", "s1-dnn20", "s1-dnn20t", "s1-dnn40nm", "s1-dnn48", "s1-mfrbmx-80h", "s1-nade16s", "s1-nrbm100qnfbut", "s1-nrbm100qpnb", "s1-nrbm400lr4", "s1-tsvdx4-180f", "s1-tsvdx4-20f", "s1-tsvdx5-p200", "s1-predfeatlat"]
+extra_args = ["-f", "vf/vf000_constant", "--lambda", "1000", "--folds", "8", "--solver", "lapack"]
+
+# [lx-f57tx] fwlsb57k8's context (fwls57) + the s1-tx20lat user / item vectors.
+[jobs.fwlsb57txk8]
+jobtype = "fwlsblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["fwls57", "lattx"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeat", "s1-predfeatlat"]
+extra_args = ["--lambda", "3000", "--folds", "8", "--solver", "lapack"]
+
+# [lx-flatrbm] context = the s1-rbm50lat hidden-unit user vectors + constant.
+[jobs.fwlslrbmk8]
+jobtype = "fwlsblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["latrbm"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
+extra_args = ["-f", "vf/vf000_constant", "--lambda", "1000", "--folds", "8", "--solver", "lapack"]
+
+# [lx-flatasymi] context = the item factors of s1-mf-64u__asym-16 + constant.
+[jobs.fwlslasik8]
+jobtype = "fwlsblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["latasymi"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeatlat"]
+extra_args = ["-f", "vf/vf000_constant", "--lambda", "1000", "--folds", "8", "--solver", "lapack"]
+
+# [lx-gresid] Second level (models-1.toml stackblend): a regression gbm on the residual of fwls46k8
+# (gbm --resid: target y - fwls46k8-s1, which is added back), inputs base + vf1_core + lattx. It
+# depends on a blend: after a rebuild of the first-level blends it reruns after fwls46k8.
+[jobs.gbr3rk4]
+jobtype = "gbmblend"
+groups = ["tx", "rbm", "nn", "other"]
+voting = ["vf1_core", "lattx"]
+seeds = [1]
+inputs_from = ["s1-vfeat1", "s1-predfeatlat", "fwls46k8"]
+extra_args = ["--cv", "std", "--folds", "4", "--resid", "fwls46k8-s1"]

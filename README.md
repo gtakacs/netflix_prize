@@ -91,12 +91,12 @@ cargo build --release --features blas --bin ridge
 row                    quiz (columns)   expected       delta
 1/tx                    0.864551 (65)   0.864551    -1.21e-7  OK
 ...
-1/*                    0.857404 (172)   0.857404    -1.20e-7  OK
+1/*                    0.857307 (177)   0.857307    -3.76e-7  OK
 2/*                    0.857715 (175)   0.857715    -1.54e-7  OK
 3/*                    0.857567 (223)   0.857567    +1.68e-7  OK
-ensemble               0.855832 (570)   0.855832    +2.72e-7  OK
+ensemble               0.855785 (575)   0.855785    -2.73e-8  OK
 
-Reference check: PASS (25 rows within 1e-5)
+Reference check: PASS (26 rows within 1e-5)
 ```
 
 It takes about half a minute, exits non-zero if the numbers have drifted, and
