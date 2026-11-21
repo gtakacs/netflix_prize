@@ -19,13 +19,13 @@ order of the dataset it is named after, plus the training logs and configs.
 
 | Path | Files | Size | Contents |
 | --- | ---: | ---: | --- |
-| `preds_1/` | 1406 | 10.15 GB | split_1: `probe` and `qual` predictions, with `.out` logs |
-| `preds_1/{lat,vf,vf0,vfx}/` | 772 | 6.53 GB | split_1 blend inputs: latent factors and voting (context) features |
+| `preds_1/` | 1421 | 10.23 GB | split_1: `probe` and `qual` predictions, with `.out` logs |
+| `preds_1/{lat,vf,vf0,vfx}/` | 772 | 6.52 GB | split_1 blend inputs: latent factors and voting (context) features |
 | `preds_2/` | 649 | 3.42 GB | split_2: `probe_2` and `qual` predictions, with `.out` logs and `.cfg` configs |
 | `preds_2/{lat,vf,vfx}/` | 460 | 3.63 GB | split_2 blend inputs |
 | `preds_3/` | 779 | 5.27 GB | split_3: `probe_3` and `qual` predictions, with logs |
 | `preds_3/{lat,vf,vfx}/` | 460 | 4.21 GB | split_3 blend inputs |
-| total | 4526 | 33.20 GB | |
+| total | 4541 | 33.29 GB | |
 
 The store holds exactly what the pipeline manifests reference, plus the logs and
 configs beside them. Columns that no current job consumes are not kept here,
@@ -126,7 +126,7 @@ md5:
 ```toml
 [meta]
 version = 1
-generated = "2026-11-20T18:30:11Z"
+generated = "2026-11-21T11:55:18Z"
 bucket = "gtakacs/netflix_prize"
 base_url = "https://huggingface.co/buckets/gtakacs/netflix_prize/resolve"
 
