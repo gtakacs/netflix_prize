@@ -152,6 +152,6 @@ pub fn into_tx_config(cfg: Tsvdx5Config) -> TxConfig {
         low_memory:    cfg.low_memory,
         full_su:       cfg.full_su,
         lazy_day: false,
-        ud_dim: None,
+        ud_dim: None, seq: None,
     }
 }

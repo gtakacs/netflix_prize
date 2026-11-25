@@ -254,6 +254,16 @@ fwlsblend_part4 = [
     "fwlslasik8-s1",
 ]
 
+# --- Sequential NSVD1 term in tx (2026-11-25, user; pipeline-1.toml s1-txseq-*) ---
+# Seed means of fit tx SEQ=1 columns: the sequential MF (zbq: separate item factor, 9 within-day order
+# seeds; zb: shared item factor, 6 seeds) and e3 (the sequence + the per-day terms, 3 seeds). On quiz:
+# s1 0.857541 -> 0.857418, cross1 0.855785 -> 0.855679.
+tx_part3 = [
+    "s1-txseq-zbqx9",
+    "s1-txseq-zbx6",
+    "s1-txseq-e3x3",
+]
+
 # --- Secondary columns (aux_) ---
 # Columns that are not ensemble members: inputs of a secondary blend only. aux_snap = the 378 epoch
 # snapshots the member jobs save (pipeline-1.toml aux_epochs), read only by fwls46k8 next to the 125
@@ -642,7 +652,7 @@ aux_snap = [
 
 [meta]
 all = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend", "stackblend"]
-tx = ["tx_part1", "tx_part2"]
+tx = ["tx_part1", "tx_part2", "tx_part3"]
 rbm = ["rbm_part1", "rbm_part2"]
 nn = ["nn_part1", "nn_part2"]
 other = ["other_part1", "other_part2"]

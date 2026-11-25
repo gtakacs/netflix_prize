@@ -162,7 +162,7 @@ fn run_base(
         low_memory,
         full_su: true,
         lazy_day: false,
-        ud_dim: None,
+        ud_dim: None, seq: None,
     };
     match (save_subscores, save_probe_each_epoch) {
         (false, false) => fit2!(
@@ -218,7 +218,7 @@ fn run_ord(n_feat: usize, n_epochs: usize, max_neighbors: usize, w_factor: f32, 
         low_memory: false,
         full_su: true,
         lazy_day: false,
-        ud_dim: None,
+        ud_dim: None, seq: None,
     };
     fit2!(
         TxModel, cfg, "rtg", job_name, SPLIT_2,

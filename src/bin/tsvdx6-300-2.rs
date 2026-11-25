@@ -55,7 +55,7 @@ fn main() {
         low_memory: false,
         full_su: true,
         lazy_day: false,
-        ud_dim: None,
+        ud_dim: None, seq: None,
     };
     fit2!(
         TxModel, cfg, "rtg", "tsvdx6-300", SPLIT_2,

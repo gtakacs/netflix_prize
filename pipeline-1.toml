@@ -1661,7 +1661,8 @@ inputs = ["src/bin/fit.rs", "sim/rtg_supp.{tr}.npy", "sim/rtg_supp.{fulltrain_tr
 # --- Creative blend lab promotions (2026-11-21, user; preds_lab/s1bx/REPORT.md) ---
 # The top 5 of a forward selection over the night lab's columns on the s1 set (CV -7.8e-5; s1 quiz
 # 0.857620 -> 0.857541, cross1 0.855832 -> 0.855785). Outputs copied from the lab runs (lab names in
-# brackets); a check run of these jobs is still to come.
+# brackets); a check run of these five job definitions on 2026-11-21 reproduced every one bit for bit
+# (preds_lab/s1check/REPORT.md).
 # Four first-level fwls with latent context: the base columns' weights depend on the user / item
 # factors (preds_1/lat/) instead of only the vf support features. K=8, lapack, seed 1.
 
@@ -1711,3 +1712,133 @@ voting = ["vf1_core", "lattx"]
 seeds = [1]
 inputs_from = ["s1-vfeat1", "s1-predfeatlat", "fwls46k8"]
 extra_args = ["--cv", "std", "--folds", "4", "--resid", "fwls46k8-s1"]
+
+
+# --- Sequential NSVD1 term in tx (2026-11-25, user; TxConfig.seq in src/tx.rs, fit tx SEQ=1) ---
+# The term: each user's events (train ratings + the prediction set's items) in (date, per-user hash)
+# order; z_t = a z_{t-1} + y[i,0] (+ y[i,r] for a train event), the score gets q.(c_t z_t). Lab history:
+# preds_lab/s1mfseq/REPORT.md (sequential MF, lab-s1-mfseq2) and preds_lab/s1txseq/ (lab-s1-txseq).
+# Outputs copied from the lab runs; fit tx with these knobs reproduces lab-s1-txseq bit for bit (smoke
+# checks on a 2% sample), and the txseq means reproduce the sequential-MF ones (cross1 0.855703).
+# Column means: predavg (src/bin/predavg.rs). Only the three means are ensemble members (models-1.toml
+# tx_part3); a seed mean beat the separate seed columns on quiz (s1 0.857418 vs 0.857425).
+[defaults.predavg]
+inputs  = ["src/bin/predavg.rs"]
+outputs = [
+    "{preds}/{name}.{pr}.npy",
+    "{preds}/{name}.{fulltrain_pr}.npy",
+]
+cmd = "cargo build --release --bin predavg && ./target/release/predavg {preds} {name} {extra}"
+
+# The sequential MF as tx (every other tx term off; LAZY_DAY=1 UD_DIM=1 only save memory, the day terms
+# stay 0): zbq = separate item factor (SEQ_SEPQ=1), within-day order seeds 1-9; zb = shared item factor
+# (SEQ_SEPQ=0), seeds 1-6. F=32, 16 epochs, the s1-mf-64u settings (RESET=10, SHUFFLE=0).
+[jobs."s1-txseq-zbq1"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=1 SEQ_TIE_SEED=1"
+
+[jobs."s1-txseq-zbq2"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=1 SEQ_TIE_SEED=2"
+
+[jobs."s1-txseq-zbq3"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=1 SEQ_TIE_SEED=3"
+
+[jobs."s1-txseq-zbq4"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=1 SEQ_TIE_SEED=4"
+
+[jobs."s1-txseq-zbq5"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=1 SEQ_TIE_SEED=5"
+
+[jobs."s1-txseq-zbq6"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=1 SEQ_TIE_SEED=6"
+
+[jobs."s1-txseq-zbq7"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=1 SEQ_TIE_SEED=7"
+
+[jobs."s1-txseq-zbq8"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=1 SEQ_TIE_SEED=8"
+
+[jobs."s1-txseq-zbq9"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=1 SEQ_TIE_SEED=9"
+
+[jobs."s1-txseq-zb1"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=0 SEQ_TIE_SEED=1"
+
+[jobs."s1-txseq-zb2"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=0 SEQ_TIE_SEED=2"
+
+[jobs."s1-txseq-zb3"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=0 SEQ_TIE_SEED=3"
+
+[jobs."s1-txseq-zb4"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=0 SEQ_TIE_SEED=4"
+
+[jobs."s1-txseq-zb5"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=0 SEQ_TIE_SEED=5"
+
+[jobs."s1-txseq-zb6"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=0 SEQ_TIE_SEED=6"
+
+# e3: the sequence + the per-day terms (per-day NSVD1, per-day user factor) and the biases only (p_u,
+# static NSVD1, time biases, freq factor off; SIGMA_I=0.1 so q leaves the saddle at 0). Seeds 42 / 43 / 44
+# (SEED = SEQ_TIE_SEED except 42 with tie seed 1). On quiz: cross1 -8.5e-5 alone (3-seed mean), -2.4e-5
+# next to the sequential MF.
+[jobs."s1-txseq-e3s42"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=64 EPOCHS=20 RAYON_NUM_THREADS=1 SEQ=1 SEQ_ORDER=1 SEQ_SEPQ=0 SEQ_YR=2 SEQ_A=0.9 LR_YS=0.001 REG_YS=0.001 LR_U=0 SIGMA_U=0 LR_U2=0 SIGMA_I=0.1 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_TI=0 LR_TA=0 LR_UBD=0 LR_CU=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 SEED=42 SEQ_TIE_SEED=1"
+
+[jobs."s1-txseq-e3s43"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=64 EPOCHS=20 RAYON_NUM_THREADS=1 SEQ=1 SEQ_ORDER=1 SEQ_SEPQ=0 SEQ_YR=2 SEQ_A=0.9 LR_YS=0.001 REG_YS=0.001 LR_U=0 SIGMA_U=0 LR_U2=0 SIGMA_I=0.1 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_TI=0 LR_TA=0 LR_UBD=0 LR_CU=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 SEED=43 SEQ_TIE_SEED=43"
+
+[jobs."s1-txseq-e3s44"]
+jobtype = "s3model"
+runner = "tx"
+env = "F=64 EPOCHS=20 RAYON_NUM_THREADS=1 SEQ=1 SEQ_ORDER=1 SEQ_SEPQ=0 SEQ_YR=2 SEQ_A=0.9 LR_YS=0.001 REG_YS=0.001 LR_U=0 SIGMA_U=0 LR_U2=0 SIGMA_I=0.1 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_TI=0 LR_TA=0 LR_UBD=0 LR_CU=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 SEED=44 SEQ_TIE_SEED=44"
+
+# The ensemble members: the seed means.
+[jobs."s1-txseq-zbqx9"]
+jobtype = "predavg"
+inputs_from = ["s1-txseq-zbq1", "s1-txseq-zbq2", "s1-txseq-zbq3", "s1-txseq-zbq4", "s1-txseq-zbq5", "s1-txseq-zbq6", "s1-txseq-zbq7", "s1-txseq-zbq8", "s1-txseq-zbq9"]
+extra_args = ["s1-txseq-zbq1", "s1-txseq-zbq2", "s1-txseq-zbq3", "s1-txseq-zbq4", "s1-txseq-zbq5", "s1-txseq-zbq6", "s1-txseq-zbq7", "s1-txseq-zbq8", "s1-txseq-zbq9"]
+
+[jobs."s1-txseq-zbx6"]
+jobtype = "predavg"
+inputs_from = ["s1-txseq-zb1", "s1-txseq-zb2", "s1-txseq-zb3", "s1-txseq-zb4", "s1-txseq-zb5", "s1-txseq-zb6"]
+extra_args = ["s1-txseq-zb1", "s1-txseq-zb2", "s1-txseq-zb3", "s1-txseq-zb4", "s1-txseq-zb5", "s1-txseq-zb6"]
+
+[jobs."s1-txseq-e3x3"]
+jobtype = "predavg"
+inputs_from = ["s1-txseq-e3s42", "s1-txseq-e3s43", "s1-txseq-e3s44"]
+extra_args = ["s1-txseq-e3s42", "s1-txseq-e3s43", "s1-txseq-e3s44"]

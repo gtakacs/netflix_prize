@@ -205,6 +205,128 @@ pub struct TxConfig {
     pub lazy_day: bool,       // build the per-(user, day) NSVD1 sums per user at prediction time
                               // instead of keeping them in ycache_day [n_ud, n_feat]
     pub ud_dim: Option<usize>, // per-(user, day) factor ufeat_day on the first D dims only (None = n_feat)
+    pub seq: Option<SeqConfig>, // the sequential NSVD1 term (None = no such term)
+}
+
+// ---------------------------------------------------------------------------
+// Sequential NSVD1 term
+// ---------------------------------------------------------------------------
+
+/// The sequential NSVD1 term: z_t = a z_{t-1} + v(t-1) over the user's events (train ratings and the
+/// prediction set's items) ordered by (date, splitmix64(seed, user, item)); v = ys[i,0] + ys[i,r] for
+/// a train event and ys[i,0] for a prediction-set item (yr), or ys[i] (no yr). The score gets
+/// x_i . (c_t z_t) with c_t = S_t^-beta, x_i a separate item factor (sepq) or the tx item factor
+/// qi + qf (no sepq: c_t z_t joins pu_eff).
+#[derive(Clone, Copy, Debug)]
+pub struct SeqConfig {
+    pub a: f32,
+    pub beta: f32,
+    pub lr_ys: f32,
+    pub reg_ys: f32,
+    pub yr: bool,
+    pub sepq: bool,
+    pub lr_x: f32,
+    pub reg_x: f32,
+    pub sigma_x: f32,
+    pub tie_seed: u64,
+    pub order: bool,        // SGD over a user's train rows in sequence order
+    pub start: usize,       // first epoch in which the term trains (earlier epochs: plain tx)
+}
+
+fn splitmix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9e3779b97f4a7c15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
+    x ^ (x >> 31)
+}
+
+fn tie_key(seed: u64, u: usize, i: i32) -> u64 {
+    splitmix64(splitmix64(seed ^ ((u as u64) << 20)) ^ i as u64)
+}
+
+/// The users' event sequences, concatenated per user.
+struct SeqEvents {
+    off: Vec<usize>,    // per-user offsets
+    item: Vec<i32>,
+    y1: Vec<i32>,       // ys row: 6 i (slot 0) with yr, else i
+    y2: Vec<i32>,       // yr: ys row 6 i + r of a train event, -1 otherwise (empty without yr)
+    pos: Vec<u32>,      // train row -> position in its user's sequence
+    order: Vec<u32>,    // train rows in sequence order, laid out like the train set (user blocks)
+}
+
+impl SeqEvents {
+    fn build(tr: &Dataset, pr: &MaskedDataset, yr: bool, tie_seed: u64) -> Self {
+        let nu = tr.n_users;
+        let mut off = vec![0usize; nu + 1];
+        for &u in tr.user_idxs.iter() { off[u as usize + 1] += 1; }
+        for &u in pr.user_idxs.iter() { off[u as usize + 1] += 1; }
+        for u in 0..nu { off[u + 1] += off[u]; }
+        let mut ev: Vec<(i16, i32, i32)> = vec![(0, 0, 0); off[nu]];
+        let mut fill = off.clone();
+        for r in 0..tr.n_ratings {
+            let u = tr.user_idxs[r] as usize;
+            ev[fill[u]] = (tr.dates[r], tr.item_idxs[r], r as i32); fill[u] += 1;
+        }
+        for r in 0..pr.n_ratings {
+            let u = pr.user_idxs[r] as usize;
+            ev[fill[u]] = (pr.dates[r], pr.item_idxs[r], -1); fill[u] += 1;
+        }
+        let mut pos = vec![0u32; tr.n_ratings];
+        let mut order = vec![0u32; tr.n_ratings];
+        let mut tr_start = 0usize;
+        for u in 0..nu {
+            ev[off[u]..off[u + 1]].sort_unstable_by_key(|&(d, i, _)| (d, tie_key(tie_seed, u, i), i));
+            let mut q = tr_start;
+            for (p, e) in ev[off[u]..off[u + 1]].iter().enumerate() {
+                if e.2 >= 0 { pos[e.2 as usize] = p as u32; order[q] = e.2 as u32; q += 1; }
+            }
+            // the train set is user-blocked and date-sorted within a user (tx's day logic needs it)
+            for t in tr_start + 1..q {
+                assert!(tr.dates[t - 1] <= tr.dates[t], "train rows of user {u} are not date-sorted");
+                assert_eq!(tr.user_idxs[t] as usize, u, "train set is not user-blocked");
+            }
+            tr_start = q;
+        }
+        let item = ev.iter().map(|e| e.1).collect();
+        let y1 = ev.iter().map(|e| if yr { 6 * e.1 } else { e.1 }).collect();
+        let y2 = if yr {
+            ev.iter().map(|e| if e.2 < 0 { -1 } else { 6 * e.1 + tr.raw_ratings[e.2 as usize] as i32 }).collect()
+        } else { Vec::new() };
+        Self { off, item, y1, y2, pos, order }
+    }
+}
+
+/// Forward pass over one sequence: z[t] (n x f) and c[t] = S_t^-beta (0 at t = 0).
+fn seq_forward(y1: &[i32], y2: &[i32], y: &Array2<f32>, a: f32, beta: f32, f: usize,
+               z: &mut Vec<f32>, c: &mut Vec<f32>) {
+    let n = y1.len();
+    z.clear(); z.resize(n * f, 0.0);
+    c.clear(); c.resize(n, 0.0);
+    let mut s = 0.0f32;
+    for t in 1..n {
+        s = a * s + 1.0;
+        c[t] = s.powf(-beta);
+        let (prev, cur) = z.split_at_mut(t * f);
+        let prev = &prev[(t - 1) * f..];
+        let v = y.row(y1[t - 1] as usize);
+        for k in 0..f { cur[k] = a * prev[k] + v[k]; }
+        if !y2.is_empty() && y2[t - 1] >= 0 {
+            let v2 = y.row(y2[t - 1] as usize);
+            for k in 0..f { cur[k] += v2[k]; }
+        }
+    }
+}
+
+/// Backward pass: A_j = H_{j+1} + a A_{j+1} (A_{n-1} = 0), `upd(j, A_j)` for j = n-2 down to 0.
+fn seq_backward(n: usize, h: &[f32], a: f32, f: usize, mut upd: impl FnMut(usize, &[f32])) {
+    if n < 2 { return; }
+    let mut acc = vec![0.0f32; f];
+    for j in (0..n - 1).rev() {
+        let g_next = if j + 2 < n { a } else { 0.0 };
+        let hj = &h[(j + 1) * f..(j + 2) * f];
+        for k in 0..f { acc[k] = hj[k] + g_next * acc[k]; }
+        upd(j, &acc);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +398,11 @@ pub struct TxModel {
     // Probe items per user (when full_su = true; included in NSVD1 su)
     probe_items_by_user: Vec<Vec<u32>>, // probe items per user [n_users]
     probe_items_by_ud: Vec<Vec<u32>>,   // probe items per (user, day) [n_ud]
+
+    // sequential NSVD1 term (empty when cfg.seq is None)
+    seq_ev: Option<SeqEvents>,
+    ys: Array2<f32>,                // [6 n_items, n_feat] with yr, [n_items, n_feat] otherwise
+    xs: Array2<f32>,                // [n_items, n_feat] with sepq
 }
 
 impl TxModel {
@@ -439,6 +566,32 @@ impl TxModel {
         let nr_day = if n_same_rated > 0 { (n_same_rated as f32).powf(-0.5) } else { 0.0 };
 
         nn * c_sum + nr * w_sum + nn_day * c_day_sum + nr_day * w_day_sum
+    }
+
+    /// Sequential state of user u: z, c of the user's sequence.
+    fn seq_state(&self, u: usize, z: &mut Vec<f32>, c: &mut Vec<f32>) {
+        let sc = self.cfg.seq.unwrap();
+        let ev = self.seq_ev.as_ref().unwrap();
+        let (s, e) = (ev.off[u], ev.off[u + 1]);
+        let y2: &[i32] = if sc.yr { &ev.y2[s..e] } else { &[] };
+        seq_forward(&ev.y1[s..e], y2, &self.ys, sc.a, sc.beta, self.cfg.n_feat, z, c);
+    }
+
+    /// x . (c z) at position t for item i on day `day` (x: xs, or the tx item factor qi + qf).
+    fn seq_dot(&self, u: usize, i: usize, day: i32, zt: &[f32], ct: f32) -> f32 {
+        let sc = self.cfg.seq.unwrap();
+        let mut d = 0.0f32;
+        if sc.sepq {
+            let x = self.xs.row(i);
+            for k in 0..self.cfg.n_feat { d += x[k] * ct * zt[k]; }
+        } else {
+            let nfb = self.cfg.n_freq_bins;
+            let ud_idx = self.ud.index(u, day as i16);
+            let f = ud_idx.map_or(0, |idx| freq_bin(self.ud.day_cnts[idx], nfb));
+            let (qi, qf) = (self.ifeat.row(i), self.ifeat_freq.row(i * nfb + f));
+            for k in 0..self.cfg.n_feat { d += (qi[k] + qf[k]) * ct * zt[k]; }
+        }
+        d
     }
 
     fn rebuild_ycache(&mut self, tr: &Dataset, pr: &MaskedDataset) {
@@ -674,6 +827,21 @@ impl Regressor for TxModel {
             (Vec::new(), Vec::new())
         };
 
+        let (seq_ev, ys, xs) = match cfg.seq {
+            None => (None, Array2::zeros((0, cfg.n_feat)), Array2::zeros((0, cfg.n_feat))),
+            Some(sc) => {
+                assert!(cfg.ordinal_head.is_none(), "the sequential term needs the MSE loss (ORD=0)");
+                let ev = SeqEvents::build(tr, pr, sc.yr, sc.tie_seed);
+                crate::teeln!("sequential term: {} events; a {} beta {} yr {} sepq {} tie seed {}",
+                    ev.item.len(), sc.a, sc.beta, sc.yr, sc.sepq, sc.tie_seed);
+                let xs = if sc.sepq {
+                    let mut rng_x = StdRng::seed_from_u64(cfg.seed + 1);
+                    rand_array2(n_items, cfg.n_feat, &mut rng_x, sc.sigma_x)
+                } else { Array2::zeros((0, cfg.n_feat)) };
+                (Some(ev), Array2::zeros((if sc.yr { 6 * n_items } else { n_items }, cfg.n_feat)), xs)
+            }
+        };
+
         Self {
             cfg,
             gbias,
@@ -725,6 +893,8 @@ impl Regressor for TxModel {
 
             probe_items_by_user,
             probe_items_by_ud,
+
+            seq_ev, ys, xs,
         }
     }
 
@@ -798,7 +968,7 @@ impl Regressor for TxModel {
         self.predict_day(u, i, day, &day_su)
     }
 
-    fn groups_by_user(&self) -> bool { self.cfg.lazy_day }
+    fn groups_by_user(&self) -> bool { self.cfg.lazy_day || self.cfg.seq.is_some() }
 
     fn predict_user_rows(&self, ds: &Dataset, u: usize, rows: &[usize], out: &mut [f32]) {
         // lazy_day: one per-day NSVD1 sum per (user, day) of the rows, built here
@@ -807,6 +977,22 @@ impl Regressor for TxModel {
             let day = ds.dates[idx];
             let day_su = sums.entry(day).or_insert_with(|| self.day_nsvd1_of(u, day as i32));
             *o = self.predict_day(u, ds.item_idxs[idx] as usize, day as i32, day_su);
+        }
+        // + the sequential term at each row's position in the user's sequence
+        if self.cfg.seq.is_some() {
+            let f = self.cfg.n_feat;
+            let ev = self.seq_ev.as_ref().unwrap();
+            let (s, e) = (ev.off[u], ev.off[u + 1]);
+            let (mut z, mut c) = (Vec::new(), Vec::new());
+            self.seq_state(u, &mut z, &mut c);
+            let mut pos: Vec<(i32, usize)> = ev.item[s..e].iter().enumerate().map(|(t, &it)| (it, t)).collect();
+            pos.sort_unstable();
+            for (o, &idx) in out.iter_mut().zip(rows) {
+                let i = ds.item_idxs[idx];
+                let t = pos[pos.binary_search_by_key(&i, |&(it, _)| it)
+                    .unwrap_or_else(|_| panic!("user {u} item {i} is not in the user's sequence"))].1;
+                *o += self.seq_dot(u, i as usize, ds.dates[idx] as i32, &z[t * f..(t + 1) * f], c[t]);
+            }
         }
     }
 
@@ -825,7 +1011,11 @@ impl Regressor for TxModel {
     }
 
     fn fit_epoch(&mut self, tr: &Dataset, pr: &MaskedDataset, epoch: usize) {
-        let cfg = self.cfg;
+        // before SEQ_START the epoch runs as plain tx (the term stays 0)
+        let cfg = match self.cfg.seq {
+            Some(sc) if epoch < sc.start => TxConfig { seq: None, ..self.cfg },
+            _ => self.cfg,
+        };
         let ni = self.n_items;
         let n_freq_bins = cfg.n_freq_bins;
         let max_nbr = cfg.max_neighbors;
@@ -846,6 +1036,8 @@ impl Regressor for TxModel {
         let mut sampled_rated_idx: Vec<usize> = Vec::new();
         let mut sampled_impl_idx: Vec<usize> = Vec::new();
         let mut rng = StdRng::seed_from_u64(cfg.seed.wrapping_add(epoch as u64 * 1_000_003));
+        let (mut seq_z, mut seq_c, mut seq_h) = (Vec::<f32>::new(), Vec::<f32>::new(), Vec::<f32>::new());
+        let mut seq_cz = vec![0.0f32; if cfg.seq.is_some() { cfg.n_feat } else { 0 }];
 
         for &u in progress!(users.iter()) {
             let start = self.user_offsets[u];
@@ -891,6 +1083,13 @@ impl Regressor for TxModel {
 
             let day_rngs = if low_mem { Vec::new() } else { day_ranges(&tr.dates, start, end) };
 
+            // the user's sequential state
+            if cfg.seq.is_some() {
+                self.seq_state(u, &mut seq_z, &mut seq_c);
+                let ev = self.seq_ev.as_ref().unwrap();
+                seq_h.clear(); seq_h.resize((ev.off[u + 1] - ev.off[u]) * cfg.n_feat, 0.0);
+            }
+
             // NSVD1 user-level aggregation
             let mut su = Array1::<f32>::zeros(cfg.n_feat);
             let mut su_bias = 0.0;
@@ -927,7 +1126,10 @@ impl Regressor for TxModel {
             let mut dr_idx = 0usize;
             let mut cur_freq_bin = 0usize;
 
-            for t in start..end {
+            let seq_order = matches!(cfg.seq, Some(sc) if sc.order);
+            for q in start..end {
+                // q: the visit position (day ranges, start / stop); t: the train row visited
+                let t = if seq_order { self.seq_ev.as_ref().unwrap().order[q] as usize } else { q };
                 let i = tr.item_idxs[t] as usize;
                 let r = tr.residuals[t];
                 let day = tr.dates[t] as i32;
@@ -937,7 +1139,7 @@ impl Regressor for TxModel {
 
                 let (day_start, day_stop) = if low_mem { (0, 0) } else { day_rngs[dr_idx] };
 
-                if !low_mem && t == day_start {
+                if !low_mem && q == day_start {
                     sum_err_q_day.fill(0.0);
                     su_day.fill(0.0);
                     su_freq.fill(0.0);
@@ -1054,7 +1256,23 @@ impl Regressor for TxModel {
                 // =====================================================
                 // Error
                 // =====================================================
-                let score = bias_part + dot + nbr_part;
+                // sequential term at this row's position
+                let (seq_p, seq_part) = if let Some(sc) = cfg.seq {
+                    let p = self.seq_ev.as_ref().unwrap().pos[t] as usize;
+                    let (zt, ct) = (&seq_z[p * cfg.n_feat..(p + 1) * cfg.n_feat], seq_c[p]);
+                    for k in 0..cfg.n_feat { seq_cz[k] = ct * zt[k]; }
+                    let mut d = 0.0f32;
+                    if sc.sepq {
+                        for k in 0..cfg.n_feat { d += self.xs[[i, k]] * seq_cz[k]; }
+                    } else {
+                        for k in 0..cfg.n_feat {
+                            d += (self.ifeat[[i, k]] + self.ifeat_freq[[i * n_freq_bins + f, k]]) * seq_cz[k];
+                        }
+                    }
+                    (p, d)
+                } else { (0, 0.0) };
+
+                let score = bias_part + dot + nbr_part + seq_part;
 
                 let err = if let Some(ordinal_head) = &mut self.ordinal_head {
                     let y = tr.raw_ratings[t] as usize;
@@ -1082,6 +1300,24 @@ impl Regressor for TxModel {
                 self.bit_bin[[i, b]] -= cfg.lr_ti * (err_b * cu_t);
                 self.ibias_freq[[i, f]] -= cfg.lr_ibf * (err_b * cu_t);
                 self.cu[u] -= cfg.lr_cu * (err_b * bi_t + cfg.reg_cu * (self.cu[u] - 1.0));
+
+                // sequential term gradients (H for the ys backward pass; x update)
+                if let Some(sc) = cfg.seq {
+                    let ct = seq_c[seq_p];
+                    let ht = &mut seq_h[seq_p * cfg.n_feat..(seq_p + 1) * cfg.n_feat];
+                    if sc.sepq {
+                        for k in 0..cfg.n_feat {
+                            let xk = self.xs[[i, k]];
+                            ht[k] = ct * err_d * xk;
+                            self.xs[[i, k]] -= sc.lr_x * (err_d * seq_cz[k] + sc.reg_x * xk);
+                        }
+                    } else {
+                        for k in 0..cfg.n_feat {
+                            ht[k] = ct * err_d * (self.ifeat[[i, k]] + self.ifeat_freq[[i * n_freq_bins + f, k]]);
+                        }
+                    }
+                }
+                let seq_shared = matches!(cfg.seq, Some(sc) if !sc.sepq);
 
                 // =====================================================
                 // Factor SGD updates
@@ -1111,13 +1347,14 @@ impl Regressor for TxModel {
                     } else { 0.0 };
 
                     let pu_eff = pu_k + dev * pu2_k + pud_k + su[k]
-                        + if low_mem { 0.0 } else { su_day[k] + su_freq[k] };
+                        + if low_mem { 0.0 } else { su_day[k] + su_freq[k] }
+                        + if seq_shared { seq_cz[k] } else { 0.0 };
                     self.ifeat[[i, k]] -= cfg.lr_i * (err_d * pu_eff + cfg.reg_i * qi_k);
                     self.ifeat_freq[[i * n_freq_bins + f, k]] -= cfg.lr_iqf * (err_d * pu_eff + cfg.reg_iqf * qf_k);
                 }
 
                 // End of day: NSVD1-day factor updates
-                if !low_mem && t == day_stop {
+                if !low_mem && q == day_stop {
                     for t_day in day_start..=day_stop {
                         let j = tr.item_idxs[t_day] as usize;
                         for k in 0..cfg.n_feat {
@@ -1189,6 +1426,23 @@ impl Regressor for TxModel {
                 }
             }
 
+            // sequential ys updates (end of user)
+            if let Some(sc) = cfg.seq {
+                let f = cfg.n_feat;
+                let ev = self.seq_ev.as_ref().unwrap();
+                let (s, e) = (ev.off[u], ev.off[u + 1]);
+                let (y1, y2) = (&ev.y1[s..e], if sc.yr { &ev.y2[s..e] } else { &ev.y2[0..0] });
+                let ys = &mut self.ys;
+                seq_backward(e - s, &seq_h, sc.a, f, |j, acc| {
+                    let mut v = ys.row_mut(y1[j] as usize);
+                    for k in 0..f { v[k] -= sc.lr_ys * (acc[k] + sc.reg_ys * v[k]); }
+                    if !y2.is_empty() && y2[j] >= 0 {
+                        let mut v2 = ys.row_mut(y2[j] as usize);
+                        for k in 0..f { v2[k] -= sc.lr_ys * (acc[k] + sc.reg_ys * v2[k]); }
+                    }
+                });
+            }
+
             // NSVD1 factor & bias updates (end of user)
             for t in start..end {
                 let j = tr.item_idxs[t] as usize;
@@ -1206,6 +1460,168 @@ impl Regressor for TxModel {
         if let Some(ordinal_head) = &mut self.ordinal_head {
             ordinal_head.enforce_sorted_with_gap();
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests of the sequential NSVD1 term
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod seq_tests {
+    use super::*;
+
+    /// The fit tx defaults (src/bin/fit.rs) with the neighborhood off.
+    fn base_cfg() -> TxConfig {
+        TxConfig {
+            n_feat: 50, n_epochs: 20, seed: 42, shuffle_users: true, n_time_bins: 32, beta: 0.3, n_freq_bins: 16,
+            lr_u: 0.003, lr_ud: 0.00125, lr_u2: 7e-6, lr_ub: 0.0031, lr_ubd: 0.003, lr_i: 0.0036, lr_ib: 0.0036,
+            lr_y: 0.0005, lr_yb: 2.5e-5, lr_yd: 0.000267, lr_tu: 0.0, lr_ti: 0.000225, lr_ta: 2.25e-5,
+            lr_ibf: 5e-5, lr_iqf: 5e-6, lr_cu: 0.002, reg_iqf: 0.007, reg_cu: 0.01, reg_u: 0.0504, reg_u2: 0.4,
+            reg_ud: 0.04, reg_i: 0.00735, reg_y: 0.04, reg_yd: 0.02667, sigma_iqf: 0.005, sigma_u: 0.0015,
+            sigma_i: 0.005, sigma_y: 0.00333, sigma_yd: 0.009, reset_u_epoch: 1024, max_neighbors: 0,
+            lr_w: 0.0, lr_c: 0.0, reg_w: 0.002, reg_c: 0.002, lr_w_day: 0.0, lr_c_day: 0.0, reg_w_day: 0.0,
+            reg_c_day: 0.0, w_bias: 1.0, w_factor: 1.0, w_nbr: 1.0, sum_err_bug: false, lambda1: 25.0, lambda2: 10.0,
+            ordinal_head: None, save_ifeat: false, save_ufeat: false, low_memory: false, full_su: true,
+            lazy_day: false, ud_dim: None, seq: None,
+        }
+    }
+
+    /// The forward recursion against the explicit decayed sums.
+    #[test]
+    fn seq_recursion() {
+        use rand::Rng;
+        let mut rng = StdRng::seed_from_u64(7);
+        let (n, f) = (12usize, 4usize);
+        let y = Array2::from_shape_fn((2 * n, f), |_| rng.random_range(-0.5..0.5f32));
+        let y1: Vec<i32> = (0..n as i32).collect();
+        let y2: Vec<i32> = (0..n as i32).map(|t| if t % 3 == 0 { -1 } else { n as i32 + t }).collect();
+        for &(a, beta) in &[(1.0f32, 0.5f32), (0.9, 0.5), (0.5, 1.0)] {
+            let (mut z, mut c) = (Vec::new(), Vec::new());
+            seq_forward(&y1, &y2, &y, a, beta, f, &mut z, &mut c);
+            for t in 1..n {
+                let (mut zz, mut s) = (vec![0.0f32; f], 0.0f32);
+                for j in 0..t {
+                    let w = a.powi((t - 1 - j) as i32);
+                    s += w;
+                    for k in 0..f {
+                        zz[k] += w * y[[j, k]];
+                        if y2[j] >= 0 { zz[k] += w * y[[y2[j] as usize, k]]; }
+                    }
+                }
+                for k in 0..f { assert!((zz[k] - z[t * f + k]).abs() < 1e-5, "z a {a} t {t} k {k}"); }
+                assert!((s.powf(-beta) - c[t]).abs() < 1e-5, "c a {a} t {t}");
+            }
+        }
+    }
+
+    /// The ys / xs gradients under the full tx prediction, every yr / sepq / order setting.
+    #[test]
+    fn seq_gradients_match_finite_differences() {
+        assert!(seq_gradients());
+    }
+
+    fn seq_gradients() -> bool {
+        
+        use ndarray::Array1;
+        use rand::{Rng, SeedableRng, rngs::StdRng};
+        let mut rng = StdRng::seed_from_u64(11);
+        let (nu, ni) = (3usize, 10usize);
+        let (mut tu, mut ti, mut td, mut tr_) = (vec![], vec![], vec![], vec![]);
+        let (mut pu, mut pi, mut pd) = (vec![], vec![], vec![]);
+        for u in 0..nu {
+            let mut items: Vec<i32> = (0..ni as i32).collect();
+            for k in (1..items.len()).rev() { items.swap(k, rng.random_range(0..=k)); }
+            let mut evs: Vec<(i16, i32, bool)> = items.iter().take(8).enumerate()
+                .map(|(k, &i)| (rng.random_range(0..6i16), i, k < 6)).collect();
+            evs.sort_by_key(|e| (e.0, e.1));     // train rows date-sorted within the user, as tx expects
+            for (d, i, is_tr) in evs {
+                if is_tr { tu.push(u as i32); ti.push(i); td.push(d); tr_.push(rng.random_range(1..=5i8)); }
+                else { pu.push(u as i32); pi.push(i); pd.push(d); }
+            }
+        }
+        let mk = |us: Vec<i32>, is: Vec<i32>, ds: Vec<i16>, rs: Vec<i8>, name: &str| {
+            let n = us.len();
+            let mut uc = vec![0i32; nu]; for &u in &us { uc[u as usize] += 1; }
+            let mut ic = vec![0i32; ni]; for &i in &is { ic[i as usize] += 1; }
+            Dataset {
+                user_idxs: Array1::from(us), user_cnts: Array1::from(uc), item_idxs: Array1::from(is),
+                item_cnts: Array1::from(ic), item_years: Array1::zeros(ni),
+                residuals: Array1::from_iter(rs.iter().map(|&r| r as f32)), raw_ratings: Array1::from(rs),
+                dates: Array1::from(ds), is_test: Array1::zeros(n), name: name.to_string(),
+                n_users: nu, n_items: ni, n_ratings: n, transposed: false,
+            }
+        };
+        let np = pu.len();
+        let (tr, pr) = (mk(tu, ti, td, tr_, "syn_tr"), mk(pu, pi, pd, vec![3; np], "syn_pr"));
+        let prm = MaskedDataset::from(&pr);
+        let base = TxConfig {
+            n_feat: 3, n_epochs: 1, seed: 3, shuffle_users: false, n_time_bins: 4, n_freq_bins: 4,
+            lr_u: 0.0, lr_ud: 0.0, lr_u2: 0.0, lr_ub: 0.0, lr_ubd: 0.0, lr_i: 0.0, lr_ib: 0.0, lr_y: 0.0,
+            lr_yb: 0.0, lr_yd: 0.0, lr_tu: 0.0, lr_ti: 0.0, lr_ta: 0.0, lr_ibf: 0.0, lr_iqf: 0.0, lr_cu: 0.0,
+            sigma_u: 0.3, sigma_i: 0.3, sigma_y: 0.3, sigma_yd: 0.3, sigma_iqf: 0.1, reset_u_epoch: 0,
+            ..base_cfg()
+        };
+        let mut ok = true;
+        for &(yr, sepq, order) in &[(true, true, false), (true, false, false), (false, true, false), (false, false, false),
+                                     (true, true, true), (true, false, true)] {
+            let run = |lr: f32| {
+                let cfg = TxConfig { seq: Some(SeqConfig {
+                    a: 0.9, beta: 0.5, lr_ys: lr, reg_ys: 0.0, yr, sepq, lr_x: lr, reg_x: 0.0, sigma_x: 0.3, tie_seed: 1, order,
+                    start: 1,
+                }), ..base };
+                let mut m = TxModel::new(&tr, &prm, cfg);
+                let mut r2 = StdRng::seed_from_u64(5);
+                m.ys.mapv_inplace(|_| r2.random_range(-0.3..0.3f32));
+                let start = (m.ys.clone(), m.xs.clone());
+                m.fit_epoch(&tr, &prm, 1);
+                let end = (m.ys.clone(), m.xs.clone());
+                (m, start, end)
+            };
+            let loss = |m: &TxModel| -> f64 {
+                let mut l = 0.0f64;
+                for u in 0..nu {
+                    let rows: Vec<usize> = (0..tr.n_ratings).filter(|&r| tr.user_idxs[r] as usize == u).collect();
+                    let mut out = vec![0.0f32; rows.len()];
+                    m.predict_user_rows(&tr, u, &rows, &mut out);
+                    for (o, &r) in out.iter().zip(&rows) { l += 0.5 * ((*o - tr.residuals[r]) as f64).powi(2); }
+                }
+                l
+            };
+            let lr = 1e-3f32;
+            let (mut m, start, end1) = run(lr);
+            let (_, _, end2) = run(2.0 * lr);
+            (m.ys, m.xs) = start.clone();
+            let eps = 1e-2f32;
+            let mut worst = 0.0f64;
+            for which in 0..2 {
+                let n = if which == 0 { m.ys.len() } else { m.xs.len() };
+                for idx in 0..n {
+                    let get = |m: &mut TxModel| -> *mut f32 {
+                        if which == 0 { &mut m.ys.as_slice_mut().unwrap()[idx] } else { &mut m.xs.as_slice_mut().unwrap()[idx] }
+                    };
+                    let (s0, e1, e2) = if which == 0 {
+                        (start.0.as_slice().unwrap()[idx], end1.0.as_slice().unwrap()[idx], end2.0.as_slice().unwrap()[idx])
+                    } else {
+                        (start.1.as_slice().unwrap()[idx], end1.1.as_slice().unwrap()[idx], end2.1.as_slice().unwrap()[idx])
+                    };
+                    unsafe { *get(&mut m) = s0 + eps; }
+                    let lp = loss(&m);
+                    unsafe { *get(&mut m) = s0 - eps; }
+                    let lm = loss(&m);
+                    unsafe { *get(&mut m) = s0; }
+                    let num = (lp - lm) / (2.0 * eps as f64);
+                    let ana = 2.0 * (s0 - e1) as f64 / lr as f64 - (s0 - e2) as f64 / (2.0 * lr) as f64;
+                    let scale = num.abs().max(ana.abs()).max(1e-2);
+                    worst = worst.max((num - ana).abs() / scale);
+                }
+            }
+            let pass = worst < 5e-3;
+            ok &= pass;
+            println!("selftest tx + seq, yr {yr} sepq {sepq} order {order}: ys / xs gradients max rel err {worst:.2e} {}",
+                     if pass { "OK" } else { "FAIL" });
+        }
+        ok
     }
 }
 

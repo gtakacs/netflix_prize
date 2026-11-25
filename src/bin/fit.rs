@@ -61,7 +61,9 @@ fn main() {
 // tsvdx5 base recipe, with the neighborhood off unless NBR > 0. QUAL_ONLY=1
 // runs only the fulltrain -> qual phase of an existing probe-only column.
 // SUM_ERR_BUG=1 / FULL_SU=0 select the older TxModel behaviours (for reproducing
-// old-split columns).
+// old-split columns). SEQ=1 adds the sequential NSVD1 term (SeqConfig in src/tx.rs:
+// SEQ_A, SEQ_BETA, LR_YS, REG_YS, SEQ_YR, SEQ_SEPQ, LR_X, REG_X, SIGMA_X, SEQ_TIE_SEED,
+// SEQ_ORDER, SEQ_START); with every other term off it is the sequential MF.
 //
 //   F=50 EPOCHS=20 cargo run --release --bin fit -- tx s3-tx50 -p pipeline-3.toml
 
@@ -69,7 +71,7 @@ fn tx() {
     use netflix_prize::{
         OrdinalHeadConfig, fit2,
         lab::{LabArgs, ev},
-        tx::{TxConfig, TxModel},
+        tx::{SeqConfig, TxConfig, TxModel},
     };
 
     let args = LabArgs::parse();
@@ -118,6 +120,22 @@ fn tx() {
         full_su: ev("FULL_SU", 1) != 0,
         lazy_day: ev("LAZY_DAY", 0) != 0,
         ud_dim: std::env::var("UD_DIM").ok().map(|v| v.parse().expect("UD_DIM")),
+        // SEQ=1: the sequential NSVD1 term (TxConfig.seq, src/tx.rs); LR_X / REG_X / SIGMA_X default
+        // to the item factor's LR_I / REG_I / SIGMA_I.
+        seq: (ev("SEQ", 0) != 0).then(|| SeqConfig {
+            a: ev("SEQ_A", 0.9),
+            beta: ev("SEQ_BETA", 0.5),
+            lr_ys: ev("LR_YS", 0.001),
+            reg_ys: ev("REG_YS", 0.001),
+            yr: match ev("SEQ_YR", 2u8) { 0 => false, 2 => true, v => panic!("SEQ_YR must be 0 or 2 (got {v})") },
+            sepq: ev("SEQ_SEPQ", 1) != 0,
+            lr_x: ev("LR_X", ev("LR_I", 0.0036)),
+            reg_x: ev("REG_X", ev("REG_I", 0.00735)),
+            sigma_x: ev("SIGMA_X", ev("SIGMA_I", 0.005)),
+            tie_seed: ev("SEQ_TIE_SEED", 1),
+            order: ev("SEQ_ORDER", 0) != 0,
+            start: ev("SEQ_START", 1),
+        }),
     };
 
     if ev("QUAL_ONLY", 0) != 0 {

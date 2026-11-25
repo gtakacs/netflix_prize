@@ -45,7 +45,7 @@ different probe set from the training ratings, and all of them share the final
 
 The `qual` predictions are the Netflix qualifying set, and they are what a
 submission would be built from. The headline blend, `cross1`, combines all
-three splits on the quiz half of qual (quiz RMSE 0.855785).
+three splits on the quiz half of qual (quiz RMSE 0.855679).
 
 Older paths are gone. `preds_old/`, the project's original split, was retired on
 2026-11-20, when split_1 replaced it with the same train / probe sets.

@@ -774,7 +774,7 @@ fn main() {
             low_memory: true,
             full_su: true,
             lazy_day: false,
-            ud_dim: None,
+            ud_dim: None, seq: None,
             };
             fit2!(TxModel, cfg, "0.9*rbmx2-10", job_name, SPLIT_2, save_train: true, save_subscores: true, save_probe_each_epoch: true);
         }
