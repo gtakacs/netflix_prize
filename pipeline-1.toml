@@ -1808,24 +1808,25 @@ jobtype = "s3model"
 runner = "tx"
 env = "F=32 EPOCHS=16 SEED=42 SHUFFLE=0 RESET=10 LR_U=0.0031 LR_I=0.0036 LR_UB=0.0031 LR_IB=0.0036 REG_U=0.03 REG_I=0.005 SIGMA_U=0.004 SIGMA_I=0.005 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_YD=0 SIGMA_YD=0 LR_UD=0 LR_U2=0 LR_TA=0 LR_TI=0 LR_TU=0 LR_UBD=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 LR_CU=0 LAZY_DAY=1 UD_DIM=1 SEQ=1 SEQ_ORDER=1 SEQ_A=0.9 SEQ_BETA=0.5 SEQ_YR=2 LR_YS=0.001 REG_YS=0.001 LR_X=0.0036 REG_X=0.005 SIGMA_X=0.005 RAYON_NUM_THREADS=1 SEQ_SEPQ=0 SEQ_TIE_SEED=6"
 
-# e3: the sequence + the per-day terms (per-day NSVD1, per-day user factor) and the biases only (p_u,
-# static NSVD1, time biases, freq factor off; SIGMA_I=0.1 so q leaves the saddle at 0). Seeds 42 / 43 / 44
-# (SEED = SEQ_TIE_SEED except 42 with tie seed 1). On quiz: cross1 -8.5e-5 alone (3-seed mean), -2.4e-5
-# next to the sequential MF.
-[jobs."s1-txseq-e3s42"]
+# e3yr0: the sequence + the per-day terms (per-day NSVD1, per-day user factor) and the biases only (p_u,
+# static NSVD1, time biases, freq factor off; SIGMA_I=0.1 so q leaves the saddle at 0), with the implicit
+# sequential term (SEQ_YR=0: one y[i] per event, no rating-dependent part). Seeds 42 / 43 / 44 (SEED =
+# SEQ_TIE_SEED except 42 with tie seed 1). It replaced e3 (the same with SEQ_YR=2) on 2026-11-27: cross1
+# -5e-6 against e3 next to the sequential MF, -2.8e-5 against neither.
+[jobs."s1-txseq-e3yr0s42"]
 jobtype = "s3model"
 runner = "tx"
-env = "F=64 EPOCHS=20 RAYON_NUM_THREADS=1 SEQ=1 SEQ_ORDER=1 SEQ_SEPQ=0 SEQ_YR=2 SEQ_A=0.9 LR_YS=0.001 REG_YS=0.001 LR_U=0 SIGMA_U=0 LR_U2=0 SIGMA_I=0.1 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_TI=0 LR_TA=0 LR_UBD=0 LR_CU=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 SEED=42 SEQ_TIE_SEED=1"
+env = "F=64 EPOCHS=20 RAYON_NUM_THREADS=1 SEQ=1 SEQ_ORDER=1 SEQ_SEPQ=0 SEQ_YR=0 SEQ_A=0.9 LR_YS=0.001 REG_YS=0.001 LR_U=0 SIGMA_U=0 LR_U2=0 SIGMA_I=0.1 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_TI=0 LR_TA=0 LR_UBD=0 LR_CU=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 SEED=42 SEQ_TIE_SEED=1 LAZY_DAY=1"
 
-[jobs."s1-txseq-e3s43"]
+[jobs."s1-txseq-e3yr0s43"]
 jobtype = "s3model"
 runner = "tx"
-env = "F=64 EPOCHS=20 RAYON_NUM_THREADS=1 SEQ=1 SEQ_ORDER=1 SEQ_SEPQ=0 SEQ_YR=2 SEQ_A=0.9 LR_YS=0.001 REG_YS=0.001 LR_U=0 SIGMA_U=0 LR_U2=0 SIGMA_I=0.1 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_TI=0 LR_TA=0 LR_UBD=0 LR_CU=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 SEED=43 SEQ_TIE_SEED=43"
+env = "F=64 EPOCHS=20 RAYON_NUM_THREADS=1 SEQ=1 SEQ_ORDER=1 SEQ_SEPQ=0 SEQ_YR=0 SEQ_A=0.9 LR_YS=0.001 REG_YS=0.001 LR_U=0 SIGMA_U=0 LR_U2=0 SIGMA_I=0.1 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_TI=0 LR_TA=0 LR_UBD=0 LR_CU=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 SEED=43 SEQ_TIE_SEED=43 LAZY_DAY=1"
 
-[jobs."s1-txseq-e3s44"]
+[jobs."s1-txseq-e3yr0s44"]
 jobtype = "s3model"
 runner = "tx"
-env = "F=64 EPOCHS=20 RAYON_NUM_THREADS=1 SEQ=1 SEQ_ORDER=1 SEQ_SEPQ=0 SEQ_YR=2 SEQ_A=0.9 LR_YS=0.001 REG_YS=0.001 LR_U=0 SIGMA_U=0 LR_U2=0 SIGMA_I=0.1 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_TI=0 LR_TA=0 LR_UBD=0 LR_CU=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 SEED=44 SEQ_TIE_SEED=44"
+env = "F=64 EPOCHS=20 RAYON_NUM_THREADS=1 SEQ=1 SEQ_ORDER=1 SEQ_SEPQ=0 SEQ_YR=0 SEQ_A=0.9 LR_YS=0.001 REG_YS=0.001 LR_U=0 SIGMA_U=0 LR_U2=0 SIGMA_I=0.1 LR_Y=0 LR_YB=0 SIGMA_Y=0 LR_TI=0 LR_TA=0 LR_UBD=0 LR_CU=0 LR_IBF=0 LR_IQF=0 SIGMA_IQF=0 SEED=44 SEQ_TIE_SEED=44 LAZY_DAY=1"
 
 # The ensemble members: the seed means.
 [jobs."s1-txseq-zbqx9"]
@@ -1838,7 +1839,7 @@ jobtype = "predavg"
 inputs_from = ["s1-txseq-zb1", "s1-txseq-zb2", "s1-txseq-zb3", "s1-txseq-zb4", "s1-txseq-zb5", "s1-txseq-zb6"]
 extra_args = ["s1-txseq-zb1", "s1-txseq-zb2", "s1-txseq-zb3", "s1-txseq-zb4", "s1-txseq-zb5", "s1-txseq-zb6"]
 
-[jobs."s1-txseq-e3x3"]
+[jobs."s1-txseq-e3yr0x3"]
 jobtype = "predavg"
-inputs_from = ["s1-txseq-e3s42", "s1-txseq-e3s43", "s1-txseq-e3s44"]
-extra_args = ["s1-txseq-e3s42", "s1-txseq-e3s43", "s1-txseq-e3s44"]
+inputs_from = ["s1-txseq-e3yr0s42", "s1-txseq-e3yr0s43", "s1-txseq-e3yr0s44"]
+extra_args = ["s1-txseq-e3yr0s42", "s1-txseq-e3yr0s43", "s1-txseq-e3yr0s44"]

@@ -256,12 +256,13 @@ fwlsblend_part4 = [
 
 # --- Sequential NSVD1 term in tx (2026-11-25, user; pipeline-1.toml s1-txseq-*) ---
 # Seed means of fit tx SEQ=1 columns: the sequential MF (zbq: separate item factor, 9 within-day order
-# seeds; zb: shared item factor, 6 seeds) and e3 (the sequence + the per-day terms, 3 seeds). On quiz:
-# s1 0.857541 -> 0.857418, cross1 0.855785 -> 0.855679.
+# seeds; zb: shared item factor, 6 seeds) and e3yr0 (the sequence with SEQ_YR=0 + the per-day terms,
+# 3 seeds; replaced e3 = the same with SEQ_YR=2 on 2026-11-27). On quiz: s1 0.857541 -> 0.857407,
+# cross1 0.855785 -> 0.855671.
 tx_part3 = [
     "s1-txseq-zbqx9",
     "s1-txseq-zbx6",
-    "s1-txseq-e3x3",
+    "s1-txseq-e3yr0x3",
 ]
 
 # --- Secondary columns (aux_) ---

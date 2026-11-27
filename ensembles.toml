@@ -36,7 +36,7 @@ split  = "3"
 groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 
 [ensemble.expected]
-"1/tx" = { quiz = 0.864058 }
+"1/tx" = { quiz = 0.864147 }
 "1/rbm" = { quiz = 0.868411 }
 "1/nn" = { quiz = 0.870778 }
 "1/other" = { quiz = 0.872622 }
@@ -58,10 +58,10 @@ groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend"]
 "3/gbmblend" = { quiz = 0.860124 }
 "3/mlpblend" = { quiz = 0.858371 }
 "3/fwlsblend" = { quiz = 0.858083 }
-"1/*" = { quiz = 0.857180 }
+"1/*" = { quiz = 0.857173 }
 "2/*" = { quiz = 0.857715 }
 "3/*" = { quiz = 0.857567 }
-ensemble = { quiz = 0.855679 }
+ensemble = { quiz = 0.855674 }
 
 # Single split, fitted on the probe labels: the cheap bench a new column is
 # measured on. It needs only the probe_2 predictions, so an experiment can be
@@ -112,7 +112,8 @@ ensemble = { probe = 0.859622, quiz = 0.857762 }
 # Split_1 only, fitted on the probe labels: the single-split bench of split_1 (the old split's
 # train / probe, rebuilt as pipeline-1.toml jobs): the base columns (154 since 2026-11-19), their 20 blends and the
 # 3 stacked (second-level) blends; 2026-11-21: + the latent-context fwls and gbr3rk4 (quiz 0.857620 -> 0.857541);
-# 2026-11-25: + the three sequential-tx seed means in tx (quiz 0.857541 -> 0.857418).
+# 2026-11-25: + the three sequential-tx seed means in tx (quiz 0.857541 -> 0.857418);
+# 2026-11-27: e3yr0 (SEQ_YR=0) instead of e3 (quiz 0.857418 -> 0.857412).
 [[ensemble]]
 name        = "s1"
 description = "split_1 only, fitted on probe"
@@ -124,7 +125,7 @@ split  = "1"
 groups = ["tx", "rbm", "nn", "other", "gbmblend", "mlpblend", "fwlsblend", "stackblend"]
 
 [ensemble.expected]
-tx = { probe = 0.873606, quiz = 0.864250 }
+tx = { probe = 0.873689, quiz = 0.864336 }
 rbm = { probe = 0.877790, quiz = 0.868603 }
 nn = { probe = 0.879748, quiz = 0.870968 }
 other = { probe = 0.881932, quiz = 0.872802 }
@@ -132,7 +133,7 @@ gbmblend = { probe = 0.868985, quiz = 0.860076 }
 mlpblend = { probe = 0.867514, quiz = 0.858820 }
 fwlsblend = { probe = 0.867432, quiz = 0.858290 }
 stackblend = { probe = 0.866982, quiz = 0.857819 }
-ensemble = { probe = 0.866334, quiz = 0.857418 }
+ensemble = { probe = 0.866313, quiz = 0.857412 }
 
 # Split_1 base predictors only (no blend columns), fitted on probe.
 [[ensemble]]
@@ -146,11 +147,11 @@ split  = "1"
 groups = ["tx", "rbm", "nn", "other"]
 
 [ensemble.expected]
-tx = { probe = 0.873606, quiz = 0.864250 }
+tx = { probe = 0.873689, quiz = 0.864336 }
 rbm = { probe = 0.877790, quiz = 0.868603 }
 nn = { probe = 0.879748, quiz = 0.870968 }
 other = { probe = 0.881932, quiz = 0.872802 }
-ensemble = { probe = 0.870488, quiz = 0.861268 }
+ensemble = { probe = 0.870453, quiz = 0.861253 }
 
 # Split_3 base predictors only (no blend columns), fitted on probe_3: what the base
 # predictors do on their own.
