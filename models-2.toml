@@ -426,8 +426,7 @@ fwlsblend_part1 = [
     "fwls2x-s1",              # 0.5e-5
 ]
 
-# The deep-learning family and its chains. See NOTES.md for what was tried
-# and failed.
+# The deep-learning family and its chains.
 x14 = [
     "dnn-16",
     "dnn-64",
