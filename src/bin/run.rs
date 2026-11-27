@@ -160,14 +160,14 @@ fn human(bytes: u64) -> String {
 /// jobs live in two manifests, so they are run by name rather than by walking
 /// one graph. Each is skipped when its outputs are already there.
 fn cmd_setup(pipeline_path: &str, force: bool) -> ExitCode {
-    let build = "cargo build --release --bin download --bin ingest --bin newsplit";
+    let build = "cargo build --release --bin download --bin ingest --bin split";
 
     println!("Setup: dataset -> npy arrays -> both splits");
     println!();
     println!("  build      {}", build);
     println!("  download   data/raw/  (697 MB archive, md5 verified, resumable)");
     println!("  ingest     data/{{train,probe,fulltrain,qual}}/   [{}]", pipeline_path);
-    println!("  newsplit   data/{{train_2,probe_2}}/                [{}]", PIPELINE_2);
+    println!("  split_2    data/{{train_2,probe_2}}/                [{}]", PIPELINE_2);
     println!();
     println!("About 3.3 GB on disk when finished. Steps whose outputs exist are skipped.");
     println!();
@@ -185,9 +185,9 @@ fn cmd_setup(pipeline_path: &str, force: bool) -> ExitCode {
         }
     }
 
-    // download and ingest come from the selected manifest, newsplit only exists
+    // download and ingest come from the selected manifest, split_2 only exists
     // in the split_2 one.
-    for (path, jobs) in [(pipeline_path, &["download", "ingest"][..]), (PIPELINE_2, &["newsplit"][..])] {
+    for (path, jobs) in [(pipeline_path, &["download", "ingest"][..]), (PIPELINE_2, &["split_2"][..])] {
         let pipeline = match Pipeline::load(path) {
             Ok(p) => p,
             Err(e) => {
@@ -229,7 +229,7 @@ fn print_help() {
     println!("                             not referenced by any active job");
     println!("  -f, --force                re-run JOB even if DONE; or actually delete with --clean");
     println!("      --setup                fetch the dataset, parse it into npy arrays and");
-    println!("                             derive both splits (download, ingest, newsplit)");
+    println!("                             derive both splits (download, ingest, split_2)");
     println!("  -h, --help                 show this help");
     println!("  JOB                        run the named job");
 }

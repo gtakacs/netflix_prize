@@ -4,7 +4,7 @@
 #
 # probe extended by +25% train ratings (from the last K=2 train days of each
 # user) that keep a same-day partner in train,
-# so probe_3 is closer to qual in same-day evidence (see src/bin/split_3.rs).
+# so probe_3 is closer to qual in same-day evidence (see src/bin/split.rs).
 # Lab runs take this split with `-p pipeline-3.toml` and write to preds_lab/.
 #
 # Model jobs: the 172-column split_3 blend of 2026-10-22 (CV 0.866478, quiz
@@ -51,9 +51,9 @@ cmd = "./target/release/ingest"
 
 [jobs.split_3]
 inputs_from = ["ingest"]
-inputs  = ["src/bin/split_3.rs"]
+inputs  = ["src/bin/split.rs"]
 outputs = ["data/{tr}/", "data/{pr}/"]
-cmd = "cargo build --release --bin split_3 && ./target/release/split_3"
+cmd = "cargo build --release --bin split && ./target/release/split 3"
 
 # --- Defaults per job type ---
 

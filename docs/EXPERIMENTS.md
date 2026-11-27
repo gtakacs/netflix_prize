@@ -20,7 +20,7 @@ cargo build --release --bin preds
 ./target/release/preds pull 'preds_2/*'
 ```
 
-You also need `data/` (`run --setup`: download, ingest, newsplit).
+You also need `data/` (`run --setup`: download, ingest, split_2).
 
 ## 1. Copy the template
 

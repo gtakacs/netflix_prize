@@ -53,8 +53,8 @@ skipped, so it is safe to re-run:
 
 The three steps are ordinary jobs and can also be run one at a time:
 `download` fetches the archive into `data/raw/`, `ingest` parses it, and
-`newsplit` (in `pipeline-2.toml` only) derives `train_2`/`probe_2` from
-`train`/`probe`.
+`split_2` (in `pipeline-2.toml` only) derives `train_2`/`probe_2` from
+`train`/`probe` with `split 2`.
 
 See [Pipeline](#pipeline) below for the available flags, the three manifests,
 and how job dependencies are resolved.
@@ -202,7 +202,7 @@ requested job:
 ./target/release/run                 # list jobs (pipeline-1.toml)
 ./target/release/run JOB             # run JOB
 ./target/release/run -f JOB          # force re-run
-./target/release/run --setup         # download + ingest + newsplit in one go
+./target/release/run --setup         # download + ingest + split_2 in one go
 ./target/release/run -c -f           # delete preds files no active job references
 ```
 
